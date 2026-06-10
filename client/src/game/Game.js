@@ -250,6 +250,15 @@ export class Game {
     for (const k of Object.keys(this.tex)) {
       if (k.startsWith('tank_')) this.tex[k] = this._chromaKey(this.tex[k])
     }
+    // реальный вид сверху танка игрока (Battle задаёт playerTankId до mount)
+    if (this.playerTankId) {
+      try {
+        const t = await Assets.load(`/sprites/tanks/${this.playerTankId}.png`)
+        this.tex.player_tank = this._chromaKey(t)
+      } catch {
+        /* нет спрайта — останется классовый */
+      }
+    }
 
     this.world = new Container()
     this.bg = new Graphics()
@@ -281,7 +290,7 @@ export class Game {
         this.tankLayer.addChild(s)
         return s
       }
-      this.unitSprites.set('player', mk(tankTex(this.cls.id, 'amber'), 96))
+      this.unitSprites.set('player', mk(this.tex.player_tank || tankTex(this.cls.id, 'amber'), 96))
       for (const b of this.bots) {
         const size = b.classId === 'heavy' ? 92 : b.classId === 'light' ? 76 : 84
         this.unitSprites.set(b.id, mk(tankTex(b.classId, b.team === TEAM.ALLY ? 'blue' : 'red'), size))
@@ -353,7 +362,8 @@ export class Game {
     window.addEventListener('keyup', this._onKeyUp)
   }
 
-  // вырезает зелёный chroma-key фон у спрайта танка
+  // вырезает chroma-key фон у спрайта танка; тип фона (зелёный/магента)
+  // определяется по углу картинки — правило ловит и затенённый фон
   _chromaKey(tex) {
     const c = document.createElement('canvas')
     c.width = tex.width
@@ -362,11 +372,14 @@ export class Game {
     ctx.drawImage(tex.source.resource, 0, 0)
     const d = ctx.getImageData(0, 0, c.width, c.height)
     const p = d.data
+    const i0 = (3 * c.width + 3) * 4
+    const magenta = p[i0] > p[i0 + 1] * 1.3 && p[i0 + 2] > p[i0 + 1] * 1.1
     for (let i = 0; i < p.length; i += 4) {
       const r = p[i]
       const g = p[i + 1]
       const b = p[i + 2]
-      if (g > 80 && g > r * 1.25 && g > b * 1.25) p[i + 3] = 0
+      const isBg = magenta ? r > g * 1.5 && b > g * 1.2 : g > 80 && g > r * 1.25 && g > b * 1.25
+      if (isBg) p[i + 3] = 0
     }
     ctx.putImageData(d, 0, 0)
     return Texture.from(c)
@@ -1099,10 +1112,11 @@ export class Game {
         if (b.flash > 0) c.body = 0xffffff
         this._drawTank(g, b.x, b.y, b.hull, c, 0.85)
       }
-      const bw = 40
-      const hpCol = isAlly ? 0x5b9cff : 0x5bd860
-      g.rect(b.x - bw / 2, b.y - 38, bw, 4).fill({ color: 0x000000, alpha: 0.5 })
-      g.rect(b.x - bw / 2, b.y - 38, bw * (Math.max(0, b.hp) / b.maxHp), 4).fill(hpCol)
+      // ХП: союзники синие, враги красные — заметные полоски с подложкой
+      const bw = 48
+      const hpCol = isAlly ? 0x5b9cff : 0xff5a4a
+      g.rect(b.x - bw / 2 - 1, b.y - 37, bw + 2, 7).fill({ color: 0x000000, alpha: 0.65 })
+      g.rect(b.x - bw / 2, b.y - 36, bw * (Math.max(0, b.hp) / b.maxHp), 5).fill(hpCol)
     }
 
     // игрок: живой — янтарный, уничтожен — обломки
@@ -1177,7 +1191,7 @@ export class Game {
       t.visible = show
       if (show) {
         const p = this.world.toGlobal({ x: b.x, y: b.y })
-        t.position.set(p.x, p.y - 36)
+        t.position.set(p.x, p.y - 52) // выше ХП-полоски, не перекрывают друг друга
       }
     }
   }

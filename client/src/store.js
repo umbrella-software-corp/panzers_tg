@@ -52,6 +52,7 @@ if (typeof profile.goldAmmo !== 'number') profile.goldAmmo = 5
 if (!profile.stats || typeof profile.stats !== 'object')
   profile.stats = { battles: 0, wins: 0, kills: 0, rating: RATING_START }
 if (!profile.daily || typeof profile.daily !== 'object') profile.daily = { last: '', streak: 0 }
+if (!Array.isArray(profile.history)) profile.history = [] // последние бои
 
 watch(profile, () => localStorage.setItem(KEY, JSON.stringify(profile)), { deep: true })
 
@@ -158,13 +159,21 @@ export function spendGoldAmmo(n = 1) {
   return true
 }
 
-// ---------- статистика и рейтинг ----------
-export function addBattleResult(result, kills = 0) {
+// ---------- статистика, рейтинг и история боёв ----------
+export function addBattleResult(result, kills = 0, extra = {}) {
   const s = profile.stats
   s.battles++
   if (result === 'victory') s.wins++
   s.kills += kills
   s.rating = Math.max(100, s.rating + (RATING_DELTA[result] ?? RATING_DELTA.defeat))
+  profile.history.unshift({
+    t: Date.now(),
+    result,
+    kills,
+    score: extra.score || '',
+    tank: extra.tank || '',
+  })
+  if (profile.history.length > 12) profile.history.length = 12
 }
 
 // ---------- ежедневный вход ----------

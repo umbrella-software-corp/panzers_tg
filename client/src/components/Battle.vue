@@ -114,7 +114,7 @@ game.onState = (s) => {
     phase.value = 'result'
     if (!statsCounted) {
       statsCounted = true
-      addBattleResult(s.result, s.kills)
+      addBattleResult(s.result, s.kills, { score: `${s.allyScore}:${s.enemyScore}`, tank: tankName.value })
     }
   }
 }
@@ -228,7 +228,10 @@ function toHangar() {
   // выход до конца матча = поражение в статистику
   if (phase.value === 'fighting' && !statsCounted) {
     statsCounted = true
-    addBattleResult('defeat', state.value.kills)
+    addBattleResult('defeat', state.value.kills, {
+      score: `${state.value.allyScore}:${state.value.enemyScore}`,
+      tank: tankName.value,
+    })
   }
   emit('exit', reward.value)
 }
@@ -259,6 +262,7 @@ onMounted(async () => {
   const myTier = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
   const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map(combatStats)
   game.setBotTanks(pool)
+  game.playerTankId = profile.selectedTank // реальный спрайт своей машины
   // статы до mount: спрайт игрока выбирается по классу лоадаута
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)

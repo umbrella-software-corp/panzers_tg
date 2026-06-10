@@ -30,6 +30,18 @@ const board = computed(() => {
   return rows
 })
 const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
+
+const RES = {
+  victory: { label: 'ПОБЕДА', color: 'var(--green)' },
+  draw: { label: 'НИЧЬЯ', color: 'var(--ink-dim)' },
+  defeat: { label: 'ПОРАЖЕНИЕ', color: 'var(--red)' },
+}
+const fmtTime = (t) => {
+  const d = new Date(t)
+  const today = new Date().toDateString() === d.toDateString()
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return today ? hm : `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')} ${hm}`
+}
 </script>
 
 <template>
@@ -56,6 +68,24 @@ const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
             <div class="cell"><b class="pz-display">{{ profile.stats.wins }}</b><span>побед</span></div>
             <div class="cell"><b class="pz-display">{{ winrate }}%</b><span>винрейт</span></div>
             <div class="cell"><b class="pz-display">{{ profile.stats.kills }}</b><span>фрагов</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- история боёв -->
+      <section>
+        <div class="pz-stencil-h">ИСТОРИЯ БОЁВ</div>
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
+          <div v-if="!profile.history.length" style="font-size: 12px; color: var(--ink-faint); text-align: center; padding: 10px 0; font-weight: 500">
+            Ещё нет боёв — жми В БОЙ в ангаре
+          </div>
+          <div v-for="(h, i) in profile.history" :key="i" class="row">
+            <span class="pz-display" style="font-size: 10.5px; width: 86px; flex-shrink: 0; letter-spacing: 0.08em" :style="{ color: RES[h.result].color }">
+              {{ RES[h.result].label }}
+            </span>
+            <span style="flex: 1; font-size: 12.5px; font-weight: 600">{{ h.tank }} <span style="color: var(--ink-dim)">· {{ h.score }}</span></span>
+            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 600">{{ h.kills }} фр.</span>
+            <span style="font-size: 10px; color: var(--ink-faint); font-weight: 500">{{ fmtTime(h.t) }}</span>
           </div>
         </div>
       </section>

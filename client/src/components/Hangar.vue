@@ -4,7 +4,7 @@
 import { ref, computed } from 'vue'
 import { profile, setNation, selectTank, isOwned } from '../store.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS } from '../game/meta.js'
-import TankTopDown from './ui/TankTopDown.vue'
+import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
 import BottomNav from './ui/BottomNav.vue'
@@ -60,7 +60,7 @@ const partyMul = computed(() => profile.party.length)
       <div class="tank-wrap">
         <div class="tank-shadow"></div>
         <div :key="tank.id" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankTopDown :size="132" :color="locked ? '#565d49' : 'var(--amber)'" :dark="locked ? '#2e3326' : '#3d3110'" />
+          <TankImg :tank-id="tank.id" :size="170" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 10px 14px rgba(0,0,0,0.45))' }" />
         </div>
         <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
           <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
