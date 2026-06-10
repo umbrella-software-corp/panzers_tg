@@ -1,0 +1,1005 @@
+import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js'
+import {
+  TANK_CLASSES,
+  DEFAULT_CLASS,
+  ENEMY_MAX_HP,
+  PLAYER_MAX_HP,
+  MAP_SIZE,
+  OBSTACLES,
+  WALLS,
+  BASES,
+  CAPTURE_POINTS,
+  CAP_TIME,
+  CAP_TICK,
+  SCORE_LIMIT,
+  MATCH_TIME,
+  CRIT_CHANCE,
+  CRIT_TIME,
+  RADIO_CRIT_MULT,
+  CRIT_SLOTS,
+  ENEMY_AI,
+  TEAM_SIZE,
+  ALLY_VISION,
+  classToRadians,
+} from './config.js'
+
+function angleDiff(a, b) {
+  let d = (a - b) % (Math.PI * 2)
+  if (d > Math.PI) d -= Math.PI * 2
+  if (d < -Math.PI) d += Math.PI * 2
+  return d
+}
+
+function segHitsCircle(x1, y1, x2, y2, cx, cy, r) {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const l2 = dx * dx + dy * dy
+  let t = l2 ? ((cx - x1) * dx + (cy - y1) * dy) / l2 : 0
+  t = Math.max(0, Math.min(1, t))
+  const px = x1 + t * dx
+  const py = y1 + t * dy
+  return Math.hypot(px - cx, py - cy) <= r
+}
+
+// пересечение отрезка с осевым прямоугольником (Liang–Barsky)
+function segHitsRect(x1, y1, x2, y2, minx, miny, maxx, maxy) {
+  let t0 = 0
+  let t1 = 1
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0
+    const r = q / p
+    if (p < 0) {
+      if (r > t1) return false
+      if (r > t0) t0 = r
+    } else {
+      if (r < t0) return false
+      if (r < t1) t1 = r
+    }
+    return true
+  }
+  if (!clip(-dx, x1 - minx)) return false
+  if (!clip(dx, maxx - x1)) return false
+  if (!clip(-dy, y1 - miny)) return false
+  if (!clip(dy, maxy - y1)) return false
+  return t0 <= t1
+}
+
+const DEG = 180 / Math.PI
+const TEAM = { ALLY: 0, ENEMY: 1 }
+
+// позывные ботов (дизайн-прототип): союзники — экипажи ИИ, враги — «живые» ники
+const ALLY_NAMES = ['ст. сержант Ефимов', 'ефрейтор Козлов', 'мл. сержант Орлов', 'рядовой Багиров', 'сержант Чистяков']
+const ENEMY_NAMES = ['Hans_77', 'Wolf_K', 'Otto_Panzer', 'Schnell88', 'Gretta_X', 'Fritz_22', 'Klaus_M', 'Dieter_9']
+
+/**
+ * 5v5: игрок + союзные боты против вражеских ботов на карте с препятствиями,
+ * стенами-укрытиями и туманом войны. Механика наведения через линию сведения.
+ */
+export class Game {
+  constructor() {
+    this.app = new Application()
+    this.t = 0
+
+    this.tank = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 + 700 }
+    this.hullAngle = -Math.PI / 2
+    this.speed = 0
+    this.hp = PLAYER_MAX_HP
+    this.joystick = { x: 0, y: 0, active: false }
+    this.keys = { fwd: false, back: false, left: false, right: false }
+    this.tankRadius = 22
+
+    this.setClass(DEFAULT_CLASS)
+    this.ready = true
+    this.reloadRemaining = 0
+
+    const c = MAP_SIZE / 2
+    this.obstacles = OBSTACLES.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
+    this.walls = WALLS.map((w) => ({
+      cx: c + w.dx,
+      cy: c + w.dy,
+      hw: w.w / 2,
+      hh: w.h / 2,
+    }))
+    this.bases = BASES.map((b) => ({ team: b.team, x: c + b.dx, y: c + b.dy, r: b.r }))
+    this.caps = CAPTURE_POINTS.map((p) => ({
+      id: p.id,
+      x: c + p.dx,
+      y: c + p.dy,
+      r: p.r,
+      owner: null, // null | 0 (союз) | 1 (враг)
+      capper: null, // кто сейчас захватывает
+      progress: 0, // 0..1
+    }))
+    this.capTimer = 0
+
+    // миникарта (2D-канвас из Battle.vue)
+    this.minimap = null
+    this.minimapCtx = null
+
+    // команды: ALLY — игрок + (TEAM_SIZE-1) ботов, ENEMY — TEAM_SIZE ботов
+    this.bots = []
+    let id = 1
+    for (let i = 0; i < TEAM_SIZE - 1; i++) {
+      this.bots.push(this._makeBot(id++, TEAM.ALLY, i, TEAM_SIZE - 1))
+    }
+    for (let i = 0; i < TEAM_SIZE; i++) {
+      this.bots.push(this._makeBot(id++, TEAM.ENEMY, i, TEAM_SIZE))
+    }
+    this.shotFx = []
+
+    this.kills = 0
+    this.deaths = 0
+    this.shots = 0
+    this.hits = 0
+    this.damageDealt = 0
+    this.score = { ally: 0, enemy: 0 }
+
+    // матч (Фаза 4)
+    this.matchTime = MATCH_TIME
+    this.matchOver = false
+    this.result = null // 'victory' | 'defeat' | 'draw'
+    this.paused = false // стартовый отсчёт держит бой на паузе
+
+    // повреждение модулей (Фаза 5): секунды до починки на каждый слот (0 = исправен)
+    this.crippled = { gun: 0, turret: 0, engine: 0, tracks: 0, radio: 0 }
+    this.sweep = 0 // текущее смещение линии сведения (замирает при крите башни)
+
+    this.lastShot = null
+    this.hurtFlash = 0
+
+    this.onState = () => {}
+    this.onShot = () => {}
+    this.onCrit = () => {}
+    this.onKill = () => {} // фраг игрока → имя жертвы (килл-фид HUD)
+    this._gridDrawn = false
+  }
+
+  _spawnPoint(team, i, n) {
+    // союзники снизу карты, враги сверху; разносим по горизонтали
+    const c = MAP_SIZE / 2
+    const spread = ((i - (n - 1) / 2) / Math.max(1, n)) * 900
+    const y = team === TEAM.ALLY ? c + 560 : c - 560
+    return { x: c + spread, y }
+  }
+
+  _makeBot(id, team, i, n) {
+    const p = this._spawnPoint(team, i, n)
+    return {
+      id,
+      team,
+      name: team === TEAM.ALLY ? ALLY_NAMES[i % ALLY_NAMES.length] : ENEMY_NAMES[i % ENEMY_NAMES.length],
+      x: p.x,
+      y: p.y,
+      i,
+      n,
+      hull: team === TEAM.ALLY ? -Math.PI / 2 : Math.PI / 2,
+      hp: ENEMY_MAX_HP,
+      alive: true,
+      fireCd: 1 + i * 0.2,
+      flash: 0,
+      spotted: false,
+      respawn: 0,
+    }
+  }
+
+  setClass(id) {
+    const base = TANK_CLASSES[id] || TANK_CLASSES[DEFAULT_CLASS]
+    this.setStats(base)
+  }
+
+  // Принимает deg-форму статов (класс + модификаторы модулей, см. store.loadoutStats).
+  setStats(base) {
+    const src = base && base.sectorDeg ? base : TANK_CLASSES[DEFAULT_CLASS]
+    this.cls = classToRadians(src)
+    this.ready = true
+    this.reloadRemaining = 0
+  }
+
+  async mount(container) {
+    await this.app.init({
+      resizeTo: container,
+      background: 0x0e1116,
+      antialias: true,
+      resolution: window.devicePixelRatio || 1,
+      autoDensity: true,
+    })
+    container.appendChild(this.app.canvas)
+
+    this.world = new Container()
+    this.bg = new Graphics()
+    this.terrain = new Graphics()
+    this.gfx = new Graphics()
+    this.world.addChild(this.bg, this.terrain, this.gfx)
+    this.app.stage.addChild(this.world)
+
+    this.fog = new Sprite(this._makeFogTexture())
+    this.fog.anchor.set(0.5)
+    this.app.stage.addChild(this.fog)
+
+    // имена ботов — экранный слой поверх тумана (мир вращается, текст — нет)
+    this.labels = new Container()
+    this.app.stage.addChild(this.labels)
+    this.botLabels = new Map()
+    for (const b of this.bots) {
+      const t = new Text({
+        text: b.name,
+        style: {
+          fontFamily: 'Russo One, sans-serif',
+          fontSize: 11,
+          fill: b.team === TEAM.ALLY ? 0x4da3ff : 0xff8d7d,
+          stroke: { color: 0x000000, width: 3 },
+          letterSpacing: 0.5,
+        },
+      })
+      t.anchor.set(0.5, 1)
+      t.visible = false
+      this.labels.addChild(t)
+      this.botLabels.set(b.id, t)
+    }
+
+    this._bindKeyboard()
+    this.app.ticker.add((ticker) => this._update(ticker.deltaMS / 1000))
+    this._emitState()
+  }
+
+  _bindKeyboard() {
+    const setKey = (e, down) => {
+      switch (e.code) {
+        case 'KeyW':
+        case 'ArrowUp':
+          this.keys.fwd = down; break
+        case 'KeyS':
+        case 'ArrowDown':
+          this.keys.back = down; break
+        case 'KeyA':
+        case 'ArrowLeft':
+          this.keys.left = down; break
+        case 'KeyD':
+        case 'ArrowRight':
+          this.keys.right = down; break
+        case 'Space':
+          if (down) this.fire()
+          e.preventDefault(); break
+        default:
+          return
+      }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code))
+        e.preventDefault()
+    }
+    this._onKeyDown = (e) => setKey(e, true)
+    this._onKeyUp = (e) => setKey(e, false)
+    window.addEventListener('keydown', this._onKeyDown)
+    window.addEventListener('keyup', this._onKeyUp)
+  }
+
+  _makeFogTexture() {
+    const size = 1024
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = size
+    const ctx = canvas.getContext('2d')
+    const r = size / 2
+    const g = ctx.createRadialGradient(r, r, r * 0.34, r, r, r)
+    g.addColorStop(0, 'rgba(8,10,14,0)')
+    g.addColorStop(0.78, 'rgba(8,10,14,0.72)')
+    g.addColorStop(1, 'rgba(8,10,14,0.96)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, size, size)
+    return Texture.from(canvas)
+  }
+
+  // --- управление ---
+
+  setJoystick(x, y, active) {
+    this.joystick.x = x
+    this.joystick.y = y
+    this.joystick.active = active
+  }
+
+  setMinimap(canvas) {
+    this.minimap = canvas
+    this.minimapCtx = canvas ? canvas.getContext('2d') : null
+  }
+
+  // все живые юниты (игрок + боты) — для захвата точек
+  _allUnits() {
+    const out = []
+    if (this.hp > 0) out.push({ team: TEAM.ALLY, x: this.tank.x, y: this.tank.y, isPlayer: true })
+    for (const b of this.bots) if (b.alive) out.push(b)
+    return out
+  }
+
+  // прокси игрока как боевой единицы (для таргетинга ботов)
+  _playerUnit() {
+    return { isPlayer: true, team: TEAM.ALLY, x: this.tank.x, y: this.tank.y, hp: this.hp }
+  }
+
+  _enemiesOf(team) {
+    const out = []
+    if (team !== TEAM.ALLY && this.hp > 0) out.push(this._playerUnit())
+    for (const b of this.bots) if (b.alive && b.team !== team) out.push(b)
+    return out
+  }
+
+  fire() {
+    if (this.matchOver || this.paused) return
+    if (this.crippled.gun > 0) {
+      this.onShot({ type: 'blocked', reason: 'gun' })
+      return
+    }
+    if (!this.ready) {
+      this.onShot({ type: 'blocked' })
+      return
+    }
+    this.ready = false
+    this.reloadRemaining = this.cls.reload
+    this.shots++
+
+    const tx = this.tank.x
+    const ty = this.tank.y
+    const lineAngle = this.hullAngle + this._sweepOffset()
+    let best = null
+    let anyInRange = false
+    let anyInSector = false
+    let anyLos = false
+
+    for (const b of this.bots) {
+      if (!b.alive || b.team === TEAM.ALLY) continue // бьём только врагов
+      const ang = Math.atan2(b.y - ty, b.x - tx)
+      const dist = Math.hypot(b.x - tx, b.y - ty)
+      const inRange = dist <= this.cls.range
+      const inSector = inRange && Math.abs(angleDiff(ang, this.hullAngle)) <= this.cls.sectorHalf + 0.01
+      const los = !this._lineBlocked(tx, ty, b.x, b.y)
+      const err = Math.abs(angleDiff(ang, lineAngle))
+      if (inRange) anyInRange = true
+      if (inSector) anyInSector = true
+      if (inSector && los) anyLos = true
+      if (inSector && los && err <= this.cls.tolerance) {
+        if (!best || err < best.err) best = { b, err }
+      }
+    }
+
+    this.lastShot = { angle: lineAngle, hit: !!best, age: 0 }
+
+    if (best) {
+      this.hits++
+      this.damageDealt += Math.min(this.cls.damage, best.b.hp)
+      best.b.hp -= this.cls.damage
+      best.b.flash = 0.25
+      if (best.b.hp <= 0) {
+        this.kills++
+        this.score.ally++
+        this._killBot(best.b)
+        this.onKill(best.b.name)
+      }
+    }
+
+    let reason = 'far'
+    if (anyLos) reason = 'line'
+    else if (anyInSector) reason = 'los'
+    else if (anyInRange) reason = 'sector'
+
+    this.onShot({ type: best ? 'hit' : 'miss', inRange: anyInRange, inSector: anyInSector, los: anyLos, reason })
+    this._emitState()
+  }
+
+  // --- геометрия препятствий ---
+
+  _lineBlocked(x1, y1, x2, y2) {
+    for (const o of this.obstacles) {
+      if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
+    }
+    for (const w of this.walls) {
+      if (segHitsRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true
+    }
+    return false
+  }
+
+  _resolveCollisions(pos, radius) {
+    for (const o of this.obstacles) {
+      if (o.kind !== 'block') continue
+      const dx = pos.x - o.x
+      const dy = pos.y - o.y
+      const d = Math.hypot(dx, dy)
+      const min = o.r + radius
+      if (d < min && d > 0.0001) {
+        pos.x = o.x + (dx / d) * min
+        pos.y = o.y + (dy / d) * min
+      }
+    }
+    for (const w of this.walls) {
+      const minx = w.cx - w.hw
+      const maxx = w.cx + w.hw
+      const miny = w.cy - w.hh
+      const maxy = w.cy + w.hh
+      const nx = Math.max(minx, Math.min(pos.x, maxx))
+      const ny = Math.max(miny, Math.min(pos.y, maxy))
+      const dx = pos.x - nx
+      const dy = pos.y - ny
+      const d = Math.hypot(dx, dy)
+      if (d > 0.0001 && d < radius) {
+        pos.x = nx + (dx / d) * radius
+        pos.y = ny + (dy / d) * radius
+      } else if (d <= 0.0001) {
+        // центр внутри стены — выталкиваем по ближайшей грани
+        const left = pos.x - minx
+        const right = maxx - pos.x
+        const top = pos.y - miny
+        const bottom = maxy - pos.y
+        const m = Math.min(left, right, top, bottom)
+        if (m === left) pos.x = minx - radius
+        else if (m === right) pos.x = maxx + radius
+        else if (m === top) pos.y = miny - radius
+        else pos.y = maxy + radius
+      }
+    }
+    const m = 60
+    pos.x = Math.max(m, Math.min(MAP_SIZE - m, pos.x))
+    pos.y = Math.max(m, Math.min(MAP_SIZE - m, pos.y))
+  }
+
+  _killBot(b) {
+    b.alive = false
+    b.hp = 0
+    b.respawn = 3
+  }
+
+  _respawnBot(b) {
+    const p = this._spawnPoint(b.team, b.i, b.n)
+    b.x = p.x
+    b.y = p.y
+    b.hp = ENEMY_MAX_HP
+    b.alive = true
+    b.fireCd = 1.2
+  }
+
+  _respawnPlayer() {
+    this.tank.x = MAP_SIZE / 2
+    this.tank.y = MAP_SIZE / 2 + 700
+    this.hp = PLAYER_MAX_HP
+    this.speed = 0
+    for (const s of CRIT_SLOTS) this.crippled[s] = 0 // на возрождении модули чинятся
+  }
+
+  // выводит случайный исправный модуль из строя на CRIT_TIME секунд
+  _critPlayer() {
+    const free = CRIT_SLOTS.filter((s) => this.crippled[s] <= 0)
+    if (!free.length) return
+    const slot = free[Math.floor(Math.random() * free.length)]
+    this.crippled[slot] = CRIT_TIME // огонь блокируется в fire() пока gun повреждён
+    this.onCrit(slot)
+  }
+
+  // --- цикл ---
+
+  _sweepOffset() {
+    // при крите башни линия замирает (this.sweep не обновляется в _update)
+    if (this.crippled.turret > 0) return this.sweep
+    const p = (this.t % this.cls.sweepPeriod) / this.cls.sweepPeriod
+    const tri = p < 0.5 ? 4 * p - 1 : 3 - 4 * p
+    this.sweep = this.cls.sectorHalf * tri
+    return this.sweep
+  }
+
+  _vision() {
+    return this.cls.vision * (this.crippled.radio > 0 ? RADIO_CRIT_MULT : 1)
+  }
+
+  setPaused(v) {
+    this.paused = v
+  }
+
+  _checkMatchEnd() {
+    if (this.matchOver) return
+    const limitHit = this.score.ally >= SCORE_LIMIT || this.score.enemy >= SCORE_LIMIT
+    if (!limitHit && this.matchTime > 0) return
+    this.matchOver = true
+    this.result =
+      this.score.ally > this.score.enemy
+        ? 'victory'
+        : this.score.ally < this.score.enemy
+          ? 'defeat'
+          : 'draw'
+  }
+
+  _update(dt) {
+    dt = Math.min(dt, 0.05)
+    // на паузе (стартовый отсчёт) или после конца матча — только рисуем
+    if (this.paused || this.matchOver) {
+      this._draw()
+      return
+    }
+    this.t += dt
+    this.matchTime = Math.max(0, this.matchTime - dt)
+
+    for (const s of CRIT_SLOTS) {
+      if (this.crippled[s] > 0) this.crippled[s] = Math.max(0, this.crippled[s] - dt)
+    }
+
+    this._moveTank(dt)
+    for (const b of this.bots) this._updateBot(b, dt)
+    this._updateCaptures(dt)
+
+    // засвет врагов: видит игрок или любой живой союзник
+    for (const b of this.bots) {
+      if (b.team !== TEAM.ENEMY) continue
+      b.spotted = b.alive && this._spottedByTeam(b)
+    }
+
+    if (!this.ready) {
+      this.reloadRemaining -= dt
+      if (this.reloadRemaining <= 0) {
+        this.reloadRemaining = 0
+        this.ready = true
+        this._emitState()
+      }
+    }
+
+    if (this.lastShot) {
+      this.lastShot.age += dt
+      if (this.lastShot.age > 0.18) this.lastShot = null
+    }
+    for (const s of this.shotFx) s.age += dt
+    this.shotFx = this.shotFx.filter((s) => s.age <= 0.16)
+    for (const b of this.bots) if (b.flash > 0) b.flash = Math.max(0, b.flash - dt)
+    if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - dt)
+
+    this._checkMatchEnd()
+    this._draw()
+    this.onState(this._snapshot())
+  }
+
+  _updateCaptures(dt) {
+    const units = this._allUnits()
+    for (const cap of this.caps) {
+      let ally = 0
+      let enemy = 0
+      for (const u of units) {
+        if (Math.hypot(u.x - cap.x, u.y - cap.y) <= cap.r) {
+          if (u.team === TEAM.ALLY) ally++
+          else enemy++
+        }
+      }
+      // захватывает только команда, что одна на точке
+      let capTeam = null
+      if (ally > 0 && enemy === 0) capTeam = TEAM.ALLY
+      else if (enemy > 0 && ally === 0) capTeam = TEAM.ENEMY
+
+      if (capTeam !== null && cap.owner !== capTeam) {
+        if (cap.capper === capTeam) {
+          cap.progress += dt / CAP_TIME
+          if (cap.progress >= 1) {
+            cap.progress = 1
+            cap.owner = capTeam
+          }
+        } else {
+          // перебиваем чужой прогресс, потом копим свой
+          cap.progress -= dt / CAP_TIME
+          if (cap.progress <= 0) {
+            cap.progress = 0
+            cap.capper = capTeam
+          }
+        }
+      }
+    }
+
+    // захваченные точки периодически дают команде очки (доминирование)
+    this.capTimer += dt
+    if (this.capTimer >= CAP_TICK) {
+      this.capTimer -= CAP_TICK
+      for (const cap of this.caps) {
+        if (cap.owner === TEAM.ALLY) this.score.ally++
+        else if (cap.owner === TEAM.ENEMY) this.score.enemy++
+      }
+    }
+  }
+
+  _spottedByTeam(enemy) {
+    // игрок
+    if (this.hp > 0) {
+      const d = Math.hypot(enemy.x - this.tank.x, enemy.y - this.tank.y)
+      if (d <= this._vision() && !this._lineBlocked(this.tank.x, this.tank.y, enemy.x, enemy.y)) return true
+    }
+    // союзные боты
+    for (const a of this.bots) {
+      if (!a.alive || a.team !== TEAM.ALLY) continue
+      const d = Math.hypot(enemy.x - a.x, enemy.y - a.y)
+      if (d <= ALLY_VISION && !this._lineBlocked(a.x, a.y, enemy.x, enemy.y)) return true
+    }
+    return false
+  }
+
+  _moveTank(dt) {
+    const j = this.joystick
+    let steer = 0
+    let throttle = 0
+    if (j.active) {
+      steer = Math.abs(j.x) < 0.12 ? 0 : j.x
+      const fwd = -j.y
+      throttle = fwd < 0.12 ? 0 : Math.min(1, fwd)
+    } else {
+      const k = this.keys
+      steer = (k.right ? 1 : 0) - (k.left ? 1 : 0)
+      throttle = k.fwd ? 1 : 0
+      if (k.back && !k.fwd) throttle = 0
+    }
+
+    if (this.crippled.tracks > 0) steer = 0 // сбита гусеница — нет поворота
+    if (this.crippled.engine > 0) throttle = 0 // заглушён двигатель — нет хода
+
+    this.hullAngle += steer * this.cls.turnRate * dt
+
+    const speedTarget = this.cls.maxSpeed * throttle
+    const da = this.cls.accel * dt
+    if (this.speed < speedTarget) this.speed = Math.min(speedTarget, this.speed + da)
+    else this.speed = Math.max(speedTarget, this.speed - da * 1.4)
+
+    this.tank.x += Math.cos(this.hullAngle) * this.speed * dt
+    this.tank.y += Math.sin(this.hullAngle) * this.speed * dt
+    this._resolveCollisions(this.tank, this.tankRadius)
+  }
+
+  // --- ИИ бота (общий для обеих команд) ---
+
+  _updateBot(b, dt) {
+    const ai = ENEMY_AI
+    if (!b.alive) {
+      b.respawn -= dt
+      if (b.respawn <= 0) this._respawnBot(b)
+      return
+    }
+
+    // ближайший живой враг своей команды
+    const foes = this._enemiesOf(b.team)
+    let target = null
+    let bestD = Infinity
+    for (const f of foes) {
+      const d = Math.hypot(f.x - b.x, f.y - b.y)
+      if (d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
+        bestD = d
+        target = f
+      }
+    }
+
+    if (b.fireCd > 0) b.fireCd -= dt
+
+    if (target) {
+      const ang = Math.atan2(target.y - b.y, target.x - b.x)
+      const diff = angleDiff(ang, b.hull)
+      const maxTurn = ai.turnRate * dt
+      b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
+
+      let move = 0
+      if (bestD > ai.idealRange * 1.15) move = 1
+      else if (bestD < ai.idealRange * 0.8) move = -1
+      const strafe = Math.sin(this.t * 1.3 + b.id * 1.7) * 0.5
+
+      b.x += Math.cos(b.hull) * move * ai.speed * dt
+      b.y += Math.sin(b.hull) * move * ai.speed * dt
+      b.x += Math.cos(b.hull + Math.PI / 2) * strafe * ai.speed * dt
+      b.y += Math.sin(b.hull + Math.PI / 2) * strafe * ai.speed * dt
+
+      const inArc = Math.abs(diff) <= (ai.sectorHalfDeg * Math.PI) / 180
+      if (inArc && b.fireCd <= 0) {
+        b.fireCd = ai.fireCd
+        this.shotFx.push({ x1: b.x, y1: b.y, x2: target.x, y2: target.y, age: 0 })
+        if (Math.random() < ai.hitChance) this._damageUnit(target, ai.damage, b.team)
+      }
+    } else {
+      // никого не видит — едет к центру арены
+      const c = MAP_SIZE / 2
+      const a = Math.atan2(c - b.y, c - b.x)
+      const diff = angleDiff(a, b.hull)
+      b.hull += Math.max(-ai.turnRate * dt, Math.min(ai.turnRate * dt, diff))
+      b.x += Math.cos(b.hull) * ai.speed * 0.5 * dt
+      b.y += Math.sin(b.hull) * ai.speed * 0.5 * dt
+    }
+
+    this._resolveCollisions(b, ai.radius)
+  }
+
+  _damageUnit(unit, dmg, byTeam) {
+    if (unit.isPlayer) {
+      this.hp -= dmg
+      this.hurtFlash = 0.25
+      if (this.hp > 0 && Math.random() < CRIT_CHANCE) this._critPlayer()
+      if (this.hp <= 0) {
+        this.deaths++
+        this.score.enemy++
+        this._respawnPlayer()
+        this._emitState()
+      }
+    } else {
+      unit.hp -= dmg
+      unit.flash = 0.25
+      if (unit.hp <= 0) {
+        if (byTeam === TEAM.ALLY) this.score.ally++
+        else this.score.enemy++
+        this._killBot(unit)
+      }
+    }
+  }
+
+  _emitState() {
+    this.onState(this._snapshot())
+  }
+
+  _snapshot() {
+    const reload01 = this.ready ? 1 : 1 - this.reloadRemaining / this.cls.reload
+    return {
+      kills: this.kills,
+      deaths: this.deaths,
+      shots: this.shots,
+      hits: this.hits,
+      accuracy: this.shots ? Math.round((this.hits / this.shots) * 100) : 0,
+      playerHp: Math.max(0, this.hp),
+      playerMaxHp: PLAYER_MAX_HP,
+      allyScore: this.score.ally,
+      enemyScore: this.score.enemy,
+      alliesAlive: 1 + this.bots.filter((b) => b.team === TEAM.ALLY && b.alive).length,
+      enemiesAlive: this.bots.filter((b) => b.team === TEAM.ENEMY && b.alive).length,
+      reload01,
+      ready: this.ready,
+      classId: this.cls.id,
+      damageDealt: Math.round(this.damageDealt),
+      matchTime: Math.ceil(this.matchTime),
+      matchOver: this.matchOver,
+      result: this.result,
+      scoreLimit: SCORE_LIMIT,
+      crippled: {
+        gun: Math.ceil(this.crippled.gun),
+        turret: Math.ceil(this.crippled.turret),
+        engine: Math.ceil(this.crippled.engine),
+        tracks: Math.ceil(this.crippled.tracks),
+        radio: Math.ceil(this.crippled.radio),
+      },
+    }
+  }
+
+  // --- отрисовка ---
+
+  _draw() {
+    const w = this.app.screen.width
+    const h = this.app.screen.height
+
+    if (!this._gridDrawn) {
+      this._drawMap()
+      this._drawTerrain()
+      this._gridDrawn = true
+    }
+
+    const camX = w / 2
+    const camY = h * 0.66
+    this.world.pivot.set(this.tank.x, this.tank.y)
+    this.world.position.set(camX, camY)
+    this.world.rotation = -Math.PI / 2 - this.hullAngle
+
+    this.fog.position.set(camX, camY)
+    const fogD = this._vision() * 2 * 1.15
+    this.fog.width = fogD
+    this.fog.height = fogD
+
+    const g = this.gfx
+    g.clear()
+
+    const tx = this.tank.x
+    const ty = this.tank.y
+    const hull = this.hullAngle
+    const half = this.cls.sectorHalf
+    const L = this.cls.range
+
+    // точки захвата (под всем)
+    for (const cap of this.caps) {
+      const own = cap.owner === 0 ? 0x5b9cff : cap.owner === 1 ? 0xff6a6a : 0x7b8694
+      g.circle(cap.x, cap.y, cap.r).fill({ color: own, alpha: 0.1 })
+      g.circle(cap.x, cap.y, cap.r).stroke({ width: 3, color: own, alpha: 0.55 })
+      if (cap.progress > 0 && cap.progress < 1) {
+        const pc = cap.capper === 0 ? 0x5b9cff : 0xff6a6a
+        g.moveTo(cap.x, cap.y)
+        g.arc(cap.x, cap.y, cap.r * 0.72, -Math.PI / 2, -Math.PI / 2 + cap.progress * Math.PI * 2)
+        g.lineTo(cap.x, cap.y)
+        g.fill({ color: pc, alpha: 0.25 })
+      }
+    }
+
+    g.moveTo(tx, ty)
+    g.arc(tx, ty, L, hull - half, hull + half)
+    g.lineTo(tx, ty)
+    g.fill({ color: 0xf2a50c, alpha: 0.07 })
+    for (const a of [hull - half, hull + half]) {
+      g.moveTo(tx, ty)
+        .lineTo(tx + Math.cos(a) * L, ty + Math.sin(a) * L)
+        .stroke({ width: 2, color: 0xf2a50c, alpha: 0.35 })
+    }
+
+    const lineA = hull + this._sweepOffset()
+    g.moveTo(tx, ty)
+      .lineTo(tx + Math.cos(lineA) * L, ty + Math.sin(lineA) * L)
+      .stroke({ width: 4, color: 0xffd866, alpha: 0.95, cap: 'round' })
+
+    // боты: союзники видны всегда, враги — только при засвете
+    for (const b of this.bots) {
+      if (!b.alive) continue
+      const isAlly = b.team === TEAM.ALLY
+      if (!isAlly && !b.spotted) continue
+      const base = isAlly ? 0x4a82c8 : 0xff7043
+      const col = b.flash > 0 ? 0xffffff : base
+      g.circle(b.x, b.y, 18).fill(col)
+      g.circle(b.x, b.y, 18).stroke({ width: 2, color: 0x000000, alpha: 0.4 })
+      g.moveTo(b.x, b.y)
+        .lineTo(b.x + Math.cos(b.hull) * 24, b.y + Math.sin(b.hull) * 24)
+        .stroke({ width: 5, color: col })
+      const bw = 40
+      const hpCol = isAlly ? 0x5b9cff : 0x5bd860
+      g.rect(b.x - bw / 2, b.y - 30, bw, 4).fill({ color: 0x000000, alpha: 0.5 })
+      g.rect(b.x - bw / 2, b.y - 30, bw * (Math.max(0, b.hp) / ENEMY_MAX_HP), 4).fill(hpCol)
+    }
+
+    for (const s of this.shotFx) {
+      const k = 1 - s.age / 0.16
+      g.moveTo(s.x1, s.y1).lineTo(s.x2, s.y2).stroke({ width: 3, color: 0xff5252, alpha: 0.7 * k })
+    }
+
+    if (this.lastShot) {
+      const k = 1 - this.lastShot.age / 0.18
+      const col = this.lastShot.hit ? 0x5bd860 : 0xff5252
+      const a = this.lastShot.angle
+      g.moveTo(tx, ty)
+        .lineTo(tx + Math.cos(a) * L, ty + Math.sin(a) * L)
+        .stroke({ width: 6 * k + 2, color: col, alpha: 0.85 * k })
+    }
+
+    this._drawHull(g, tx, ty, hull)
+    this._updateLabels()
+    this._drawMinimap()
+  }
+
+  // имена над танками: союзники всегда, враги при засвете
+  _updateLabels() {
+    if (!this.botLabels) return
+    for (const b of this.bots) {
+      const t = this.botLabels.get(b.id)
+      if (!t) continue
+      const show = b.alive && (b.team === TEAM.ALLY || b.spotted)
+      t.visible = show
+      if (show) {
+        const p = this.world.toGlobal({ x: b.x, y: b.y })
+        t.position.set(p.x, p.y - 36)
+      }
+    }
+  }
+
+  _drawMinimap() {
+    const ctx = this.minimapCtx
+    if (!ctx) return
+    const S = this.minimap.width
+    const k = S / MAP_SIZE
+    ctx.clearRect(0, 0, S, S)
+    ctx.fillStyle = '#0c0f14'
+    ctx.fillRect(0, 0, S, S)
+
+    // стены
+    ctx.fillStyle = 'rgba(150,160,175,0.4)'
+    for (const w of this.walls) ctx.fillRect((w.cx - w.hw) * k, (w.cy - w.hh) * k, w.hw * 2 * k, w.hh * 2 * k)
+    // препятствия
+    for (const o of this.obstacles) {
+      ctx.fillStyle = o.kind === 'bush' ? 'rgba(70,140,80,0.45)' : 'rgba(120,128,140,0.45)'
+      ctx.beginPath()
+      ctx.arc(o.x * k, o.y * k, o.r * k, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // базы
+    for (const b of this.bases) {
+      ctx.strokeStyle = b.team === 0 ? 'rgba(91,156,255,0.85)' : 'rgba(255,106,106,0.85)'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(b.x * k, b.y * k, b.r * k, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    // точки захвата с буквами
+    ctx.font = `bold ${Math.round(S * 0.075)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (const cap of this.caps) {
+      const col = cap.owner === 0 ? '#5b9cff' : cap.owner === 1 ? '#ff6a6a' : '#9aa3b0'
+      ctx.fillStyle = col
+      ctx.beginPath()
+      ctx.arc(cap.x * k, cap.y * k, Math.max(5, cap.r * k * 0.55), 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#0c0f14'
+      ctx.fillText(cap.id, cap.x * k, cap.y * k)
+    }
+    // юниты-боты
+    for (const b of this.bots) {
+      if (!b.alive) continue
+      if (b.team === TEAM.ENEMY && !b.spotted) continue
+      ctx.fillStyle = b.team === TEAM.ALLY ? '#5b9cff' : '#ff5252'
+      ctx.beginPath()
+      ctx.arc(b.x * k, b.y * k, 3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // игрок (треугольник по курсу)
+    const px = this.tank.x * k
+    const py = this.tank.y * k
+    const a = this.hullAngle
+    ctx.fillStyle = '#f2a50c'
+    ctx.beginPath()
+    ctx.moveTo(px + Math.cos(a) * 7, py + Math.sin(a) * 7)
+    ctx.lineTo(px + Math.cos(a + 2.5) * 5, py + Math.sin(a + 2.5) * 5)
+    ctx.lineTo(px + Math.cos(a - 2.5) * 5, py + Math.sin(a - 2.5) * 5)
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+    ctx.lineWidth = 1
+    ctx.strokeRect(0.5, 0.5, S - 1, S - 1)
+  }
+
+  _drawHull(g, x, y, a) {
+    const len = 30
+    const wid = 22
+    const cos = Math.cos(a)
+    const sin = Math.sin(a)
+    const fx = cos * len
+    const fy = sin * len
+    const px = -sin * wid
+    const py = cos * wid
+    const body = [
+      x + fx + px, y + fy + py,
+      x + fx - px, y + fy - py,
+      x - fx - px, y - fy - py,
+      x - fx + px, y - fy + py,
+    ]
+    const hullColor = this.hurtFlash > 0 ? 0xff8a8a : 0xf2a50c
+    g.poly(body).fill(hullColor)
+    g.poly(body).stroke({ width: 2.5, color: 0xffd866 }) // светлый контур = это ты
+    g.circle(x, y, 13).fill(0x3d3110)
+    g.moveTo(x, y)
+      .lineTo(x + cos * 34, y + sin * 34)
+      .stroke({ width: 7, color: 0x3d3110, cap: 'round' })
+  }
+
+  _drawMap() {
+    const g = this.bg
+    g.clear()
+    g.rect(0, 0, MAP_SIZE, MAP_SIZE).fill(0x10141b)
+    const step = 80
+    for (let x = 0; x <= MAP_SIZE; x += step) g.moveTo(x, 0).lineTo(x, MAP_SIZE)
+    for (let y = 0; y <= MAP_SIZE; y += step) g.moveTo(0, y).lineTo(MAP_SIZE, y)
+    g.stroke({ width: 1, color: 0xffffff, alpha: 0.05 })
+    g.rect(0, 0, MAP_SIZE, MAP_SIZE).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
+  }
+
+  _drawTerrain() {
+    const g = this.terrain
+    g.clear()
+    for (const o of this.obstacles) {
+      if (o.kind === 'bush') {
+        g.circle(o.x, o.y, o.r).fill({ color: 0x2f6b3a, alpha: 0.85 })
+        g.circle(o.x, o.y, o.r).stroke({ width: 2, color: 0x224f2c })
+      } else {
+        g.circle(o.x, o.y, o.r).fill(0x4a4f57)
+        g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2c3036 })
+      }
+    }
+    // стены-укрытия (бетон)
+    for (const w of this.walls) {
+      g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).fill(0x5a6068)
+      g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).stroke({ width: 3, color: 0x33373d })
+    }
+    // базы команд
+    for (const b of this.bases) {
+      const col = b.team === 0 ? 0x5b9cff : 0xff6a6a
+      g.circle(b.x, b.y, b.r).fill({ color: col, alpha: 0.08 })
+      g.circle(b.x, b.y, b.r).stroke({ width: 4, color: col, alpha: 0.4 })
+      g.circle(b.x, b.y, 14).fill(col)
+    }
+  }
+
+  destroy() {
+    window.removeEventListener('keydown', this._onKeyDown)
+    window.removeEventListener('keyup', this._onKeyUp)
+    this.app.destroy(true, { children: true })
+  }
+}

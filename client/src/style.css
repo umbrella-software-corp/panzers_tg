@@ -1,0 +1,430 @@
+/* ============ PANZER TG — глобальные токены и общие стили ============
+   Военный трафаретный стиль (порт дизайн-прототипа design-ref/styles.css):
+   gunmetal-olive + янтарь + сигнальный красный + крафт-бумага. */
+@import url('https://fonts.googleapis.com/css2?family=Russo+One&family=Golos+Text:wght@400;500;600;700&family=Press+Start+2P&display=swap');
+
+:root {
+  /* палитра */
+  --bg-0: #0b0e0a; /* самый глубокий фон */
+  --bg-1: #11150f; /* фон экрана */
+  --bg-2: #181d15; /* панель */
+  --bg-3: #20261c; /* приподнятая панель */
+  --line: #2c3326; /* волосок */
+  --line-strong: #3d4633;
+  --ink: #e8e6da; /* основной текст, тёплый белый */
+  --ink-dim: #9aa08c; /* вторичный, оливково-серый */
+  --ink-faint: #5c634f;
+  --amber: #f2a50c;
+  --amber-hi: #ffc83d;
+  --amber-deep: #b87708;
+  --red: #ff4b33;
+  --red-deep: #c22f1d;
+  --green: #8db84a;
+  --blue: #4da3ff; /* союзник */
+  --paper: #ede3c8; /* крафт-бумага донесений */
+  --paper-ink: #211d12;
+
+  /* совместимость с прежними компонентами (бой/ангар используют var(--accent)) */
+  --bg: var(--bg-1);
+  --accent: var(--amber);
+  --hit: var(--green);
+  --miss: var(--red);
+
+  --font-display: 'Russo One', sans-serif;
+  --font-body: 'Golos Text', sans-serif;
+  --font-pixel: 'Press Start 2P', monospace;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  /* безопасные зоны: Telegram-инсеты (из tg.js) или env() в браузере */
+  --tg-top: 0px;
+  --tg-bottom: 0px;
+  --tg-left: 0px;
+  --tg-right: 0px;
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-top));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-bottom));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--tg-left));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--tg-right));
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-1);
+  font-family: var(--font-body);
+  color: var(--ink);
+  touch-action: none;
+}
+
+/* ============ каркас экрана ============ */
+.pz-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  overflow: hidden;
+  padding-top: var(--safe-top);
+}
+/* лёгкая текстура поля: сетка */
+.pz-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 39px, rgba(255, 255, 255, 0.018) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, rgba(255, 255, 255, 0.018) 39px 40px);
+  z-index: 0;
+}
+.pz-screen > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============ типографика ============ */
+.pz-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+.pz-pixel {
+  font-family: var(--font-pixel);
+}
+.pz-stencil-h {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pz-stencil-h::before,
+.pz-stencil-h::after {
+  content: '';
+  height: 1px;
+  background: var(--line-strong);
+  flex: 0 0 16px;
+}
+.pz-stencil-h::after {
+  flex: 1;
+}
+
+/* ============ панели и плашки ============ */
+.pz-plate {
+  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  position: relative;
+}
+
+/* угловые скобки (трафаретная рамка) */
+.pz-brackets {
+  --bk: var(--amber);
+  position: relative;
+}
+.pz-brackets::before,
+.pz-brackets::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bk);
+  pointer-events: none;
+}
+.pz-brackets::before {
+  top: -2px;
+  left: -2px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.pz-brackets::after {
+  bottom: -2px;
+  right: -2px;
+  border-left: 0;
+  border-top: 0;
+}
+
+/* ============ hazard CTA ============ */
+.pz-cta {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi), var(--amber) 55%, var(--amber-deep));
+  border-radius: var(--r-md);
+  padding: 16px 20px;
+  font-size: 20px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 4px 0 #6e4a05,
+    0 10px 24px rgba(242, 165, 12, 0.25);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    filter 0.15s ease;
+}
+.pz-cta:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 1px 0 #6e4a05,
+    0 4px 12px rgba(242, 165, 12, 0.2);
+}
+.pz-cta--hazard::before,
+.pz-cta--hazard::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  background: repeating-linear-gradient(-45deg, #1d1604 0 6px, transparent 6px 12px);
+  opacity: 0.55;
+}
+.pz-cta--hazard::before {
+  left: 0;
+  border-radius: var(--r-md) 0 0 var(--r-md);
+}
+.pz-cta--hazard::after {
+  right: 0;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.pz-cta:disabled {
+  filter: grayscale(0.8) brightness(0.6);
+  pointer-events: none;
+}
+
+/* вторичная кнопка */
+.pz-btn2 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
+  color: var(--ink);
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 14px;
+  border-radius: var(--r-md);
+  padding: 12px 16px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    transform 0.08s ease;
+}
+.pz-btn2:active {
+  transform: translateY(2px);
+}
+
+/* ============ чипы ============ */
+.pz-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+
+/* ============ стат-бары ============ */
+.pz-stat {
+  display: grid;
+  grid-template-columns: 118px 1fr 28px;
+  gap: 10px;
+  align-items: center;
+}
+.pz-stat-label {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  text-align: right;
+  font-weight: 500;
+}
+.pz-stat-track {
+  height: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.pz-stat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber-deep), var(--amber) 70%, var(--amber-hi));
+  box-shadow: 0 0 8px rgba(242, 165, 12, 0.4);
+  transition: width 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 7%, transparent 7% 8.5%);
+  mask: repeating-linear-gradient(90deg, #000 0 7%, transparent 7% 8.5%);
+}
+.pz-stat-num {
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+/* ============ нижняя навигация ============ */
+.pz-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px 12px calc(8px + var(--safe-bottom));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.5));
+  border-top: 1px solid var(--line);
+}
+.pz-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 4px 6px;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--ink-faint);
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.pz-nav-btn svg {
+  width: 24px;
+  height: 24px;
+}
+.pz-nav-btn.on {
+  color: var(--amber);
+  background: rgba(242, 165, 12, 0.08);
+}
+
+/* ============ кейфреймы ============ */
+@keyframes pz-radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pz-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes pz-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes pz-boom {
+  0% {
+    transform: scale(0.2);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.25);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@keyframes pz-shake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(2px, -2px);
+  }
+  50% {
+    transform: translate(-2px, 1px);
+  }
+  75% {
+    transform: translate(1px, 2px);
+  }
+}
+@keyframes pz-slide-up {
+  from {
+    transform: translateY(18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes pz-stamp {
+  0% {
+    transform: scale(2.2) rotate(-14deg);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(0.95) rotate(-8deg);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(1.06) rotate(-8deg);
+  }
+  100% {
+    transform: scale(1) rotate(-8deg);
+    opacity: 1;
+  }
+}
+@keyframes pz-tracer {
+  from {
+    transform: scaleY(0);
+    opacity: 1;
+  }
+  60% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 0;
+  }
+}
+
+/* скроллбары прочь */
+.pz-noscroll::-webkit-scrollbar {
+  display: none;
+}
+.pz-noscroll {
+  scrollbar-width: none;
+}
