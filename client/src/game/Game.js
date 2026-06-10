@@ -646,16 +646,15 @@ export class Game {
     if (this.hp <= 0) return // уничтожен — наблюдает
     const j = this.joystick
     let steer = 0
-    let throttle = 0
+    let throttle = 0 // -1..1, минус — задний ход
     if (j.active) {
       steer = Math.abs(j.x) < 0.12 ? 0 : j.x
       const fwd = -j.y
-      throttle = fwd < 0.12 ? 0 : Math.min(1, fwd)
+      throttle = Math.abs(fwd) < 0.12 ? 0 : Math.max(-1, Math.min(1, fwd))
     } else {
       const k = this.keys
       steer = (k.right ? 1 : 0) - (k.left ? 1 : 0)
-      throttle = k.fwd ? 1 : 0
-      if (k.back && !k.fwd) throttle = 0
+      throttle = (k.fwd ? 1 : 0) - (k.back ? 1 : 0)
     }
 
     if (this.crippled.tracks > 0) steer = 0 // сбита гусеница — нет поворота
@@ -663,7 +662,8 @@ export class Game {
 
     this.hullAngle += steer * this.cls.turnRate * dt
 
-    const speedTarget = this.cls.maxSpeed * throttle
+    // задний ход вдвое медленнее переднего
+    const speedTarget = this.cls.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
     const da = this.cls.accel * dt
     if (this.speed < speedTarget) this.speed = Math.min(speedTarget, this.speed + da)
     else this.speed = Math.max(speedTarget, this.speed - da * 1.4)
