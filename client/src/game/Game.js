@@ -412,10 +412,10 @@ export class Game {
     canvas.width = canvas.height = size
     const ctx = canvas.getContext('2d')
     const r = size / 2
-    const g = ctx.createRadialGradient(r, r, r * 0.45, r, r, r)
+    const g = ctx.createRadialGradient(r, r, r * 0.6, r, r, r)
     g.addColorStop(0, 'rgba(8,10,14,0)')
-    g.addColorStop(0.8, 'rgba(8,10,14,0.5)')
-    g.addColorStop(1, 'rgba(8,10,14,0.78)')
+    g.addColorStop(0.85, 'rgba(8,10,14,0.38)')
+    g.addColorStop(1, 'rgba(8,10,14,0.6)')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, size, size)
     return Texture.from(canvas)
@@ -1099,7 +1099,7 @@ export class Game {
     // визуальный радиус тумана: не уже 430px, чтобы низкий обзор не делал
     // экран чёрным (засвет врагов всё равно по честному _vision)
     // уничтожен — режим наблюдения: шире (смотрим глазами команды)
-    const fogD = Math.max(this._vision(), 430) * 2 * 1.15 * (this.hp > 0 ? 1 : 1.8)
+    const fogD = Math.max(this._vision(), 520) * 2 * 1.25 * (this.hp > 0 ? 1 : 1.8)
     this.fog.width = fogD
     this.fog.height = fogD
     // тёмная заливка на весь экран с дырой по краю градиента — края спрайта
@@ -1108,7 +1108,7 @@ export class Game {
     const fd = this._fogDrawn
     if (fd.w !== w || fd.h !== h || Math.abs(fd.r - fr) > 1) {
       this.fogDark.clear()
-      this.fogDark.rect(0, 0, w, h).fill({ color: 0x080a0e, alpha: 0.78 })
+      this.fogDark.rect(0, 0, w, h).fill({ color: 0x080a0e, alpha: 0.6 })
       this.fogDark.circle(camX, camY, fr).cut()
       this._fogDrawn = { w, h, r: fr }
     }
