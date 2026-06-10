@@ -28,15 +28,15 @@ const partyMul = computed(() => profile.party.length)
   <div class="pz-screen" style="background: #131510">
     <!-- ===== сцена ===== -->
     <div style="position: absolute; inset: 0; z-index: 0">
-      <!-- бетонный пол -->
+      <!-- бетонный пол: AI-фон ангара + затемнение для читаемости -->
       <div
         style="
           position: absolute;
           inset: 0;
           background:
-            radial-gradient(420px 360px at 50% 36%, rgba(255, 236, 180, 0.07), transparent 70%),
-            repeating-linear-gradient(0deg, transparent 0 119px, rgba(0, 0, 0, 0.35) 119px 121px),
-            repeating-linear-gradient(90deg, transparent 0 129px, rgba(0, 0, 0, 0.3) 129px 131px),
+            radial-gradient(420px 360px at 50% 36%, rgba(255, 236, 180, 0.06), transparent 70%),
+            linear-gradient(180deg, rgba(13, 15, 10, 0.62) 0%, rgba(13, 15, 10, 0.45) 40%, rgba(10, 12, 8, 0.72) 100%),
+            url('/sprites/hangar.png') center / cover no-repeat,
             linear-gradient(180deg, #191c14 0%, #14160f 45%, #0e100a 100%);
         "
       ></div>

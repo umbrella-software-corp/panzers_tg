@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js'
+import { Application, Assets, Container, Graphics, Sprite, Text, Texture, TilingSprite } from 'pixi.js'
 import {
   TANK_CLASSES,
   DEFAULT_CLASS,
@@ -235,12 +235,48 @@ export class Game {
     })
     container.appendChild(this.app.canvas)
 
+    // спрайты (AI-ассеты); без файлов всё рисуется вектором, как раньше
+    this.tex = {}
+    const texNames = ['ground', 'forest', 'rock', 'water', 'hill', 'building', 'explosion', 'tank_amber', 'tank_blue', 'tank_red']
+    const loadedTex = await Promise.allSettled(texNames.map((n) => Assets.load(`/sprites/${n}.png`)))
+    texNames.forEach((n, i) => {
+      if (loadedTex[i].status === 'fulfilled') this.tex[n] = loadedTex[i].value
+    })
+    for (const k of ['tank_amber', 'tank_blue', 'tank_red']) {
+      if (this.tex[k]) this.tex[k] = this._chromaKey(this.tex[k])
+    }
+
     this.world = new Container()
     this.bg = new Graphics()
     this.terrain = new Graphics()
     this.gfx = new Graphics()
-    this.world.addChild(this.bg, this.terrain, this.gfx)
+    this.terrLayer = new Container() // текстуры местности под векторными обводками
+    this.tankLayer = new Container() // спрайты танков под HUD-графикой (hp-бары и т.п.)
+    this.fxLayer = new Container() // аддитивные вспышки взрывов поверх всего
+    if (this.tex.ground) {
+      this.groundTile = new TilingSprite({ texture: this.tex.ground, width: MAP_SIZE, height: MAP_SIZE })
+      this.groundTile.tileScale.set(0.55)
+      this.world.addChild(this.groundTile)
+    }
+    this.world.addChild(this.bg, this.terrLayer, this.terrain, this.tankLayer, this.gfx, this.fxLayer)
     this.app.stage.addChild(this.world)
+
+    // спрайты юнитов: игрок янтарный, союзники синие, враги красные
+    this.unitSprites = null
+    this.fxSprites = []
+    if (this.tex.tank_amber && this.tex.tank_blue && this.tex.tank_red) {
+      this.unitSprites = new Map()
+      const mk = (texName, size) => {
+        const s = new Sprite(this.tex[texName])
+        s.anchor.set(0.5)
+        s.scale.set(size / s.texture.height)
+        s.visible = false
+        this.tankLayer.addChild(s)
+        return s
+      }
+      this.unitSprites.set('player', mk('tank_amber', 96))
+      for (const b of this.bots) this.unitSprites.set(b.id, mk(b.team === TEAM.ALLY ? 'tank_blue' : 'tank_red', 84))
+    }
 
     this.fog = new Sprite(this._makeFogTexture())
     this.fog.anchor.set(0.5)
@@ -300,6 +336,38 @@ export class Game {
     this._onKeyUp = (e) => setKey(e, false)
     window.addEventListener('keydown', this._onKeyDown)
     window.addEventListener('keyup', this._onKeyUp)
+  }
+
+  // вырезает зелёный chroma-key фон у спрайта танка
+  _chromaKey(tex) {
+    const c = document.createElement('canvas')
+    c.width = tex.width
+    c.height = tex.height
+    const ctx = c.getContext('2d')
+    ctx.drawImage(tex.source.resource, 0, 0)
+    const d = ctx.getImageData(0, 0, c.width, c.height)
+    const p = d.data
+    for (let i = 0; i < p.length; i += 4) {
+      const r = p[i]
+      const g = p[i + 1]
+      const b = p[i + 2]
+      if (g > 80 && g > r * 1.25 && g > b * 1.25) p[i + 3] = 0
+    }
+    ctx.putImageData(d, 0, 0)
+    return Texture.from(c)
+  }
+
+  // взрыв-спрайт (аддитивный) в мировых координатах
+  _spawnFx(x, y, scale = 1) {
+    if (!this.tex || !this.tex.explosion || !this.fxLayer) return
+    const s = new Sprite(this.tex.explosion)
+    s.anchor.set(0.5)
+    s.blendMode = 'add'
+    s.position.set(x, y)
+    const base = (130 * scale) / s.texture.height
+    s.scale.set(base * 0.5)
+    this.fxLayer.addChild(s)
+    this.fxSprites.push({ s, age: 0, life: 0.55, base })
   }
 
   _makeFogTexture() {
@@ -493,6 +561,7 @@ export class Game {
     b.alive = false
     b.hp = 0
     this.booms.push({ x: b.x, y: b.y, age: 0, big: true })
+    this._spawnFx(b.x, b.y, 1.7)
   }
 
   // снаряд: визуально летит из (x1,y1) в (x2,y2), по прибытии — эффект boom
@@ -606,11 +675,30 @@ export class Game {
     // снаряды: по прибытии — взрыв/фонтан земли
     for (const s of this.shells) {
       s.t += dt
-      if (s.t >= s.dur) this.booms.push({ x: s.x2, y: s.y2, age: 0, big: s.boom === 'big', dust: s.boom === 'dust' })
+      if (s.t >= s.dur) {
+        this.booms.push({ x: s.x2, y: s.y2, age: 0, big: s.boom === 'big', dust: s.boom === 'dust' })
+        if (s.boom === 'hit') this._spawnFx(s.x2, s.y2, 0.7)
+      }
     }
     this.shells = this.shells.filter((s) => s.t < s.dur)
     for (const bm of this.booms) bm.age += dt
     this.booms = this.booms.filter((bm) => bm.age <= (bm.big ? 0.7 : 0.45))
+    // спрайтовые вспышки взрывов (аддитивные)
+    if (this.fxSprites && this.fxSprites.length) {
+      for (const f of this.fxSprites) {
+        f.age += dt
+        const k = Math.min(1, f.age / f.life)
+        f.s.scale.set(f.base * (0.5 + k * 1.2))
+        f.s.alpha = 1 - k
+      }
+      this.fxSprites = this.fxSprites.filter((f) => {
+        if (f.age >= f.life) {
+          f.s.destroy()
+          return false
+        }
+        return true
+      })
+    }
     for (const m of this.muzzles) m.age += dt
     this.muzzles = this.muzzles.filter((m) => m.age <= 0.09)
     for (const b of this.bots) if (b.flash > 0) b.flash = Math.max(0, b.flash - dt)
@@ -836,6 +924,7 @@ export class Game {
         this.score.enemy++
         this.speed = 0
         this.booms.push({ x: this.tank.x, y: this.tank.y, age: 0, big: true })
+        this._spawnFx(this.tank.x, this.tank.y, 1.9)
         this._emitState()
       }
     } else {
@@ -950,11 +1039,25 @@ export class Game {
         .stroke({ width: 4, color: 0xffd866, alpha: 0.95, cap: 'round' })
     }
 
+    // спрайтовый режим: каждый кадр прячем все и включаем только видимых
+    const useSpr = !!this.unitSprites
+    if (useSpr) for (const sp of this.unitSprites.values()) sp.visible = false
+    const placeSpr = (key, x, y, a, tint) => {
+      const s = this.unitSprites.get(key)
+      if (!s) return false
+      s.visible = true
+      s.position.set(x, y)
+      s.rotation = a - Math.PI / 2 // в текстуре ствол смотрит вниз
+      s.tint = tint
+      return true
+    }
+
     // обломки уничтоженных (видны всем — ориентиры боя)
     for (const b of this.bots) {
       if (b.alive) continue
       g.circle(b.x, b.y, 30).fill({ color: 0x000000, alpha: 0.35 }) // гарь
-      this._drawTank(g, b.x, b.y, b.hull, { body: 0x2c2f27, dark: 0x16180f }, 0.85)
+      if (!useSpr || !placeSpr(b.id, b.x, b.y, b.hull, 0x3c3c34))
+        this._drawTank(g, b.x, b.y, b.hull, { body: 0x2c2f27, dark: 0x16180f }, 0.85)
     }
 
     // боты: союзники видны всегда, враги — только при засвете; все — танки
@@ -962,28 +1065,37 @@ export class Game {
       if (!b.alive) continue
       const isAlly = b.team === TEAM.ALLY
       if (!isAlly && !b.spotted) continue
-      const c = isAlly ? { body: 0x4a82c8, dark: 0x1b3a5c } : { body: 0xd8543f, dark: 0x6e1f12 }
-      if (b.flash > 0) c.body = 0xffffff
-      this._drawTank(g, b.x, b.y, b.hull, c, 0.85)
+      if (useSpr && placeSpr(b.id, b.x, b.y, b.hull, 0xffffff)) {
+        if (b.flash > 0) g.circle(b.x, b.y, 30).fill({ color: 0xffffff, alpha: 0.45 })
+      } else {
+        const c = isAlly ? { body: 0x4a82c8, dark: 0x1b3a5c } : { body: 0xd8543f, dark: 0x6e1f12 }
+        if (b.flash > 0) c.body = 0xffffff
+        this._drawTank(g, b.x, b.y, b.hull, c, 0.85)
+      }
       const bw = 40
       const hpCol = isAlly ? 0x5b9cff : 0x5bd860
-      g.rect(b.x - bw / 2, b.y - 34, bw, 4).fill({ color: 0x000000, alpha: 0.5 })
-      g.rect(b.x - bw / 2, b.y - 34, bw * (Math.max(0, b.hp) / b.maxHp), 4).fill(hpCol)
+      g.rect(b.x - bw / 2, b.y - 38, bw, 4).fill({ color: 0x000000, alpha: 0.5 })
+      g.rect(b.x - bw / 2, b.y - 38, bw * (Math.max(0, b.hp) / b.maxHp), 4).fill(hpCol)
     }
 
     // игрок: живой — янтарный, уничтожен — обломки
     if (this.hp > 0) {
-      this._drawTank(
-        g,
-        tx,
-        ty,
-        hull,
-        { body: this.hurtFlash > 0 ? 0xff8a8a : 0xf2a50c, dark: 0x3d3110, outline: 0xffd866 },
-        1,
-      )
+      if (useSpr && placeSpr('player', tx, ty, hull, 0xffffff)) {
+        if (this.hurtFlash > 0) g.circle(tx, ty, 36).fill({ color: 0xff6a5a, alpha: 0.4 })
+      } else {
+        this._drawTank(
+          g,
+          tx,
+          ty,
+          hull,
+          { body: this.hurtFlash > 0 ? 0xff8a8a : 0xf2a50c, dark: 0x3d3110, outline: 0xffd866 },
+          1,
+        )
+      }
     } else {
       g.circle(tx, ty, 34).fill({ color: 0x000000, alpha: 0.35 })
-      this._drawTank(g, tx, ty, hull, { body: 0x3a3526, dark: 0x1b180e }, 1)
+      if (!useSpr || !placeSpr('player', tx, ty, hull, 0x3c3c34))
+        this._drawTank(g, tx, ty, hull, { body: 0x3a3526, dark: 0x1b180e }, 1)
     }
 
     // летящие снаряды: болванка + короткий хвост
@@ -1147,7 +1259,7 @@ export class Game {
   _drawMap() {
     const g = this.bg
     g.clear()
-    g.rect(0, 0, MAP_SIZE, MAP_SIZE).fill(0x10141b)
+    if (!this.groundTile) g.rect(0, 0, MAP_SIZE, MAP_SIZE).fill(0x10141b)
     const step = 80
     for (let x = 0; x <= MAP_SIZE; x += step) g.moveTo(x, 0).lineTo(x, MAP_SIZE)
     for (let y = 0; y <= MAP_SIZE; y += step) g.moveTo(0, y).lineTo(MAP_SIZE, y)
@@ -1155,29 +1267,55 @@ export class Game {
     g.rect(0, 0, MAP_SIZE, MAP_SIZE).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
   }
 
+  // круглый текстурный участок местности (лес/камень/вода/холм) с маской
+  _terrainPatch(texName, x, y, r) {
+    const tex = this.tex && this.tex[texName]
+    if (!tex) return false
+    const s = new Sprite(tex)
+    s.anchor.set(0.5)
+    s.position.set(x, y)
+    s.width = s.height = r * 2.05
+    const m = new Graphics().circle(x, y, r).fill(0xffffff)
+    s.mask = m
+    this.terrLayer.addChild(s, m)
+    return true
+  }
+
   _drawTerrain() {
     const g = this.terrain
     g.clear()
+    const TKIND = { bush: 'forest', block: 'rock', water: 'water', hill: 'hill' }
     for (const o of this.obstacles) {
+      const sprited = this._terrainPatch(TKIND[o.kind], o.x, o.y, o.r)
       if (o.kind === 'bush') {
-        g.circle(o.x, o.y, o.r).fill({ color: 0x2f6b3a, alpha: 0.85 })
+        if (!sprited) g.circle(o.x, o.y, o.r).fill({ color: 0x2f6b3a, alpha: 0.85 })
         g.circle(o.x, o.y, o.r).stroke({ width: 2, color: 0x224f2c })
       } else if (o.kind === 'water') {
-        g.circle(o.x, o.y, o.r).fill({ color: 0x1d4a66, alpha: 0.9 })
+        if (!sprited) g.circle(o.x, o.y, o.r).fill({ color: 0x1d4a66, alpha: 0.9 })
         g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2e6e8e })
-        g.circle(o.x, o.y, o.r * 0.62).stroke({ width: 2, color: 0x2e6e8e, alpha: 0.4 })
+        if (!sprited) g.circle(o.x, o.y, o.r * 0.62).stroke({ width: 2, color: 0x2e6e8e, alpha: 0.4 })
       } else if (o.kind === 'hill') {
-        g.circle(o.x, o.y, o.r).fill(0x47502f)
+        if (!sprited) g.circle(o.x, o.y, o.r).fill(0x47502f)
         g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2f3520 })
-        g.circle(o.x, o.y, o.r * 0.55).stroke({ width: 2, color: 0x5a6540, alpha: 0.7 })
+        if (!sprited) g.circle(o.x, o.y, o.r * 0.55).stroke({ width: 2, color: 0x5a6540, alpha: 0.7 })
       } else {
-        g.circle(o.x, o.y, o.r).fill(0x4a4f57)
+        if (!sprited) g.circle(o.x, o.y, o.r).fill(0x4a4f57)
         g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2c3036 })
       }
     }
-    // стены-укрытия (бетон)
+    // стены-укрытия: почти квадратные — крыши зданий, длинные — бетон
     for (const w of this.walls) {
-      g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).fill(0x5a6068)
+      const aspect = w.hw / w.hh
+      if (this.tex && this.tex.building && aspect > 0.4 && aspect < 2.5) {
+        const s = new Sprite(this.tex.building)
+        s.anchor.set(0.5)
+        s.position.set(w.cx, w.cy)
+        s.width = w.hw * 2
+        s.height = w.hh * 2
+        this.terrLayer.addChild(s)
+      } else {
+        g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).fill(0x5a6068)
+      }
       g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).stroke({ width: 3, color: 0x33373d })
     }
     // базы команд
