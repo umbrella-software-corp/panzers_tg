@@ -388,6 +388,7 @@ export class Game {
 
   _lineBlocked(x1, y1, x2, y2) {
     for (const o of this.obstacles) {
+      if (o.kind === 'water') continue // поверх воды видно и стреляется
       if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
     }
     for (const w of this.walls) {
@@ -398,7 +399,7 @@ export class Game {
 
   _resolveCollisions(pos, radius) {
     for (const o of this.obstacles) {
-      if (o.kind !== 'block') continue
+      if (o.kind === 'bush') continue // лес проходим; block/hill/water — нет
       const dx = pos.x - o.x
       const dy = pos.y - o.y
       const d = Math.hypot(dx, dy)
@@ -818,22 +819,18 @@ export class Game {
       .lineTo(tx + Math.cos(lineA) * L, ty + Math.sin(lineA) * L)
       .stroke({ width: 4, color: 0xffd866, alpha: 0.95, cap: 'round' })
 
-    // боты: союзники видны всегда, враги — только при засвете
+    // боты: союзники видны всегда, враги — только при засвете; все — танки
     for (const b of this.bots) {
       if (!b.alive) continue
       const isAlly = b.team === TEAM.ALLY
       if (!isAlly && !b.spotted) continue
-      const base = isAlly ? 0x4a82c8 : 0xff7043
-      const col = b.flash > 0 ? 0xffffff : base
-      g.circle(b.x, b.y, 18).fill(col)
-      g.circle(b.x, b.y, 18).stroke({ width: 2, color: 0x000000, alpha: 0.4 })
-      g.moveTo(b.x, b.y)
-        .lineTo(b.x + Math.cos(b.hull) * 24, b.y + Math.sin(b.hull) * 24)
-        .stroke({ width: 5, color: col })
+      const c = isAlly ? { body: 0x4a82c8, dark: 0x1b3a5c } : { body: 0xd8543f, dark: 0x6e1f12 }
+      if (b.flash > 0) c.body = 0xffffff
+      this._drawTank(g, b.x, b.y, b.hull, c, 0.85)
       const bw = 40
       const hpCol = isAlly ? 0x5b9cff : 0x5bd860
-      g.rect(b.x - bw / 2, b.y - 30, bw, 4).fill({ color: 0x000000, alpha: 0.5 })
-      g.rect(b.x - bw / 2, b.y - 30, bw * (Math.max(0, b.hp) / ENEMY_MAX_HP), 4).fill(hpCol)
+      g.rect(b.x - bw / 2, b.y - 34, bw, 4).fill({ color: 0x000000, alpha: 0.5 })
+      g.rect(b.x - bw / 2, b.y - 34, bw * (Math.max(0, b.hp) / ENEMY_MAX_HP), 4).fill(hpCol)
     }
 
     for (const s of this.shotFx) {
@@ -850,7 +847,14 @@ export class Game {
         .stroke({ width: 6 * k + 2, color: col, alpha: 0.85 * k })
     }
 
-    this._drawHull(g, tx, ty, hull)
+    this._drawTank(
+      g,
+      tx,
+      ty,
+      hull,
+      { body: this.hurtFlash > 0 ? 0xff8a8a : 0xf2a50c, dark: 0x3d3110, outline: 0xffd866 },
+      1,
+    )
     this._updateLabels()
     this._drawMinimap()
   }
@@ -883,8 +887,14 @@ export class Game {
     ctx.fillStyle = 'rgba(150,160,175,0.4)'
     for (const w of this.walls) ctx.fillRect((w.cx - w.hw) * k, (w.cy - w.hh) * k, w.hw * 2 * k, w.hh * 2 * k)
     // препятствия
+    const OBST_COLORS = {
+      bush: 'rgba(70,140,80,0.45)',
+      water: 'rgba(46,110,142,0.55)',
+      hill: 'rgba(105,115,65,0.5)',
+      block: 'rgba(120,128,140,0.45)',
+    }
     for (const o of this.obstacles) {
-      ctx.fillStyle = o.kind === 'bush' ? 'rgba(70,140,80,0.45)' : 'rgba(120,128,140,0.45)'
+      ctx.fillStyle = OBST_COLORS[o.kind] || OBST_COLORS.block
       ctx.beginPath()
       ctx.arc(o.x * k, o.y * k, o.r * k, 0, Math.PI * 2)
       ctx.fill()
@@ -936,28 +946,33 @@ export class Game {
     ctx.strokeRect(0.5, 0.5, S - 1, S - 1)
   }
 
-  _drawHull(g, x, y, a) {
-    const len = 30
-    const wid = 22
+  // танк top-down (гусеницы + корпус + ствол + башня), нос — вдоль угла a.
+  // c: { body, dark, outline? }; s — масштаб (боты чуть меньше игрока).
+  _drawTank(g, x, y, a, c, s = 1) {
     const cos = Math.cos(a)
     const sin = Math.sin(a)
-    const fx = cos * len
-    const fy = sin * len
-    const px = -sin * wid
-    const py = cos * wid
-    const body = [
-      x + fx + px, y + fy + py,
-      x + fx - px, y + fy - py,
-      x - fx - px, y - fy - py,
-      x - fx + px, y - fy + py,
+    const P = (lx, ly) => [x + (lx * cos - ly * sin) * s, y + (lx * sin + ly * cos) * s]
+    const rectPoly = (cx, cy, hl, hw) => [
+      ...P(cx + hl, cy - hw),
+      ...P(cx + hl, cy + hw),
+      ...P(cx - hl, cy + hw),
+      ...P(cx - hl, cy - hw),
     ]
-    const hullColor = this.hurtFlash > 0 ? 0xff8a8a : 0xf2a50c
-    g.poly(body).fill(hullColor)
-    g.poly(body).stroke({ width: 2.5, color: 0xffd866 }) // светлый контур = это ты
-    g.circle(x, y, 13).fill(0x3d3110)
+    // гусеницы
+    g.poly(rectPoly(0, -21, 32, 5)).fill(c.dark)
+    g.poly(rectPoly(0, 21, 32, 5)).fill(c.dark)
+    // корпус
+    const hullPoly = rectPoly(0, 0, 30, 16)
+    g.poly(hullPoly).fill(c.body)
+    if (c.outline) g.poly(hullPoly).stroke({ width: 2.5, color: c.outline })
+    else g.poly(hullPoly).stroke({ width: 2, color: 0x000000, alpha: 0.35 })
+    // ствол, затем башня поверх
+    const [mx, my] = P(38, 0)
     g.moveTo(x, y)
-      .lineTo(x + cos * 34, y + sin * 34)
-      .stroke({ width: 7, color: 0x3d3110, cap: 'round' })
+      .lineTo(mx, my)
+      .stroke({ width: 6 * s + 1, color: c.dark, cap: 'round' })
+    g.circle(x, y, 13 * s).fill(c.dark)
+    g.circle(x, y, 5.5 * s).fill(c.body)
   }
 
   _drawMap() {
@@ -978,6 +993,14 @@ export class Game {
       if (o.kind === 'bush') {
         g.circle(o.x, o.y, o.r).fill({ color: 0x2f6b3a, alpha: 0.85 })
         g.circle(o.x, o.y, o.r).stroke({ width: 2, color: 0x224f2c })
+      } else if (o.kind === 'water') {
+        g.circle(o.x, o.y, o.r).fill({ color: 0x1d4a66, alpha: 0.9 })
+        g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2e6e8e })
+        g.circle(o.x, o.y, o.r * 0.62).stroke({ width: 2, color: 0x2e6e8e, alpha: 0.4 })
+      } else if (o.kind === 'hill') {
+        g.circle(o.x, o.y, o.r).fill(0x47502f)
+        g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2f3520 })
+        g.circle(o.x, o.y, o.r * 0.55).stroke({ width: 2, color: 0x5a6540, alpha: 0.7 })
       } else {
         g.circle(o.x, o.y, o.r).fill(0x4a4f57)
         g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2c3036 })
