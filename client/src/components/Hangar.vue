@@ -142,7 +142,7 @@ const partyMul = computed(() => profile.party.length)
         ВЗВОД
       </button>
       <button class="pz-cta pz-cta--hazard" :disabled="locked" @click="emit('play')">
-        <template v-if="locked">ИССЛЕДУЙ В ПРОКАЧКЕ</template>
+        <template v-if="locked">ИССЛЕДУЙ В РАЗВИТИИ</template>
         <template v-else>В БОЙ <span style="font-size: 14px; opacity: 0.75">▸ {{ tank.name }}<template v-if="partyMul > 0"> ×{{ 1 + partyMul }}</template></span></template>
       </button>
     </div>
