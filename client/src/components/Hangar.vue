@@ -71,7 +71,7 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
       <div class="tank-wrap">
         <div class="tank-shadow"></div>
         <div :key="tank.id + profile.skin" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankImg :tank-id="tank.id" :size="170" :tint="locked ? 0xffffff : skinTint" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 10px 14px rgba(0,0,0,0.45))' }" />
+          <TankImg :tank-id="tank.id" :size="238" :tint="locked ? 0xffffff : skinTint" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 14px 18px rgba(0,0,0,0.5))' }" />
         </div>
         <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
           <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
