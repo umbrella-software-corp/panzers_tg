@@ -5,8 +5,8 @@
 import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue'
 import { Game } from '../game/Game.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
-import { profile } from '../store.js'
-import { TANK_BY_ID } from '../game/meta.js'
+import { profile, spendGoldAmmo, addBattleResult } from '../store.js'
+import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT } from '../game/meta.js'
 import Results from './Results.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -97,6 +97,7 @@ const shaking = ref(false)
 let shakeTimer = null
 let prevHp = Infinity
 
+let statsCounted = false // статистика матча банкается один раз
 game.onState = (s) => {
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
   if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
@@ -109,7 +110,13 @@ game.onState = (s) => {
   prevKills = s.kills
   prevDeaths = s.deaths
   state.value = s
-  if (s.matchOver && phase.value === 'fighting') phase.value = 'result'
+  if (s.matchOver && phase.value === 'fighting') {
+    phase.value = 'result'
+    if (!statsCounted) {
+      statsCounted = true
+      addBattleResult(s.result, s.kills)
+    }
+  }
 }
 
 const fmtTime = (sec) => {
@@ -118,16 +125,26 @@ const fmtTime = (sec) => {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-// награда за матч: база + фраги + вклад в захват + попадания
+// награда за матч: результат решает (победа ощутимо жирнее поражения)
 const reward = computed(() => {
   const s = state.value
+  const win = s.result === 'victory'
+  const draw = s.result === 'draw'
   return {
-    xp: 60 + s.kills * 40 + Math.round(s.allyScore * 8) + s.hits * 3,
-    silver: 120 + s.kills * 30 + Math.round(s.allyScore * 12),
+    xp: (win ? 200 : draw ? 120 : 80) + s.kills * 45 + s.hits * 4,
+    silver: (win ? 260 : draw ? 150 : 100) + s.kills * 45 + Math.round(s.allyScore * 6),
     kills: s.kills,
     allyScore: s.allyScore,
   }
 })
+
+// --- выбор снаряда: обычный / голдовый (урон ×GOLD_AMMO_MULT, тратится) ---
+const ammo = ref('std')
+function toggleAmmo() {
+  if (ammo.value === 'std' && profile.goldAmmo <= 0) return
+  ammo.value = ammo.value === 'std' ? 'gold' : 'std'
+  game.ammoMult = ammo.value === 'gold' ? GOLD_AMMO_MULT : 1
+}
 game.onCrit = (slot) => {
   showToast('miss', `${CRIT_LABELS[slot]} ПОВРЕЖДЕНА`)
 }
@@ -135,6 +152,14 @@ game.onShot = (r) => {
   if (r.type === 'blocked') {
     if (r.reason === 'gun') showToast('miss', 'ПУШКА ЗАКЛИНИЛА')
     return
+  }
+  // голдовый снаряд тратится на каждый состоявшийся выстрел
+  if (ammo.value === 'gold') {
+    spendGoldAmmo(1)
+    if (profile.goldAmmo <= 0) {
+      ammo.value = 'std'
+      game.ammoMult = 1
+    }
   }
   if (r.type === 'hit') {
     showToast('hit', 'ПОПАЛ')
@@ -193,6 +218,11 @@ function onFire() {
 }
 
 function toHangar() {
+  // выход до конца матча = поражение в статистику
+  if (phase.value === 'fighting' && !statsCounted) {
+    statsCounted = true
+    addBattleResult('defeat', state.value.kills)
+  }
   emit('exit', reward.value)
 }
 function rematch() {
@@ -218,6 +248,10 @@ function startCountdown() {
 }
 
 onMounted(async () => {
+  // матчмейкинг ±1 тир: боты — конкретные танки соседних уровней
+  const myTier = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
+  const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map(combatStats)
+  game.setBotTanks(pool)
   await game.mount(stage.value)
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)
@@ -307,6 +341,17 @@ onBeforeUnmount(() => {
         <div class="joy-knob live" :style="{ transform: `translate(${knob.x}px, ${knob.y}px)` }"></div>
       </div>
     </div>
+
+    <!-- выбор снаряда -->
+    <button
+      v-show="phase === 'fighting' && !paused && state.playerHp > 0"
+      class="ammo pz-display"
+      :class="{ gold: ammo === 'gold' }"
+      @click="toggleAmmo"
+    >
+      <template v-if="ammo === 'gold'">★ ГОЛД · {{ profile.goldAmmo }}</template>
+      <template v-else>ББ <span style="opacity: 0.6">· ★{{ profile.goldAmmo }}</span></template>
+    </button>
 
     <!-- ОГОНЬ -->
     <button v-show="phase === 'fighting' && !paused && state.playerHp > 0" class="fire" :class="{ cold: !state.ready }" @pointerdown.prevent="onFire">
@@ -634,6 +679,26 @@ onBeforeUnmount(() => {
   border-color: #1d1604;
 }
 
+.ammo {
+  position: absolute;
+  right: calc(var(--safe-right) + 22px);
+  bottom: calc(var(--safe-bottom) + 128px);
+  padding: 7px 12px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  z-index: 3;
+}
+.ammo.gold {
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi), var(--amber));
+  border-color: transparent;
+  box-shadow: 0 0 14px rgba(242, 165, 12, 0.45);
+}
 .fire {
   position: absolute;
   right: calc(var(--safe-right) + 22px);

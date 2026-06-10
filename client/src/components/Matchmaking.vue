@@ -24,6 +24,10 @@ const allies = ref([]) // { name, kind: 'party'|'player'|'bot', ping? }
 const phase = ref('search') // search → fill → go
 
 const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name || '')
+const tierRange = computed(() => {
+  const t = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
+  return `${Math.max(1, t - 1)}–${Math.min(5, t + 1)}`
+})
 const slots = computed(() => [...Array(TEAM)].map((_, i) => (i === 0 ? { name: 'ВЫ', kind: 'you' } : allies.value[i - 1] || null)))
 const liveTotal = computed(() => 1 + allies.value.filter((a) => a.kind !== 'bot').length)
 const botTotal = computed(() => allies.value.filter((a) => a.kind === 'bot').length)
@@ -81,7 +85,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
         <span class="pz-pixel" style="font-size: 9px" :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ mmss }}</span>
       </span>
     </div>
-    <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">{{ tankName }} · бой 5×5 · сектор Б-4</div>
+    <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">{{ tankName }} · бой 5×5 · уровни {{ tierRange }} · сектор Б-4</div>
 
     <!-- радар -->
     <div style="display: flex; justify-content: center; padding: 18px 0 6px">

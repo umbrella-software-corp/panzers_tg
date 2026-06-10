@@ -93,6 +93,7 @@ export class Game {
     this.setClass(DEFAULT_CLASS)
     this.ready = true
     this.reloadRemaining = 0
+    this.ammoMult = 1 // 1 = обычный снаряд, GOLD_AMMO_MULT = голдовый
 
     const c = MAP_SIZE / 2
     this.obstacles = OBSTACLES.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
@@ -166,10 +167,10 @@ export class Game {
     return { x: c + spread, y }
   }
 
-  _makeBot(id, team, i, n) {
+  // src — боевые статы танка бота (deg-форма с hp); по умолчанию класс из микса
+  _makeBot(id, team, i, n, src) {
     const p = this._spawnPoint(team, i, n)
-    // боевые статы — из класса танка (состав команды задаёт BOT_CLASS_MIX)
-    const cls = TANK_CLASSES[BOT_CLASS_MIX[i % BOT_CLASS_MIX.length]]
+    const cls = src || TANK_CLASSES[BOT_CLASS_MIX[i % BOT_CLASS_MIX.length]]
     return {
       id,
       team,
@@ -199,6 +200,16 @@ export class Game {
   setClass(id) {
     const base = TANK_CLASSES[id] || TANK_CLASSES[DEFAULT_CLASS]
     this.setStats(base)
+  }
+
+  // боты из пула конкретных танков (матчмейкинг ±1 тир); звать ДО mount
+  setBotTanks(pool) {
+    if (!pool || !pool.length) return
+    const pick = () => pool[Math.floor(Math.random() * pool.length)]
+    let id = 1
+    this.bots = []
+    for (let i = 0; i < TEAM_SIZE - 1; i++) this.bots.push(this._makeBot(id++, TEAM.ALLY, i, TEAM_SIZE - 1, pick()))
+    for (let i = 0; i < TEAM_SIZE; i++) this.bots.push(this._makeBot(id++, TEAM.ENEMY, i, TEAM_SIZE, pick()))
   }
 
   // Принимает deg-форму статов (класс + модификаторы модулей, см. store.loadoutStats).
@@ -379,9 +390,10 @@ export class Game {
 
     let killed = false
     if (best) {
+      const dmg = Math.round(this.cls.damage * this.ammoMult)
       this.hits++
-      this.damageDealt += Math.min(this.cls.damage, best.b.hp)
-      best.b.hp -= this.cls.damage
+      this.damageDealt += Math.min(dmg, best.b.hp)
+      best.b.hp -= dmg
       best.b.flash = 0.25
       if (best.b.hp <= 0) {
         this.kills++

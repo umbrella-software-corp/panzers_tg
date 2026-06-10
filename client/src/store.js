@@ -2,7 +2,6 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch } from 'vue'
-import { TANK_CLASSES } from './game/config.js'
 import {
   TANK_BY_ID,
   STARTERS,
@@ -13,6 +12,11 @@ import {
   modLevel,
   modsMaxedCount,
   REF_MILESTONES,
+  combatStats,
+  DAILY_REWARDS,
+  RATING_START,
+  RATING_DELTA,
+  GOLD_AMMO_PACKS,
 } from './game/meta.js'
 
 const KEY = 'pz.state.v1'
@@ -31,8 +35,9 @@ export const profile = reactive(
   load() || {
     nation: 'ussr',
     selectedTank: 't26',
-    credits: 1450,
-    tokens: 30,
+    credits: 500,
+    tokens: 10,
+    goldAmmo: 5,
     owned: [...STARTERS],
     modules: {}, // { tankId: { gun:1..3, tur, eng, trk, rad } }
     party: [],
@@ -43,6 +48,10 @@ if (!profile.modules || typeof profile.modules !== 'object') profile.modules = {
 if (!Array.isArray(profile.party)) profile.party = []
 if (!Array.isArray(profile.referrals)) profile.referrals = []
 if (!Array.isArray(profile.claimedRef)) profile.claimedRef = []
+if (typeof profile.goldAmmo !== 'number') profile.goldAmmo = 5
+if (!profile.stats || typeof profile.stats !== 'object')
+  profile.stats = { battles: 0, wins: 0, kills: 0, rating: RATING_START }
+if (!profile.daily || typeof profile.daily !== 'object') profile.daily = { last: '', streak: 0 }
 
 watch(profile, () => localStorage.setItem(KEY, JSON.stringify(profile)), { deep: true })
 
@@ -121,9 +130,10 @@ export function spendTokens(n) {
 }
 
 // ---------- боевые статы с учётом модулей (для Pixi-движка) ----------
+// База — combatStats(танка): у каждой машины свой бой, модули сверху.
 export function loadoutStats(tankId) {
   const tank = TANK_BY_ID[tankId] || TANK_BY_ID[STARTERS[0]]
-  const base = { ...TANK_CLASSES[tank.classId] }
+  const base = combatStats(tank)
   base.damage *= MODULE_COMBAT.gun[tankModLevel(tank.id, 'gun') - 1]
   base.hp = Math.round(base.hp * MODULE_COMBAT.tur[tankModLevel(tank.id, 'tur') - 1])
   const eng = MODULE_COMBAT.eng[tankModLevel(tank.id, 'eng') - 1]
@@ -132,6 +142,48 @@ export function loadoutStats(tankId) {
   base.turnRate *= MODULE_COMBAT.trk[tankModLevel(tank.id, 'trk') - 1]
   base.vision *= MODULE_COMBAT.rad[tankModLevel(tank.id, 'rad') - 1]
   return base
+}
+
+// ---------- голдовые снаряды ----------
+export function buyGoldAmmo(packId) {
+  const p = GOLD_AMMO_PACKS.find((x) => x.id === packId)
+  if (!p || !spendTokens(p.costTokens)) return false
+  profile.goldAmmo += p.amount
+  return true
+}
+
+export function spendGoldAmmo(n = 1) {
+  if (profile.goldAmmo < n) return false
+  profile.goldAmmo -= n
+  return true
+}
+
+// ---------- статистика и рейтинг ----------
+export function addBattleResult(result, kills = 0) {
+  const s = profile.stats
+  s.battles++
+  if (result === 'victory') s.wins++
+  s.kills += kills
+  s.rating = Math.max(100, s.rating + (RATING_DELTA[result] ?? RATING_DELTA.defeat))
+}
+
+// ---------- ежедневный вход ----------
+const dayStr = (d = new Date()) => d.toISOString().slice(0, 10)
+
+export function dailyAvailable() {
+  return profile.daily.last !== dayStr()
+}
+
+// забрать награду дня; возвращает { day, reward } или null
+export function claimDaily() {
+  if (!dailyAvailable()) return null
+  const yesterday = dayStr(new Date(Date.now() - 86400e3))
+  profile.daily.streak = profile.daily.last === yesterday ? profile.daily.streak + 1 : 1
+  profile.daily.last = dayStr()
+  const reward = DAILY_REWARDS[(profile.daily.streak - 1) % DAILY_REWARDS.length]
+  addRewards(reward.credits || 0, reward.tokens || 0)
+  if (reward.gold) profile.goldAmmo += reward.gold
+  return { day: profile.daily.streak, reward }
 }
 
 // ---------- взвод и рефералы ----------

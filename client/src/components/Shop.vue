@@ -1,8 +1,9 @@
 <script setup>
-// Магазин (порт ShopScreen): ящики снабжения за жетоны, паки кредитов и
-// жетонов «за деньги» (пока мгновенное начисление — без реальных платежей).
+// Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
+// Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref } from 'vue'
-import { profile, addRewards, spendTokens } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo } from '../store.js'
+import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import CrateIcon from './ui/CrateIcon.vue'
@@ -16,14 +17,14 @@ const CRATES = [
   { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · гарантия редкости', tone: '#9a5a2c', costTokens: 25, gain: 4500 },
 ]
 const CREDIT_PACKS = [
-  { id: 'p1', amount: 1000, price: '79 ₽' },
-  { id: 'p2', amount: 3500, price: '229 ₽', hot: true },
-  { id: 'p3', amount: 9000, price: '479 ₽' },
+  { id: 'p1', amount: 1000, price: '50 ⭐' },
+  { id: 'p2', amount: 3500, price: '135 ⭐', hot: true },
+  { id: 'p3', amount: 9000, price: '299 ⭐' },
 ]
 const TOKEN_PACKS = [
-  { id: 't1', amount: 20, price: '99 ₽' },
-  { id: 't2', amount: 60, price: '249 ₽', hot: true },
-  { id: 't3', amount: 150, price: '499 ₽' },
+  { id: 't1', amount: 20, price: '65 ⭐' },
+  { id: 't2', amount: 60, price: '165 ⭐', hot: true },
+  { id: 't3', amount: 150, price: '329 ⭐' },
 ]
 
 const toast = ref(null) // { key, text, bad }
@@ -48,6 +49,13 @@ function buyCredits(p) {
 function buyTokens(p) {
   addRewards(0, p.amount)
   showToast(`${p.amount} жетонов — получено!`)
+}
+function buyGold(p) {
+  if (!buyGoldAmmo(p.id)) {
+    showToast('Не хватает жетонов', true)
+    return
+  }
+  showToast(`${p.amount} голдовых снарядов — получено!`)
 }
 const fmt = (n) => n.toLocaleString('ru-RU')
 </script>
@@ -77,9 +85,24 @@ const fmt = (n) => n.toLocaleString('ru-RU')
         </div>
       </section>
 
+      <!-- голдовые снаряды -->
+      <section>
+        <div class="pz-stencil-h">ГОЛДОВЫЕ СНАРЯДЫ</div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px">
+          <button v-for="p in GOLD_AMMO_PACKS" :key="p.id" class="pz-plate pack" @click="buyGold(p)">
+            <span class="pz-display" style="font-size: 16px; color: var(--amber)">★ ×{{ p.amount }}</span>
+            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 500">урон +35% за выстрел</span>
+            <span class="pz-chip" style="font-size: 11px; margin-top: 2px"><PzIcon name="token" :size="12" /> {{ p.costTokens }}</span>
+          </button>
+        </div>
+        <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 6px; font-weight: 500; text-align: center">
+          в наличии: ★ {{ profile.goldAmmo }} · переключение прямо в бою
+        </div>
+      </section>
+
       <!-- кредиты -->
       <section>
-        <div class="pz-stencil-h">КРЕДИТЫ</div>
+        <div class="pz-stencil-h">КРЕДИТЫ · ЗА TG STARS</div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px">
           <button
             v-for="p in CREDIT_PACKS"
@@ -99,7 +122,7 @@ const fmt = (n) => n.toLocaleString('ru-RU')
 
       <!-- жетоны -->
       <section>
-        <div class="pz-stencil-h">ЖЕТОНЫ</div>
+        <div class="pz-stencil-h">ЖЕТОНЫ · ЗА TG STARS</div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px">
           <button
             v-for="p in TOKEN_PACKS"

@@ -5,8 +5,9 @@ defineProps({ screen: { type: String, required: true } })
 const emit = defineEmits(['go'])
 const items = [
   { id: 'hangar', label: 'Ангар', icon: 'hangar' },
-  { id: 'tree', label: 'Прокачка', icon: 'tree' },
+  { id: 'tree', label: 'Развитие', icon: 'tree' },
   { id: 'shop', label: 'Магазин', icon: 'shop' },
+  { id: 'rating', label: 'Рейтинг', icon: 'rank' },
 ]
 </script>
 

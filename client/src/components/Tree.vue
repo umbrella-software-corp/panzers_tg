@@ -67,7 +67,7 @@ function diamondColor(tankId, modId) {
 <template>
   <div class="pz-screen">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
-      <div class="pz-display" style="font-size: 17px">ПРОКАЧКА</div>
+      <div class="pz-display" style="font-size: 17px">РАЗВИТИЕ</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
     </header>
 

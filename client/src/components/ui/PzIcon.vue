@@ -38,6 +38,11 @@ defineProps({
   <svg v-else-if="name === 'pause'" :width="size" :height="size" viewBox="0 0 24 24" fill="currentColor">
     <rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" />
   </svg>
+  <svg v-else-if="name === 'rank'" :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 21h8M12 17v4" />
+    <path d="M7 4h10v6a5 5 0 01-10 0z" />
+    <path d="M7 6H4.5a2.5 2.5 0 002.5 4M17 6h2.5a2.5 2.5 0 01-2.5 4" />
+  </svg>
   <!-- иконки слотов модулей (порт PZ_MOD_ICONS) -->
   <svg v-else-if="name === 'gun'" :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
     <path d="M3 12h13" />
