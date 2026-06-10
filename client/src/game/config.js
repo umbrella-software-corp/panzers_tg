@@ -23,6 +23,7 @@ export const TANK_CLASSES = {
     toleranceDeg: 5.5,
     reload: 2.2,
     damage: 22,
+    hp: 80,
     range: 560,
     vision: 520,
     maxSpeed: 160,
@@ -37,6 +38,7 @@ export const TANK_CLASSES = {
     toleranceDeg: 4,
     reload: 3.4,
     damage: 34,
+    hp: 120,
     range: 600,
     vision: 440,
     maxSpeed: 120,
@@ -51,6 +53,7 @@ export const TANK_CLASSES = {
     toleranceDeg: 3.5,
     reload: 5.0,
     damage: 52,
+    hp: 180,
     range: 640,
     vision: 360,
     maxSpeed: 85,
@@ -60,8 +63,6 @@ export const TANK_CLASSES = {
 }
 
 export const DEFAULT_CLASS = 'medium'
-export const ENEMY_MAX_HP = 100
-export const PLAYER_MAX_HP = 100
 export const MAP_SIZE = 2400 // карта больше экрана; камера едет за танком
 export const VISION_RADIUS = 560 // радиус обзора (туман войны)
 
@@ -139,7 +140,8 @@ export const CAP_TICK = 8 // каждые N сек +1 очко команде с
 // очков ИЛИ истекает MATCH_TIME — побеждает команда с большим счётом.
 export const SCORE_LIMIT = 25
 export const MATCH_TIME = 240 // сек (4 минуты)
-export const BOT_RESPAWN = 5 // сек до возрождения бота
+// Одна жизнь за бой (как в WoT): возрождений нет, уничтоженная команда
+// проигрывает сразу — см. Game._checkMatchEnd.
 
 // Повреждение модулей (Фаза 5): попадание по игроку с шансом CRIT_CHANCE
 // выводит случайный исправный модуль из строя на CRIT_TIME секунд (чинится сам).
@@ -157,18 +159,20 @@ export const CRIT_LABELS = {
   radio: 'РАЦИЯ',
 }
 
-// Боевые параметры бота-танка (ИИ) — общие для союзных и вражеских.
+// Общие параметры ИИ ботов. Боевые статы (hp/урон/скорость/перезарядка)
+// бот берёт из СВОЕГО класса TANK_CLASSES — состав команды в BOT_CLASS_MIX.
 export const ENEMY_AI = {
-  speed: 105,
-  turnRate: 1.8,
   vision: 620,
   idealRange: 360, // держит дистанцию
   sectorHalfDeg: 26,
-  fireCd: 1.7, // перезарядка бота
-  damage: 11,
   hitChance: 0.45,
   radius: 18,
 }
+// Состав команды ботов по индексу (5 слотов) и понижающие коэффициенты
+// (бот стреляет стабильно по кд, поэтому слабее игрока на выстрел).
+export const BOT_CLASS_MIX = ['light', 'medium', 'heavy', 'medium', 'light']
+export const BOT_DMG_MULT = 0.45
+export const BOT_SPEED_MULT = 0.85
 
 // Перевод параметров класса в радианы для движка.
 export function classToRadians(cls) {

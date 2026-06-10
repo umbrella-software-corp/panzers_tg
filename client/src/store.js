@@ -125,6 +125,7 @@ export function loadoutStats(tankId) {
   const tank = TANK_BY_ID[tankId] || TANK_BY_ID[STARTERS[0]]
   const base = { ...TANK_CLASSES[tank.classId] }
   base.damage *= MODULE_COMBAT.gun[tankModLevel(tank.id, 'gun') - 1]
+  base.hp = Math.round(base.hp * MODULE_COMBAT.tur[tankModLevel(tank.id, 'tur') - 1])
   const eng = MODULE_COMBAT.eng[tankModLevel(tank.id, 'eng') - 1]
   base.maxSpeed *= eng
   base.accel *= eng

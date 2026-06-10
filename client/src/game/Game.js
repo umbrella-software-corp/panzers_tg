@@ -2,8 +2,6 @@ import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js
 import {
   TANK_CLASSES,
   DEFAULT_CLASS,
-  ENEMY_MAX_HP,
-  PLAYER_MAX_HP,
   MAP_SIZE,
   OBSTACLES,
   WALLS,
@@ -20,7 +18,9 @@ import {
   ENEMY_AI,
   TEAM_SIZE,
   ALLY_VISION,
-  BOT_RESPAWN,
+  BOT_CLASS_MIX,
+  BOT_DMG_MULT,
+  BOT_SPEED_MULT,
   classToRadians,
 } from './config.js'
 
@@ -86,7 +86,6 @@ export class Game {
     this.tank = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 + 700 }
     this.hullAngle = -Math.PI / 2
     this.speed = 0
-    this.hp = PLAYER_MAX_HP
     this.joystick = { x: 0, y: 0, active: false }
     this.keys = { fwd: false, back: false, left: false, right: false }
     this.tankRadius = 22
@@ -128,7 +127,10 @@ export class Game {
     for (let i = 0; i < TEAM_SIZE; i++) {
       this.bots.push(this._makeBot(id++, TEAM.ENEMY, i, TEAM_SIZE))
     }
-    this.shotFx = []
+    // эффекты выстрелов: летящие снаряды, взрывы, вспышки у ствола
+    this.shells = [] // {x1,y1,x2,y2,t,dur,color,boom}
+    this.booms = [] // {x,y,age,big}
+    this.muzzles = [] // {x,y,a,age,color}
 
     this.kills = 0
     this.deaths = 0
@@ -147,7 +149,6 @@ export class Game {
     this.crippled = { gun: 0, turret: 0, engine: 0, tracks: 0, radio: 0 }
     this.sweep = 0 // текущее смещение линии сведения (замирает при крите башни)
 
-    this.lastShot = null
     this.hurtFlash = 0
 
     this.onState = () => {}
@@ -167,21 +168,28 @@ export class Game {
 
   _makeBot(id, team, i, n) {
     const p = this._spawnPoint(team, i, n)
+    // боевые статы — из класса танка (состав команды задаёт BOT_CLASS_MIX)
+    const cls = TANK_CLASSES[BOT_CLASS_MIX[i % BOT_CLASS_MIX.length]]
     return {
       id,
       team,
+      classId: cls.id,
       name: team === TEAM.ALLY ? ALLY_NAMES[i % ALLY_NAMES.length] : ENEMY_NAMES[i % ENEMY_NAMES.length],
       x: p.x,
       y: p.y,
       i,
       n,
       hull: team === TEAM.ALLY ? -Math.PI / 2 : Math.PI / 2,
-      hp: ENEMY_MAX_HP,
+      hp: cls.hp,
+      maxHp: cls.hp,
+      damage: Math.round(cls.damage * BOT_DMG_MULT),
+      reload: cls.reload,
+      speed: cls.maxSpeed * BOT_SPEED_MULT,
+      turnRate: cls.turnRate * 0.9,
       alive: true,
       fireCd: 1 + i * 0.2,
       flash: 0,
       spotted: false,
-      respawn: 0,
       stuckT: 0, // антизастревание (см. конец _updateBot)
       avoidT: 0,
       avoidDir: 1,
@@ -197,6 +205,8 @@ export class Game {
   setStats(base) {
     const src = base && base.sectorDeg ? base : TANK_CLASSES[DEFAULT_CLASS]
     this.cls = classToRadians(src)
+    this.maxHp = src.hp || TANK_CLASSES[DEFAULT_CLASS].hp
+    this.hp = this.maxHp
     this.ready = true
     this.reloadRemaining = 0
   }
@@ -327,7 +337,7 @@ export class Game {
   }
 
   fire() {
-    if (this.matchOver || this.paused) return
+    if (this.matchOver || this.paused || this.hp <= 0) return
     if (this.crippled.gun > 0) {
       this.onShot({ type: 'blocked', reason: 'gun' })
       return
@@ -364,8 +374,10 @@ export class Game {
       }
     }
 
-    this.lastShot = { angle: lineAngle, hit: !!best, age: 0 }
+    // вспышка у среза ствола
+    this.muzzles.push({ x: tx + Math.cos(lineAngle) * 40, y: ty + Math.sin(lineAngle) * 40, a: lineAngle, age: 0, color: 0xffd866 })
 
+    let killed = false
     if (best) {
       this.hits++
       this.damageDealt += Math.min(this.cls.damage, best.b.hp)
@@ -376,8 +388,14 @@ export class Game {
         this.score.ally++
         this._killBot(best.b)
         this.onKill(best.b.name)
+        killed = true
       }
     }
+
+    // визуальный снаряд: летит к цели (или в конец линии при промахе), там взрыв
+    const ex = best ? best.b.x : tx + Math.cos(lineAngle) * this.cls.range
+    const ey = best ? best.b.y : ty + Math.sin(lineAngle) * this.cls.range
+    this._spawnShell(tx, ty, ex, ey, 0xffd866, best ? (killed ? 'big' : 'hit') : 'dust')
 
     let reason = 'far'
     if (anyLos) reason = 'line'
@@ -444,27 +462,17 @@ export class Game {
     pos.y = Math.max(m, Math.min(MAP_SIZE - m, pos.y))
   }
 
+  // одна жизнь: убитый танк остаётся обломками до конца боя
   _killBot(b) {
     b.alive = false
     b.hp = 0
-    b.respawn = BOT_RESPAWN
+    this.booms.push({ x: b.x, y: b.y, age: 0, big: true })
   }
 
-  _respawnBot(b) {
-    const p = this._spawnPoint(b.team, b.i, b.n)
-    b.x = p.x
-    b.y = p.y
-    b.hp = ENEMY_MAX_HP
-    b.alive = true
-    b.fireCd = 1.2
-  }
-
-  _respawnPlayer() {
-    this.tank.x = MAP_SIZE / 2
-    this.tank.y = MAP_SIZE / 2 + 700
-    this.hp = PLAYER_MAX_HP
-    this.speed = 0
-    for (const s of CRIT_SLOTS) this.crippled[s] = 0 // на возрождении модули чинятся
+  // снаряд: визуально летит из (x1,y1) в (x2,y2), по прибытии — эффект boom
+  _spawnShell(x1, y1, x2, y2, color, boom) {
+    const dist = Math.hypot(x2 - x1, y2 - y1)
+    this.shells.push({ x1, y1, x2, y2, t: 0, dur: Math.max(0.08, dist / 1400), color, boom })
   }
 
   // выводит случайный исправный модуль из строя на CRIT_TIME секунд
@@ -497,6 +505,19 @@ export class Game {
 
   _checkMatchEnd() {
     if (this.matchOver) return
+    // уничтожение команды решает бой сразу (одна жизнь)
+    const alliesAlive = (this.hp > 0 ? 1 : 0) + this.bots.filter((b) => b.team === TEAM.ALLY && b.alive).length
+    const enemiesAlive = this.bots.filter((b) => b.team === TEAM.ENEMY && b.alive).length
+    if (alliesAlive === 0 || enemiesAlive === 0) {
+      this.matchOver = true
+      this.result =
+        enemiesAlive === 0 && alliesAlive > 0
+          ? 'victory'
+          : alliesAlive === 0 && enemiesAlive > 0
+            ? 'defeat'
+            : 'draw'
+      return
+    }
     const limitHit = this.score.ally >= SCORE_LIMIT || this.score.enemy >= SCORE_LIMIT
     if (!limitHit && this.matchTime > 0) return
     this.matchOver = true
@@ -541,12 +562,16 @@ export class Game {
       }
     }
 
-    if (this.lastShot) {
-      this.lastShot.age += dt
-      if (this.lastShot.age > 0.18) this.lastShot = null
+    // снаряды: по прибытии — взрыв/фонтан земли
+    for (const s of this.shells) {
+      s.t += dt
+      if (s.t >= s.dur) this.booms.push({ x: s.x2, y: s.y2, age: 0, big: s.boom === 'big', dust: s.boom === 'dust' })
     }
-    for (const s of this.shotFx) s.age += dt
-    this.shotFx = this.shotFx.filter((s) => s.age <= 0.16)
+    this.shells = this.shells.filter((s) => s.t < s.dur)
+    for (const bm of this.booms) bm.age += dt
+    this.booms = this.booms.filter((bm) => bm.age <= (bm.big ? 0.7 : 0.45))
+    for (const m of this.muzzles) m.age += dt
+    this.muzzles = this.muzzles.filter((m) => m.age <= 0.09)
     for (const b of this.bots) if (b.flash > 0) b.flash = Math.max(0, b.flash - dt)
     if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - dt)
 
@@ -618,6 +643,7 @@ export class Game {
   }
 
   _moveTank(dt) {
+    if (this.hp <= 0) return // уничтожен — наблюдает
     const j = this.joystick
     let steer = 0
     let throttle = 0
@@ -651,11 +677,7 @@ export class Game {
 
   _updateBot(b, dt) {
     const ai = ENEMY_AI
-    if (!b.alive) {
-      b.respawn -= dt
-      if (b.respawn <= 0) this._respawnBot(b)
-      return
-    }
+    if (!b.alive) return // одна жизнь — обломки лежат до конца боя
 
     // ближайший живой враг своей команды
     const foes = this._enemiesOf(b.team)
@@ -679,7 +701,7 @@ export class Game {
       // при объезде временно целимся в сторону, стрельбу не сбиваем
       const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang
       const diff = angleDiff(steerA, b.hull)
-      const maxTurn = ai.turnRate * dt
+      const maxTurn = b.turnRate * dt
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
@@ -688,17 +710,20 @@ export class Game {
       const strafe = Math.sin(this.t * 1.3 + b.id * 1.7) * 0.5
       wantMove = move !== 0
 
-      b.x += Math.cos(b.hull) * move * ai.speed * dt
-      b.y += Math.sin(b.hull) * move * ai.speed * dt
-      b.x += Math.cos(b.hull + Math.PI / 2) * strafe * ai.speed * dt
-      b.y += Math.sin(b.hull + Math.PI / 2) * strafe * ai.speed * dt
+      b.x += Math.cos(b.hull) * move * b.speed * dt
+      b.y += Math.sin(b.hull) * move * b.speed * dt
+      b.x += Math.cos(b.hull + Math.PI / 2) * strafe * b.speed * dt
+      b.y += Math.sin(b.hull + Math.PI / 2) * strafe * b.speed * dt
 
       const fireDiff = angleDiff(ang, b.hull)
       const inArc = Math.abs(fireDiff) <= (ai.sectorHalfDeg * Math.PI) / 180
       if (inArc && b.fireCd <= 0) {
-        b.fireCd = ai.fireCd
-        this.shotFx.push({ x1: b.x, y1: b.y, x2: target.x, y2: target.y, age: 0 })
-        if (Math.random() < ai.hitChance) this._damageUnit(target, ai.damage, b.team)
+        b.fireCd = b.reload
+        const col = b.team === TEAM.ALLY ? 0x9fd0ff : 0xff7043
+        this.muzzles.push({ x: b.x + Math.cos(b.hull) * 34, y: b.y + Math.sin(b.hull) * 34, a: b.hull, age: 0, color: col })
+        const hit = Math.random() < ai.hitChance
+        this._spawnShell(b.x, b.y, target.x, target.y, col, hit ? 'hit' : 'dust')
+        if (hit) this._damageUnit(target, b.damage, b.team)
       }
     } else {
       // никого не видит — играет от целей: едет к ближайшей не своей точке
@@ -716,9 +741,9 @@ export class Game {
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
       const diff = angleDiff(a, b.hull)
-      b.hull += Math.max(-ai.turnRate * dt, Math.min(ai.turnRate * dt, diff))
-      b.x += Math.cos(b.hull) * ai.speed * 0.6 * dt
-      b.y += Math.sin(b.hull) * ai.speed * 0.6 * dt
+      b.hull += Math.max(-b.turnRate * dt, Math.min(b.turnRate * dt, diff))
+      b.x += Math.cos(b.hull) * b.speed * 0.6 * dt
+      b.y += Math.sin(b.hull) * b.speed * 0.6 * dt
     }
 
     this._resolveCollisions(b, ai.radius)
@@ -726,7 +751,7 @@ export class Game {
     // антизастревание: хотел ехать, но упёрся — объезд по дуге случайной стороной
     if (b.avoidT > 0) b.avoidT -= dt
     const moved = Math.hypot(b.x - px, b.y - py)
-    if (wantMove && moved < ai.speed * dt * 0.25) b.stuckT = (b.stuckT || 0) + dt
+    if (wantMove && moved < b.speed * dt * 0.25) b.stuckT = (b.stuckT || 0) + dt
     else b.stuckT = 0
     if (b.stuckT > 0.5) {
       b.stuckT = 0
@@ -741,9 +766,12 @@ export class Game {
       this.hurtFlash = 0.25
       if (this.hp > 0 && Math.random() < CRIT_CHANCE) this._critPlayer()
       if (this.hp <= 0) {
+        // одна жизнь: игрок выбывает до конца боя (наблюдение)
+        this.hp = 0
         this.deaths++
         this.score.enemy++
-        this._respawnPlayer()
+        this.speed = 0
+        this.booms.push({ x: this.tank.x, y: this.tank.y, age: 0, big: true })
         this._emitState()
       }
     } else {
@@ -769,11 +797,11 @@ export class Game {
       shots: this.shots,
       hits: this.hits,
       accuracy: this.shots ? Math.round((this.hits / this.shots) * 100) : 0,
-      playerHp: Math.max(0, this.hp),
-      playerMaxHp: PLAYER_MAX_HP,
+      playerHp: Math.max(0, Math.round(this.hp)),
+      playerMaxHp: this.maxHp,
       allyScore: this.score.ally,
       enemyScore: this.score.enemy,
-      alliesAlive: 1 + this.bots.filter((b) => b.team === TEAM.ALLY && b.alive).length,
+      alliesAlive: (this.hp > 0 ? 1 : 0) + this.bots.filter((b) => b.team === TEAM.ALLY && b.alive).length,
       enemiesAlive: this.bots.filter((b) => b.team === TEAM.ENEMY && b.alive).length,
       reload01,
       ready: this.ready,
@@ -854,6 +882,13 @@ export class Game {
       .lineTo(tx + Math.cos(lineA) * L, ty + Math.sin(lineA) * L)
       .stroke({ width: 4, color: 0xffd866, alpha: 0.95, cap: 'round' })
 
+    // обломки уничтоженных (видны всем — ориентиры боя)
+    for (const b of this.bots) {
+      if (b.alive) continue
+      g.circle(b.x, b.y, 30).fill({ color: 0x000000, alpha: 0.35 }) // гарь
+      this._drawTank(g, b.x, b.y, b.hull, { body: 0x2c2f27, dark: 0x16180f }, 0.85)
+    }
+
     // боты: союзники видны всегда, враги — только при засвете; все — танки
     for (const b of this.bots) {
       if (!b.alive) continue
@@ -865,31 +900,62 @@ export class Game {
       const bw = 40
       const hpCol = isAlly ? 0x5b9cff : 0x5bd860
       g.rect(b.x - bw / 2, b.y - 34, bw, 4).fill({ color: 0x000000, alpha: 0.5 })
-      g.rect(b.x - bw / 2, b.y - 34, bw * (Math.max(0, b.hp) / ENEMY_MAX_HP), 4).fill(hpCol)
+      g.rect(b.x - bw / 2, b.y - 34, bw * (Math.max(0, b.hp) / b.maxHp), 4).fill(hpCol)
     }
 
-    for (const s of this.shotFx) {
-      const k = 1 - s.age / 0.16
-      g.moveTo(s.x1, s.y1).lineTo(s.x2, s.y2).stroke({ width: 3, color: 0xff5252, alpha: 0.7 * k })
+    // игрок: живой — янтарный, уничтожен — обломки
+    if (this.hp > 0) {
+      this._drawTank(
+        g,
+        tx,
+        ty,
+        hull,
+        { body: this.hurtFlash > 0 ? 0xff8a8a : 0xf2a50c, dark: 0x3d3110, outline: 0xffd866 },
+        1,
+      )
+    } else {
+      g.circle(tx, ty, 34).fill({ color: 0x000000, alpha: 0.35 })
+      this._drawTank(g, tx, ty, hull, { body: 0x3a3526, dark: 0x1b180e }, 1)
     }
 
-    if (this.lastShot) {
-      const k = 1 - this.lastShot.age / 0.18
-      const col = this.lastShot.hit ? 0x5bd860 : 0xff5252
-      const a = this.lastShot.angle
-      g.moveTo(tx, ty)
-        .lineTo(tx + Math.cos(a) * L, ty + Math.sin(a) * L)
-        .stroke({ width: 6 * k + 2, color: col, alpha: 0.85 * k })
+    // летящие снаряды: болванка + короткий хвост
+    for (const s of this.shells) {
+      const k = s.t / s.dur
+      const sx = s.x1 + (s.x2 - s.x1) * k
+      const sy = s.y1 + (s.y2 - s.y1) * k
+      const a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1)
+      g.moveTo(sx - Math.cos(a) * 22, sy - Math.sin(a) * 22)
+        .lineTo(sx, sy)
+        .stroke({ width: 3, color: s.color, alpha: 0.45 })
+      g.circle(sx, sy, 3.5).fill(s.color)
     }
 
-    this._drawTank(
-      g,
-      tx,
-      ty,
-      hull,
-      { body: this.hurtFlash > 0 ? 0xff8a8a : 0xf2a50c, dark: 0x3d3110, outline: 0xffd866 },
-      1,
-    )
+    // вспышки у среза ствола
+    for (const m of this.muzzles) {
+      const k = 1 - m.age / 0.09
+      g.circle(m.x, m.y, 9 * k).fill({ color: 0xffffff, alpha: 0.8 * k })
+      g.moveTo(m.x, m.y)
+        .lineTo(m.x + Math.cos(m.a) * 22 * k, m.y + Math.sin(m.a) * 22 * k)
+        .stroke({ width: 5 * k, color: m.color, alpha: 0.9 * k })
+    }
+
+    // взрывы: big — гибель танка, dust — фонтан земли при промахе
+    for (const bm of this.booms) {
+      const life = bm.big ? 0.7 : 0.45
+      const k = Math.min(1, bm.age / life)
+      const fade = 1 - k
+      if (bm.dust) {
+        g.circle(bm.x, bm.y, 8 + k * 26).fill({ color: 0x8a7a55, alpha: 0.4 * fade })
+        g.circle(bm.x, bm.y, 4 + k * 14).fill({ color: 0xb8a878, alpha: 0.5 * fade })
+      } else {
+        const r = bm.big ? 16 + k * 110 : 10 + k * 56
+        g.circle(bm.x, bm.y, r).fill({ color: 0xff7a3c, alpha: 0.3 * fade })
+        g.circle(bm.x, bm.y, r * 0.55).fill({ color: 0xffd866, alpha: 0.5 * fade })
+        g.circle(bm.x, bm.y, r * 0.25).fill({ color: 0xffffff, alpha: 0.85 * fade })
+        if (bm.big) g.circle(bm.x, bm.y, r * 1.15).stroke({ width: 3 * fade + 1, color: 0xff7a3c, alpha: 0.5 * fade })
+      }
+    }
+
     this._updateLabels()
     this._drawMinimap()
   }

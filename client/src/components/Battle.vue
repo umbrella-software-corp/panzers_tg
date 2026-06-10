@@ -92,9 +92,20 @@ game.onKill = (name) => {
   }, 4500)
 }
 
+// тряска экрана при получении урона
+const shaking = ref(false)
+let shakeTimer = null
+let prevHp = Infinity
+
 game.onState = (s) => {
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
-  if (s.deaths > prevDeaths) showToast('miss', 'ПОДБИТ')
+  if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
+  if (s.playerHp < prevHp && s.playerHp > 0) {
+    shaking.value = true
+    clearTimeout(shakeTimer)
+    shakeTimer = setTimeout(() => (shaking.value = false), 320)
+  }
+  prevHp = s.playerHp
   prevKills = s.kills
   prevDeaths = s.deaths
   state.value = s
@@ -217,12 +228,13 @@ if (import.meta.env.DEV) window.__game = game
 onBeforeUnmount(() => {
   clearTimeout(toastTimer)
   clearInterval(countTimer)
+  clearTimeout(shakeTimer)
   game.destroy()
 })
 </script>
 
 <template>
-  <div class="root">
+  <div class="root" :class="{ shaken: shaking }">
     <div class="stage" ref="stage"></div>
 
     <!-- ===== верхний HUD ===== -->
@@ -271,9 +283,14 @@ onBeforeUnmount(() => {
       <div v-if="toast" class="toast pz-display" :class="toast.kind">{{ toast.text }}</div>
     </transition>
 
+    <!-- уничтожен: режим наблюдения -->
+    <div v-if="phase === 'fighting' && state.playerHp <= 0" class="dead-banner pz-display">
+      ВЫ УНИЧТОЖЕНЫ · НАБЛЮДЕНИЕ
+    </div>
+
     <!-- зона движения: джойстик появляется под пальцем -->
     <div
-      v-show="phase === 'fighting' && !paused"
+      v-show="phase === 'fighting' && !paused && state.playerHp > 0"
       class="movezone"
       @pointerdown="joyStart"
       @pointermove="joyMove"
@@ -292,7 +309,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- ОГОНЬ -->
-    <button v-show="phase === 'fighting' && !paused" class="fire" :class="{ cold: !state.ready }" @pointerdown.prevent="onFire">
+    <button v-show="phase === 'fighting' && !paused && state.playerHp > 0" class="fire" :class="{ cold: !state.ready }" @pointerdown.prevent="onFire">
       <svg class="ring" width="92" height="92" viewBox="0 0 92 92">
         <circle cx="46" cy="46" r="34" class="ring-bg" />
         <circle cx="46" cy="46" r="34" class="ring-fg" :stroke-dasharray="RING" :stroke-dashoffset="ringOffset" />
@@ -332,6 +349,26 @@ onBeforeUnmount(() => {
   inset: 0;
   overflow: hidden;
   background: #0c0f0a;
+}
+.root.shaken {
+  animation: pz-shake 0.3s linear;
+}
+.dead-banner {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  color: var(--red);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--red-deep);
+  border-radius: 8px;
+  padding: 8px 16px;
+  white-space: nowrap;
+  z-index: 4;
+  pointer-events: none;
+  animation: pz-slide-up 0.3s ease;
 }
 .stage {
   position: absolute;
