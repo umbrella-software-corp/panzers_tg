@@ -141,6 +141,7 @@ export class Game {
     this.shots = 0
     this.hits = 0
     this.damageDealt = 0
+    this.damageLog = new Map() // по-целевой лог урона игрока (лист «По целям»)
     this.score = { ally: 0, enemy: 0 }
 
     // матч (Фаза 4)
@@ -483,7 +484,8 @@ export class Game {
       pen = this._penetration(lineAngle, best.b.classId, best.b.hull, this.ammoMult > 1)
       const dmg = Math.round(this.cls.damage * this.ammoMult * pen.mult)
       if (dmg > 0) {
-        this.damageDealt += Math.min(dmg, best.b.hp)
+        const actual = Math.min(dmg, best.b.hp)
+        this.damageDealt += actual
         best.b.hp -= dmg
         best.b.flash = 0.25
         if (best.b.hp <= 0) {
@@ -493,6 +495,11 @@ export class Game {
           this.onKill(best.b.name)
           killed = true
         }
+        // лог «По целям»
+        const entry = this.damageLog.get(best.b.id) || { name: best.b.name, tankId: best.b.tankId, dmg: 0, killed: false }
+        entry.dmg += actual
+        entry.killed = entry.killed || killed
+        this.damageLog.set(best.b.id, entry)
       }
     }
 
@@ -1073,6 +1080,9 @@ export class Game {
       enemyBase: Math.round((this.bases.find((b) => b.team === TEAM.ENEMY) || {}).progress || 0),
       classId: this.cls.id,
       damageDealt: Math.round(this.damageDealt),
+      damageLog: [...this.damageLog.values()]
+        .map((e) => ({ ...e, dmg: Math.round(e.dmg) }))
+        .sort((a, b) => b.dmg - a.dmg),
       matchTime: Math.ceil(this.matchTime),
       matchOver: this.matchOver,
       result: this.result,

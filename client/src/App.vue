@@ -7,7 +7,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, addCrewXp, loadoutStats, dailyAvailable } from './store.js'
+import { profile, addRewards, bankBattleXp, loadoutStats, dailyAvailable } from './store.js'
 
 // экраны: hangar | tree | shop | rating | matchmaking | battle
 const screen = ref('hangar')
@@ -33,14 +33,14 @@ function deploy() {
 function exitBattle(reward) {
   if (reward) {
     addRewards(reward.silver || 0)
-    addCrewXp(reward.xp) // опыт боя качает экипаж
+    bankBattleXp(reward.xp) // 50% в ветку танка, 50% экипажу
   }
   screen.value = 'hangar'
 }
 function rematch(reward) {
   if (reward) {
     addRewards(reward.silver || 0)
-    addCrewXp(reward.xp)
+    bankBattleXp(reward.xp)
   }
   battleKey.value++
 }

@@ -54,6 +54,7 @@ if (!profile.stats || typeof profile.stats !== 'object')
 if (!profile.daily || typeof profile.daily !== 'object') profile.daily = { last: '', streak: 0 }
 if (!Array.isArray(profile.history)) profile.history = [] // последние бои
 if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } // экипаж один на все танки
+if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {} // опыт по веткам наций
 
 watch(profile, () => localStorage.setItem(KEY, JSON.stringify(profile)), { deep: true })
 
@@ -165,6 +166,20 @@ export const crewProgress = () =>
 
 export function addCrewXp(xp) {
   profile.crew.xp += Math.max(0, Math.round(xp || 0))
+}
+
+// опыт ветки нации (копится с боёв на её танках)
+export function addBranchXp(nation, xp) {
+  profile.branchXp[nation] = (profile.branchXp[nation] || 0) + Math.max(0, Math.round(xp || 0))
+}
+
+// сплит опыта боя: половина в ветку текущего танка, половина экипажу
+export function bankBattleXp(xp) {
+  const crew = Math.round((xp || 0) / 2)
+  const branch = Math.max(0, (xp || 0) - crew)
+  addCrewXp(crew)
+  addBranchXp(nationOf(profile.selectedTank), branch)
+  return { crew, branch }
 }
 
 // ---------- голдовые снаряды ----------
