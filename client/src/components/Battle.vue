@@ -148,6 +148,9 @@ function toggleAmmo() {
 game.onCrit = (slot) => {
   showToast('miss', `${CRIT_LABELS[slot]} ПОВРЕЖДЕНА`)
 }
+game.onSaved = (kind) => {
+  showToast('hit', kind === 'ricochet' ? 'РИКОШЕТ ОТ БРОНИ' : 'БРОНЯ НЕ ПРОБИТА')
+}
 game.onShot = (r) => {
   if (r.type === 'blocked') {
     if (r.reason === 'gun') showToast('miss', 'ПУШКА ЗАКЛИНИЛА')
@@ -163,6 +166,10 @@ game.onShot = (r) => {
   }
   if (r.type === 'hit') {
     showToast('hit', 'ПОПАЛ')
+  } else if (r.type === 'ricochet') {
+    showToast('miss', 'РИКОШЕТ')
+  } else if (r.type === 'nopen') {
+    showToast('miss', 'НЕ ПРОБИЛ')
   } else if (r.type === 'miss') {
     const txt =
       r.reason === 'far'

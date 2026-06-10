@@ -65,7 +65,7 @@ export function combatStats(tank) {
     reload: +(6.4 - s.rof * 0.5).toFixed(2),
     maxSpeed,
     accel: Math.round(maxSpeed * 2.3),
-    turnRate: +(0.8 + s.mnv * 0.2).toFixed(2),
+    turnRate: +(0.55 + s.mnv * 0.12).toFixed(2), // танк, а не машинка
     vision: 280 + s.view * 32,
     hp: 60 + s.hp * 14,
   }

@@ -156,6 +156,7 @@ export class Game {
     this.onShot = () => {}
     this.onCrit = () => {}
     this.onKill = () => {} // фраг игрока → имя жертвы (килл-фид HUD)
+    this.onSaved = () => {} // броня игрока спасла: 'ricochet' | 'nopen'
     this._gridDrawn = false
   }
 
@@ -389,32 +390,43 @@ export class Game {
     this.muzzles.push({ x: tx + Math.cos(lineAngle) * 40, y: ty + Math.sin(lineAngle) * 40, a: lineAngle, age: 0, color: 0xffd866 })
 
     let killed = false
+    let pen = null
     if (best) {
-      const dmg = Math.round(this.cls.damage * this.ammoMult)
-      this.hits++
-      this.damageDealt += Math.min(dmg, best.b.hp)
-      best.b.hp -= dmg
-      best.b.flash = 0.25
-      if (best.b.hp <= 0) {
-        this.kills++
-        this.score.ally++
-        this._killBot(best.b)
-        this.onKill(best.b.name)
-        killed = true
+      this.hits++ // попадание есть, даже если броня не пробита
+      pen = this._penetration(lineAngle, best.b.classId, best.b.hull, this.ammoMult > 1)
+      const dmg = Math.round(this.cls.damage * this.ammoMult * pen.mult)
+      if (dmg > 0) {
+        this.damageDealt += Math.min(dmg, best.b.hp)
+        best.b.hp -= dmg
+        best.b.flash = 0.25
+        if (best.b.hp <= 0) {
+          this.kills++
+          this.score.ally++
+          this._killBot(best.b)
+          this.onKill(best.b.name)
+          killed = true
+        }
       }
     }
 
     // визуальный снаряд: летит к цели (или в конец линии при промахе), там взрыв
     const ex = best ? best.b.x : tx + Math.cos(lineAngle) * this.cls.range
     const ey = best ? best.b.y : ty + Math.sin(lineAngle) * this.cls.range
-    this._spawnShell(tx, ty, ex, ey, 0xffd866, best ? (killed ? 'big' : 'hit') : 'dust')
+    const boomKind = best ? (killed ? 'big' : pen && !pen.pen ? 'dust' : 'hit') : 'dust'
+    this._spawnShell(tx, ty, ex, ey, 0xffd866, boomKind)
 
     let reason = 'far'
     if (anyLos) reason = 'line'
     else if (anyInSector) reason = 'los'
     else if (anyInRange) reason = 'sector'
 
-    this.onShot({ type: best ? 'hit' : 'miss', inRange: anyInRange, inSector: anyInSector, los: anyLos, reason })
+    this.onShot({
+      type: best ? (pen.pen ? 'hit' : pen.kind) : 'miss',
+      inRange: anyInRange,
+      inSector: anyInSector,
+      los: anyLos,
+      reason,
+    })
     this._emitState()
   }
 
@@ -485,6 +497,21 @@ export class Game {
   _spawnShell(x1, y1, x2, y2, color, boom) {
     const dist = Math.hypot(x2 - x1, y2 - y1)
     this.shells.push({ x1, y1, x2, y2, t: 0, dur: Math.max(0.08, dist / 1400), color, boom })
+  }
+
+  // Бронепробитие: шанс рикошета/непробития зависит от класса цели и угла
+  // встречи (лоб держит, корма — нет). gold — голдовый снаряд прошивает.
+  // Возвращает { pen, kind?, mult }: рикошет — 0 урона, непробитие — 20%.
+  _penetration(shotAngle, targetClassId, targetHull, gold) {
+    const armorBase = { light: 0.1, medium: 0.2, heavy: 0.3 }[targetClassId] ?? 0.15
+    const rel = Math.abs(angleDiff(shotAngle, targetHull))
+    const facing = (1 - Math.cos(rel)) / 2 // 1 — снаряд в лоб, 0 — в корму
+    let chance = Math.min(0.35, armorBase * facing * 1.2)
+    if (gold) chance *= 0.4
+    if (Math.random() >= chance) return { pen: true, mult: 1 }
+    return Math.random() < 0.5
+      ? { pen: false, kind: 'ricochet', mult: 0 }
+      : { pen: false, kind: 'nopen', mult: 0.2 }
   }
 
   // выводит случайный исправный модуль из строя на CRIT_TIME секунд
@@ -734,8 +761,19 @@ export class Game {
         const col = b.team === TEAM.ALLY ? 0x9fd0ff : 0xff7043
         this.muzzles.push({ x: b.x + Math.cos(b.hull) * 34, y: b.y + Math.sin(b.hull) * 34, a: b.hull, age: 0, color: col })
         const hit = Math.random() < ai.hitChance
-        this._spawnShell(b.x, b.y, target.x, target.y, col, hit ? 'hit' : 'dust')
-        if (hit) this._damageUnit(target, b.damage, b.team)
+        let pierced = false
+        if (hit) {
+          // броня цели может срикошетить и ботский снаряд
+          const tCls = target.isPlayer ? this.cls.id : target.classId
+          const tHull = target.isPlayer ? this.hullAngle : target.hull
+          const shotA = Math.atan2(target.y - b.y, target.x - b.x)
+          const pen = this._penetration(shotA, tCls, tHull, false)
+          pierced = pen.pen
+          const dmg = Math.round(b.damage * pen.mult)
+          if (dmg > 0) this._damageUnit(target, dmg, b.team)
+          if (target.isPlayer && !pen.pen) this.onSaved(pen.kind)
+        }
+        this._spawnShell(b.x, b.y, target.x, target.y, col, hit && pierced ? 'hit' : 'dust')
       }
     } else {
       // никого не видит — играет от целей: едет к ближайшей не своей точке

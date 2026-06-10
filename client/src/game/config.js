@@ -28,7 +28,7 @@ export const TANK_CLASSES = {
     vision: 520,
     maxSpeed: 160,
     accel: 380,
-    turnRate: 2.6,
+    turnRate: 1.6,
   },
   medium: {
     id: 'medium',
@@ -43,7 +43,7 @@ export const TANK_CLASSES = {
     vision: 440,
     maxSpeed: 120,
     accel: 270,
-    turnRate: 1.8,
+    turnRate: 1.2,
   },
   heavy: {
     id: 'heavy',
@@ -58,7 +58,7 @@ export const TANK_CLASSES = {
     vision: 360,
     maxSpeed: 85,
     accel: 190,
-    turnRate: 1.2,
+    turnRate: 0.85,
   },
 }
 
