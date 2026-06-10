@@ -22,11 +22,24 @@ const tanks = computed(() => tanksOfNation(profile.nation))
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
 const partyMul = computed(() => profile.party.length)
-const skinTint = computed(() => (SKIN_BY_ID[profile.skin] || SKIN_BY_ID.std).tint)
+// превью: клик по запертому камуфляжу примеряет его, покупка — отдельной кнопкой
+const previewSkin = ref(null)
+const skinTint = computed(() => {
+  const id = previewSkin.value || profile.skin
+  return (SKIN_BY_ID[id] || SKIN_BY_ID.std).tint
+})
+const previewDef = computed(() => (previewSkin.value ? SKIN_BY_ID[previewSkin.value] : null))
 
 function pickSkin(s) {
-  if (profile.skins.includes(s.id)) setSkin(s.id)
-  else buySkin(s.id) // не хватило жетонов — просто ничего не произойдёт
+  if (profile.skins.includes(s.id)) {
+    previewSkin.value = null
+    setSkin(s.id)
+  } else {
+    previewSkin.value = previewSkin.value === s.id ? null : s.id // примерка
+  }
+}
+function buyPreviewed() {
+  if (previewDef.value && buySkin(previewDef.value.id)) previewSkin.value = null
 }
 const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
 </script>
@@ -106,19 +119,22 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
     </div>
 
-    <!-- камуфляжи: платные скины, видны в бою -->
+    <!-- камуфляжи: платные скины, видны в бою; запертый — примерка по клику -->
     <div style="display: flex; align-items: center; gap: 7px; padding: 2px 14px 4px; flex-shrink: 0">
-      <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">КАМО</span>
+      <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">КАМУФЛЯЖ</span>
       <button
         v-for="s in SKINS"
         :key="s.id"
         class="skin-dot"
-        :class="{ on: profile.skin === s.id }"
+        :class="{ on: profile.skin === s.id && !previewSkin, fit: previewSkin === s.id }"
         :style="{ background: tintCss(s.tint) }"
         :title="s.name + (profile.skins.includes(s.id) ? '' : ` · ${s.costTokens} жет.`)"
         @click="pickSkin(s)"
       >
         <PzIcon v-if="!profile.skins.includes(s.id)" name="lock" :size="9" color="#1d1604" />
+      </button>
+      <button v-if="previewDef" class="pz-btn2 buy-skin" @click="buyPreviewed">
+        {{ previewDef.name }} · <PzIcon name="token" :size="11" /> {{ previewDef.costTokens }}
       </button>
     </div>
 
@@ -255,6 +271,19 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
   border-color: var(--amber);
   box-shadow: 0 0 8px rgba(242, 165, 12, 0.6);
   opacity: 1;
+}
+.skin-dot.fit {
+  border-color: var(--ink);
+  box-shadow: 0 0 8px rgba(232, 230, 218, 0.5);
+  opacity: 1;
+}
+.buy-skin {
+  padding: 5px 10px;
+  font-size: 10px;
+  gap: 4px;
+  border-color: var(--amber);
+  color: var(--amber);
+  animation: pz-slide-up 0.2s ease;
 }
 .tank-wrap {
   position: absolute;

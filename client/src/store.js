@@ -12,6 +12,7 @@ import {
   modLevel,
   modsMaxedCount,
   REF_MILESTONES,
+  SKINS,
   SKIN_BY_ID,
   RENAME_COST_TOKENS,
   combatStats,
@@ -199,6 +200,15 @@ export function buySkin(skinId) {
 
 export function setSkin(skinId) {
   if (profile.skins.includes(skinId)) profile.skin = skinId
+}
+
+// дроп случайного непринадлежащего камуфляжа (из ящиков); null — все собраны
+export function grantRandomSkin() {
+  const pool = SKINS.filter((s) => s.id !== 'std' && !profile.skins.includes(s.id))
+  if (!pool.length) return null
+  const s = pool[Math.floor(Math.random() * pool.length)]
+  profile.skins.push(s.id)
+  return s
 }
 
 // платная смена позывного

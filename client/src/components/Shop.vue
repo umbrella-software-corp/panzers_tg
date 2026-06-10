@@ -2,7 +2,7 @@
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin } from '../store.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
@@ -11,9 +11,9 @@ import PzIcon from './ui/PzIcon.vue'
 const emit = defineEmits(['go'])
 
 const CRATES = [
-  { id: 'c1', name: 'Полевой ящик', sub: '600 кредитов · обычные модули', icon: 'crate_field', costTokens: 5, gain: 600 },
-  { id: 'c2', name: 'Офицерский ящик', sub: '1 800 кредитов · шанс на камуфляж', icon: 'crate_officer', costTokens: 12, gain: 1800 },
-  { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · гарантия редкости', icon: 'crate_general', costTokens: 25, gain: 4500 },
+  { id: 'c1', name: 'Полевой ящик', sub: '600 кредитов · шанс на камуфляж 10%', icon: 'crate_field', costTokens: 5, gain: 600, drop: 0.1 },
+  { id: 'c2', name: 'Офицерский ящик', sub: '1 800 кредитов · камуфляж 35%', icon: 'crate_officer', costTokens: 12, gain: 1800, drop: 0.35 },
+  { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · камуфляж гарантирован', icon: 'crate_general', costTokens: 25, gain: 4500, drop: 1 },
 ]
 const CREDIT_PACKS = [
   { id: 'p1', amount: 1000, price: '50 ⭐' },
@@ -39,6 +39,17 @@ function buyCrate(c) {
     return
   }
   addRewards(c.gain, 0)
+  // дроп камуфляжа: все собраны — компенсация жетонами
+  if (Math.random() < c.drop) {
+    const skin = grantRandomSkin()
+    if (skin) {
+      showToast(`${c.name}: выпал камуфляж «${skin.name}»!`)
+      return
+    }
+    addRewards(0, 3)
+    showToast(`${c.name}: камуфляжи собраны, +3 жетона!`)
+    return
+  }
   showToast(`${c.name} — получено!`)
 }
 function buyCredits(p) {
