@@ -3,7 +3,7 @@
 // добор ботов по дедлайну, развёртывание → бой. Отмена возвращает в ангар.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { profile } from '../store.js'
-import { TANK_BY_ID, FRIENDS } from '../game/meta.js'
+import { TANK_BY_ID, FRIENDS, MAX_TIER } from '../game/meta.js'
 import TankTopDown from './ui/TankTopDown.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -26,7 +26,7 @@ const phase = ref('search') // search → fill → go
 const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name || '')
 const tierRange = computed(() => {
   const t = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
-  return `${Math.max(1, t - 1)}–${Math.min(5, t + 1)}`
+  return `${Math.max(1, t - 1)}–${Math.min(MAX_TIER, t + 1)}`
 })
 const slots = computed(() => [...Array(TEAM)].map((_, i) => (i === 0 ? { name: 'ВЫ', kind: 'you' } : allies.value[i - 1] || null)))
 const liveTotal = computed(() => 1 + allies.value.filter((a) => a.kind !== 'bot').length)

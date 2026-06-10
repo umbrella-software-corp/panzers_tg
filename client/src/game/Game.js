@@ -904,7 +904,8 @@ export class Game {
     this.world.rotation = -Math.PI / 2 - this.hullAngle
 
     this.fog.position.set(camX, camY)
-    const fogD = this._vision() * 2 * 1.15
+    // уничтожен — режим наблюдения: туман шире (смотрим глазами команды)
+    const fogD = this._vision() * 2 * 1.15 * (this.hp > 0 ? 1 : 1.8)
     this.fog.width = fogD
     this.fog.height = fogD
 
@@ -931,20 +932,23 @@ export class Game {
       }
     }
 
-    g.moveTo(tx, ty)
-    g.arc(tx, ty, L, hull - half, hull + half)
-    g.lineTo(tx, ty)
-    g.fill({ color: 0xf2a50c, alpha: 0.07 })
-    for (const a of [hull - half, hull + half]) {
+    // прицельные визуалы только у живого танка — обломки не целятся
+    if (this.hp > 0) {
       g.moveTo(tx, ty)
-        .lineTo(tx + Math.cos(a) * L, ty + Math.sin(a) * L)
-        .stroke({ width: 2, color: 0xf2a50c, alpha: 0.35 })
-    }
+      g.arc(tx, ty, L, hull - half, hull + half)
+      g.lineTo(tx, ty)
+      g.fill({ color: 0xf2a50c, alpha: 0.07 })
+      for (const a of [hull - half, hull + half]) {
+        g.moveTo(tx, ty)
+          .lineTo(tx + Math.cos(a) * L, ty + Math.sin(a) * L)
+          .stroke({ width: 2, color: 0xf2a50c, alpha: 0.35 })
+      }
 
-    const lineA = hull + this._sweepOffset()
-    g.moveTo(tx, ty)
-      .lineTo(tx + Math.cos(lineA) * L, ty + Math.sin(lineA) * L)
-      .stroke({ width: 4, color: 0xffd866, alpha: 0.95, cap: 'round' })
+      const lineA = hull + this._sweepOffset()
+      g.moveTo(tx, ty)
+        .lineTo(tx + Math.cos(lineA) * L, ty + Math.sin(lineA) * L)
+        .stroke({ width: 4, color: 0xffd866, alpha: 0.95, cap: 'round' })
+    }
 
     // обломки уничтоженных (видны всем — ориентиры боя)
     for (const b of this.bots) {
