@@ -20,6 +20,7 @@ import {
   ENEMY_AI,
   TEAM_SIZE,
   ALLY_VISION,
+  BOT_RESPAWN,
   classToRadians,
 } from './config.js'
 
@@ -181,6 +182,9 @@ export class Game {
       flash: 0,
       spotted: false,
       respawn: 0,
+      stuckT: 0, // антизастревание (см. конец _updateBot)
+      avoidT: 0,
+      avoidDir: 1,
     }
   }
 
@@ -443,7 +447,7 @@ export class Game {
   _killBot(b) {
     b.alive = false
     b.hp = 0
-    b.respawn = 3
+    b.respawn = BOT_RESPAWN
   }
 
   _respawnBot(b) {
@@ -585,14 +589,16 @@ export class Game {
       }
     }
 
-    // захваченные точки периодически дают команде очки (доминирование)
+    // доминирование: очко каждые CAP_TICK сек получает команда,
+    // удерживающая БОЛЬШЕ точек (равенство — никому). Так фраги (+1 сразу)
+    // весят наравне с захватом и матч не сгорает за минуту.
     this.capTimer += dt
     if (this.capTimer >= CAP_TICK) {
       this.capTimer -= CAP_TICK
-      for (const cap of this.caps) {
-        if (cap.owner === TEAM.ALLY) this.score.ally++
-        else if (cap.owner === TEAM.ENEMY) this.score.enemy++
-      }
+      const ally = this.caps.filter((c) => c.owner === TEAM.ALLY).length
+      const enemy = this.caps.filter((c) => c.owner === TEAM.ENEMY).length
+      if (ally > enemy) this.score.ally++
+      else if (enemy > ally) this.score.enemy++
     }
   }
 
@@ -664,10 +670,15 @@ export class Game {
     }
 
     if (b.fireCd > 0) b.fireCd -= dt
+    const px = b.x
+    const py = b.y
+    let wantMove = true
 
     if (target) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
-      const diff = angleDiff(ang, b.hull)
+      // при объезде временно целимся в сторону, стрельбу не сбиваем
+      const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang
+      const diff = angleDiff(steerA, b.hull)
       const maxTurn = ai.turnRate * dt
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
@@ -675,29 +686,53 @@ export class Game {
       if (bestD > ai.idealRange * 1.15) move = 1
       else if (bestD < ai.idealRange * 0.8) move = -1
       const strafe = Math.sin(this.t * 1.3 + b.id * 1.7) * 0.5
+      wantMove = move !== 0
 
       b.x += Math.cos(b.hull) * move * ai.speed * dt
       b.y += Math.sin(b.hull) * move * ai.speed * dt
       b.x += Math.cos(b.hull + Math.PI / 2) * strafe * ai.speed * dt
       b.y += Math.sin(b.hull + Math.PI / 2) * strafe * ai.speed * dt
 
-      const inArc = Math.abs(diff) <= (ai.sectorHalfDeg * Math.PI) / 180
+      const fireDiff = angleDiff(ang, b.hull)
+      const inArc = Math.abs(fireDiff) <= (ai.sectorHalfDeg * Math.PI) / 180
       if (inArc && b.fireCd <= 0) {
         b.fireCd = ai.fireCd
         this.shotFx.push({ x1: b.x, y1: b.y, x2: target.x, y2: target.y, age: 0 })
         if (Math.random() < ai.hitChance) this._damageUnit(target, ai.damage, b.team)
       }
     } else {
-      // никого не видит — едет к центру арены
+      // никого не видит — играет от целей: едет к ближайшей не своей точке
+      let goal = null
+      let gBest = Infinity
+      for (const cap of this.caps) {
+        if (cap.owner === b.team) continue
+        const d = Math.hypot(cap.x - b.x, cap.y - b.y)
+        if (d < gBest) {
+          gBest = d
+          goal = cap
+        }
+      }
       const c = MAP_SIZE / 2
-      const a = Math.atan2(c - b.y, c - b.x)
+      let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
+      if (b.avoidT > 0) a += b.avoidDir * 1.5
       const diff = angleDiff(a, b.hull)
       b.hull += Math.max(-ai.turnRate * dt, Math.min(ai.turnRate * dt, diff))
-      b.x += Math.cos(b.hull) * ai.speed * 0.5 * dt
-      b.y += Math.sin(b.hull) * ai.speed * 0.5 * dt
+      b.x += Math.cos(b.hull) * ai.speed * 0.6 * dt
+      b.y += Math.sin(b.hull) * ai.speed * 0.6 * dt
     }
 
     this._resolveCollisions(b, ai.radius)
+
+    // антизастревание: хотел ехать, но упёрся — объезд по дуге случайной стороной
+    if (b.avoidT > 0) b.avoidT -= dt
+    const moved = Math.hypot(b.x - px, b.y - py)
+    if (wantMove && moved < ai.speed * dt * 0.25) b.stuckT = (b.stuckT || 0) + dt
+    else b.stuckT = 0
+    if (b.stuckT > 0.5) {
+      b.stuckT = 0
+      b.avoidT = 0.9
+      b.avoidDir = Math.random() < 0.5 ? -1 : 1
+    }
   }
 
   _damageUnit(unit, dmg, byTeam) {

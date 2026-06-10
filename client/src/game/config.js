@@ -133,12 +133,13 @@ export const CAPTURE_POINTS = [
   { id: 'C', dx: 560, dy: 0, r: 130 },
 ]
 export const CAP_TIME = 6 // сек удержания для захвата точки
-export const CAP_TICK = 4 // каждые N сек захваченная точка даёт команде +1 очко
+export const CAP_TICK = 8 // каждые N сек +1 очко команде с БОЛЬШИНСТВОМ точек
 
 // Условия матча (Фаза 4): бой кончается, когда команда набирает SCORE_LIMIT
 // очков ИЛИ истекает MATCH_TIME — побеждает команда с большим счётом.
-export const SCORE_LIMIT = 20
+export const SCORE_LIMIT = 25
 export const MATCH_TIME = 240 // сек (4 минуты)
+export const BOT_RESPAWN = 5 // сек до возрождения бота
 
 // Повреждение модулей (Фаза 5): попадание по игроку с шансом CRIT_CHANCE
 // выводит случайный исправный модуль из строя на CRIT_TIME секунд (чинится сам).
@@ -164,8 +165,8 @@ export const ENEMY_AI = {
   idealRange: 360, // держит дистанцию
   sectorHalfDeg: 26,
   fireCd: 1.7, // перезарядка бота
-  damage: 13,
-  hitChance: 0.55,
+  damage: 11,
+  hitChance: 0.45,
   radius: 18,
 }
 
