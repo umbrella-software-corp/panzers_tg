@@ -18,6 +18,7 @@ import {
   ENEMY_AI,
   TEAM_SIZE,
   ALLY_VISION,
+  PROX_SPOT,
   BOT_CLASS_MIX,
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
@@ -102,6 +103,8 @@ export class Game {
       cy: c + w.dy,
       hw: w.w / 2,
       hh: w.h / 2,
+      hp: w.hp || Infinity,
+      destructible: !!w.hp,
     }))
     this.bases = BASES.map((b) => ({ team: b.team, x: c + b.dx, y: c + b.dy, r: b.r }))
     this.caps = CAPTURE_POINTS.map((p) => ({
@@ -176,6 +179,7 @@ export class Game {
       id,
       team,
       classId: cls.id,
+      tankId: cls.tankId || null, // конкретная машина из пула матчмейкинга
       name: team === TEAM.ALLY ? ALLY_NAMES[i % ALLY_NAMES.length] : ENEMY_NAMES[i % ENEMY_NAMES.length],
       x: p.x,
       y: p.y,
@@ -250,15 +254,16 @@ export class Game {
     for (const k of Object.keys(this.tex)) {
       if (k.startsWith('tank_')) this.tex[k] = this._chromaKey(this.tex[k])
     }
-    // реальный вид сверху танка игрока (Battle задаёт playerTankId до mount)
-    if (this.playerTankId) {
-      try {
-        const t = await Assets.load(`/sprites/tanks/${this.playerTankId}.png`)
-        this.tex.player_tank = this._chromaKey(t)
-      } catch {
-        /* нет спрайта — останется классовый */
-      }
-    }
+    // реальные виды сверху: танк игрока + все машины ботов из пула
+    const unitIds = new Set(this.bots.map((b) => b.tankId).filter(Boolean))
+    if (this.playerTankId) unitIds.add(this.playerTankId)
+    const idList = [...unitIds]
+    const unitTex = await Promise.allSettled(idList.map((id) => Assets.load(`/sprites/tanks/${id}.png`)))
+    idList.forEach((id, i) => {
+      if (unitTex[i].status === 'fulfilled') this.tex[`unit_${id}`] = this._chromaKey(unitTex[i].value)
+    })
+    if (this.playerTankId && this.tex[`unit_${this.playerTankId}`])
+      this.tex.player_tank = this.tex[`unit_${this.playerTankId}`]
 
     this.world = new Container()
     this.bg = new Graphics()
@@ -293,7 +298,10 @@ export class Game {
       this.unitSprites.set('player', mk(this.tex.player_tank || tankTex(this.cls.id, 'amber'), 96))
       for (const b of this.bots) {
         const size = b.classId === 'heavy' ? 92 : b.classId === 'light' ? 76 : 84
-        this.unitSprites.set(b.id, mk(tankTex(b.classId, b.team === TEAM.ALLY ? 'blue' : 'red'), size))
+        // реальная машина бота; фоллбэк — классовый цветной спрайт
+        const real = b.tankId && this.tex[`unit_${b.tankId}`]
+        this.unitSprites.set(b.id, mk(real || tankTex(b.classId, b.team === TEAM.ALLY ? 'blue' : 'red'), size))
+        b.realSprite = !!real // реальным нужен командный оттенок tint'ом
       }
     }
 
@@ -463,6 +471,7 @@ export class Game {
     const tx = this.tank.x
     const ty = this.tank.y
     const lineAngle = this.hullAngle + this._sweepOffset()
+    const halfEff = this._sectorHalfEff()
     let best = null
     let anyInRange = false
     let anyInSector = false
@@ -473,7 +482,7 @@ export class Game {
       const ang = Math.atan2(b.y - ty, b.x - tx)
       const dist = Math.hypot(b.x - tx, b.y - ty)
       const inRange = dist <= this.cls.range
-      const inSector = inRange && Math.abs(angleDiff(ang, this.hullAngle)) <= this.cls.sectorHalf + 0.01
+      const inSector = inRange && Math.abs(angleDiff(ang, this.hullAngle)) <= halfEff + 0.01
       const los = !this._lineBlocked(tx, ty, b.x, b.y)
       const err = Math.abs(angleDiff(ang, lineAngle))
       if (inRange) anyInRange = true
@@ -507,9 +516,24 @@ export class Game {
       }
     }
 
-    // визуальный снаряд: летит к цели (или в конец линии при промахе), там взрыв
-    const ex = best ? best.b.x : tx + Math.cos(lineAngle) * this.cls.range
-    const ey = best ? best.b.y : ty + Math.sin(lineAngle) * this.cls.range
+    // визуальный снаряд: летит к цели, в препятствие (стене достаётся) или
+    // в конец линии при чистом промахе
+    let ex
+    let ey
+    if (best) {
+      ex = best.b.x
+      ey = best.b.y
+    } else {
+      const stop = this._shellStop(tx, ty, lineAngle, this.cls.range)
+      if (stop) {
+        ex = stop.x
+        ey = stop.y
+        this._damageWall(stop.wall)
+      } else {
+        ex = tx + Math.cos(lineAngle) * this.cls.range
+        ey = ty + Math.sin(lineAngle) * this.cls.range
+      }
+    }
     const boomKind = best ? (killed ? 'big' : pen && !pen.pen ? 'dust' : 'hit') : 'dust'
     this._spawnShell(tx, ty, ex, ey, 0xffd866, boomKind)
 
@@ -530,6 +554,7 @@ export class Game {
 
   // --- геометрия препятствий ---
 
+  // блокировка ВЫСТРЕЛА: рельеф + стены
   _lineBlocked(x1, y1, x2, y2) {
     for (const o of this.obstacles) {
       if (o.kind === 'water') continue // поверх воды видно и стреляется
@@ -539,6 +564,48 @@ export class Game {
       if (segHitsRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true
     }
     return false
+  }
+
+  // блокировка ЗАСВЕТА: только рельеф (куст/камень/холм) — за стеной
+  // не спрячешься, силуэт виден, но выстрел она держит
+  _visionBlocked(x1, y1, x2, y2) {
+    for (const o of this.obstacles) {
+      if (o.kind === 'water') continue
+      if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
+    }
+    return false
+  }
+
+  // точка, где снаряд упрётся в препятствие (для визуала и урона стенам)
+  _shellStop(x1, y1, angle, range) {
+    const step = 24
+    for (let d = step; d <= range; d += step) {
+      const x = x1 + Math.cos(angle) * d
+      const y = y1 + Math.sin(angle) * d
+      if (this._lineBlocked(x1, y1, x, y)) return { x, y, wall: this._wallAt(x, y, step) }
+    }
+    return null
+  }
+
+  _wallAt(x, y, pad = 10) {
+    for (const w of this.walls) {
+      if (x >= w.cx - w.hw - pad && x <= w.cx + w.hw + pad && y >= w.cy - w.hh - pad && y <= w.cy + w.hh + pad)
+        return w
+    }
+    return null
+  }
+
+  // попадание по стене: разрушаемая теряет hp и в конце осыпается
+  _damageWall(w) {
+    if (!w || !w.destructible) return
+    w.hp--
+    if (w.hp <= 0) {
+      this.walls = this.walls.filter((x) => x !== w)
+      this.booms.push({ x: w.cx, y: w.cy, age: 0, big: true })
+      this._spawnFx(w.cx, w.cy, 1.5)
+      if (this.terrLayer) this.terrLayer.removeChildren()
+      this._drawTerrain()
+    }
   }
 
   _resolveCollisions(pos, radius) {
@@ -624,12 +691,18 @@ export class Game {
 
   // --- цикл ---
 
+  // разброс: на месте сектор сжимается до 55%, на полном ходу — полный
+  _sectorHalfEff() {
+    const k = Math.min(1, Math.abs(this.speed) / this.cls.maxSpeed)
+    return this.cls.sectorHalf * (0.55 + 0.45 * k)
+  }
+
   _sweepOffset() {
     // при крите башни линия замирает (this.sweep не обновляется в _update)
     if (this.crippled.turret > 0) return this.sweep
     const p = (this.t % this.cls.sweepPeriod) / this.cls.sweepPeriod
     const tri = p < 0.5 ? 4 * p - 1 : 3 - 4 * p
-    this.sweep = this.cls.sectorHalf * tri
+    this.sweep = this._sectorHalfEff() * tri
     return this.sweep
   }
 
@@ -785,16 +858,18 @@ export class Game {
   }
 
   _spottedByTeam(enemy) {
-    // игрок
+    // игрок: вплотную (PROX_SPOT) видно сквозь любой куст/стену
     if (this.hp > 0) {
       const d = Math.hypot(enemy.x - this.tank.x, enemy.y - this.tank.y)
-      if (d <= this._vision() && !this._lineBlocked(this.tank.x, this.tank.y, enemy.x, enemy.y)) return true
+      if (d <= PROX_SPOT) return true
+      if (d <= this._vision() && !this._visionBlocked(this.tank.x, this.tank.y, enemy.x, enemy.y)) return true
     }
     // союзные боты
     for (const a of this.bots) {
       if (!a.alive || a.team !== TEAM.ALLY) continue
       const d = Math.hypot(enemy.x - a.x, enemy.y - a.y)
-      if (d <= ALLY_VISION && !this._lineBlocked(a.x, a.y, enemy.x, enemy.y)) return true
+      if (d <= PROX_SPOT) return true
+      if (d <= ALLY_VISION && !this._visionBlocked(a.x, a.y, enemy.x, enemy.y)) return true
     }
     return false
   }
@@ -868,7 +943,7 @@ export class Game {
 
       let move = 0
       if (bestD > ai.idealRange * 1.15) move = 1
-      else if (bestD < ai.idealRange * 0.8) move = -0.5 // задний ход вдвое медленнее
+      else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
       wantMove = move !== 0
 
       this._botDrive(b, move, dt)
@@ -1044,7 +1119,7 @@ export class Game {
     const tx = this.tank.x
     const ty = this.tank.y
     const hull = this.hullAngle
-    const half = this.cls.sectorHalf
+    const half = this._sectorHalfEff() // разброс: стоя — уже, на ходу — шире
     const L = this.cls.range
 
     // точки захвата (под всем)
@@ -1105,7 +1180,9 @@ export class Game {
       if (!b.alive) continue
       const isAlly = b.team === TEAM.ALLY
       if (!isAlly && !b.spotted) continue
-      if (useSpr && placeSpr(b.id, b.x, b.y, b.hull, 0xffffff)) {
+      // реальные машины подкрашиваем командным оттенком, классовые уже цветные
+      const aliveTint = b.realSprite ? (isAlly ? 0x9ab8ff : 0xffa090) : 0xffffff
+      if (useSpr && placeSpr(b.id, b.x, b.y, b.hull, aliveTint)) {
         if (b.flash > 0) g.circle(b.x, b.y, 30).fill({ color: 0xffffff, alpha: 0.45 })
       } else {
         const c = isAlly ? { body: 0x4a82c8, dark: 0x1b3a5c } : { body: 0xd8543f, dark: 0x6e1f12 }

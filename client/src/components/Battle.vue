@@ -260,7 +260,7 @@ function startCountdown() {
 onMounted(async () => {
   // матчмейкинг ±1 тир: боты — конкретные танки соседних уровней
   const myTier = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
-  const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map(combatStats)
+  const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map((t) => ({ ...combatStats(t), tankId: t.id }))
   game.setBotTanks(pool)
   game.playerTankId = profile.selectedTank // реальный спрайт своей машины
   // статы до mount: спрайт игрока выбирается по классу лоадаута
@@ -294,11 +294,11 @@ onBeforeUnmount(() => {
         <div class="scoreplate">
           <span class="pz-pixel num ally">{{ state.allyScore }}</span>
           <span class="dmnds">
-            <i v-for="i in 5" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
+            <i v-for="i in 7" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
           </span>
           <span class="pz-display timer">{{ fmtTime(state.matchTime) }}</span>
           <span class="dmnds">
-            <i v-for="i in 5" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
+            <i v-for="i in 7" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
           </span>
           <span class="pz-pixel num enemy">{{ state.enemyScore }}</span>
         </div>

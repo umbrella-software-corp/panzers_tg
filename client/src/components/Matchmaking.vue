@@ -9,7 +9,7 @@ import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['battle', 'cancel'])
 
-const TEAM = 5
+const TEAM = 7
 const SEARCH_MS = 5200 // сколько «честно ждём живых»
 
 const MM_PLAYERS = [
@@ -85,7 +85,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
         <span class="pz-pixel" style="font-size: 9px" :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ mmss }}</span>
       </span>
     </div>
-    <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">{{ tankName }} · бой 5×5 · уровни {{ tierRange }} · сектор Б-4</div>
+    <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">{{ tankName }} · бой 7×7 · уровни {{ tierRange }} · сектор Б-4</div>
 
     <!-- радар -->
     <div style="display: flex; justify-content: center; padding: 18px 0 6px">
