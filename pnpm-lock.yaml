@@ -24,9 +24,14 @@ importers:
 
   server:
     dependencies:
+      panzer-tg-shared:
+        specifier: workspace:*
+        version: link:../shared
       ws:
         specifier: ^8.18.0
         version: 8.21.0
+
+  shared: {}
 
 packages:
 

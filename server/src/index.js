@@ -1,77 +1,129 @@
-// Authoritative WS-сервер для 1v1.
-// Клиент шлёт ввод (throttle/steer/fire) — сервер считает мир и рассылает снапшоты.
-// Комната на 2 игроков; матч стартует, когда оба подключились.
+// Authoritative WS-сервер боя N×N (по умолчанию 7×7).
+// Клиенты шлют только ввод (input/fire) — мир считает BattleSim из shared.
+// Комната копит людей WAIT_MS от первого входа (или до полного состава),
+// потом добирает ботами и стартует. Отключившегося доигрывает ИИ.
 import { WebSocketServer } from 'ws'
-import {
-  MAP_SIZE,
-  TICK_HZ,
-  TICK_DT,
-  makePlayer,
-  applyInput,
-  step,
-  tryFire,
-  snapshot,
-} from './sim.js'
+import { BattleSim, MAP_SIZE } from 'panzer-tg-shared'
 
-const PORT = process.env.PORT || 8080
+const PORT = +(process.env.PORT || 8080)
+const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
+const WAIT_MS = +(process.env.WAIT_MS || 6000)
+const TICK_HZ = +(process.env.TICK_HZ || 20)
+const TICK_DT = 1 / TICK_HZ
+
 const wss = new WebSocketServer({ port: PORT })
 
 let nextId = 1
-const rooms = new Map() // roomId -> room
+const rooms = new Map()
 let waitingRoom = null
 
-function getJoinRoom() {
-  if (waitingRoom && Object.keys(waitingRoom.players).length < 2) return waitingRoom
+function newRoom() {
   const room = {
     id: `r${nextId++}`,
-    t: 0,
-    players: {},
-    sockets: new Map(),
-    started: false,
+    humans: [], // { id, name, team, ws }
+    sim: null,
     timer: null,
+    waitTimer: null,
+    started: false,
+    // телеметрия тика
+    tickAccMs: 0,
+    tickN: 0,
   }
   rooms.set(room.id, room)
-  waitingRoom = room
   return room
 }
 
-function broadcast(room, msg) {
-  const data = JSON.stringify(msg)
-  for (const ws of room.sockets.values()) {
-    if (ws.readyState === ws.OPEN) ws.send(data)
-  }
+function getJoinRoom() {
+  if (waitingRoom && !waitingRoom.started && waitingRoom.humans.length < TEAM_SIZE * 2) return waitingRoom
+  waitingRoom = newRoom()
+  return waitingRoom
+}
+
+function send(ws, msg) {
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg))
 }
 
 function startRoom(room) {
+  if (room.started) return
   room.started = true
+  clearTimeout(room.waitTimer)
   if (waitingRoom === room) waitingRoom = null
-  broadcast(room, { type: 'match-start', map: MAP_SIZE })
+
+  // команды: чередуем по порядку входа (0,1,0,1…)
+  room.humans.forEach((h, i) => (h.team = i % 2))
+  room.sim = new BattleSim({
+    teamSize: TEAM_SIZE,
+    humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name })),
+  })
+
+  for (const h of room.humans) {
+    const u = room.sim.byOwner.get(h.id)
+    send(h.ws, {
+      type: 'match-start',
+      youTeam: h.team,
+      youUnit: u ? u.id : null,
+      teamSize: TEAM_SIZE,
+      map: MAP_SIZE,
+      tickHz: TICK_HZ,
+    })
+  }
+  console.log(`[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE}, людей ${room.humans.length}, ботов ${TEAM_SIZE * 2 - room.humans.length}`)
+
   room.timer = setInterval(() => {
-    step(room, TICK_DT)
-    broadcast(room, snapshot(room))
+    const t0 = process.hrtime.bigint()
+    room.sim.step(TICK_DT)
+    const events = room.sim.takeEvents()
+    const snaps = [room.sim.snapshotForTeam(0), room.sim.snapshotForTeam(1)]
+    for (const h of room.humans) {
+      send(h.ws, { ...snaps[h.team], events, you: room.sim.personalFor(h.id) })
+    }
+    room.tickAccMs += Number(process.hrtime.bigint() - t0) / 1e6
+    room.tickN++
+
+    if (room.sim.matchOver) {
+      const stats = room.sim.units.map((u) => ({
+        id: u.id,
+        team: u.team,
+        name: u.name,
+        human: u.human,
+        kills: u.kills,
+        damage: Math.round(u.damageDealt),
+        alive: u.alive,
+      }))
+      for (const h of room.humans) {
+        send(h.ws, { type: 'match-end', winner: room.sim.winner, score: room.sim.score, stats })
+      }
+      console.log(
+        `[ws] ${room.id}: конец, счёт ${room.sim.score.join(':')}, winner=${room.sim.winner}, средний тик ${(room.tickAccMs / Math.max(1, room.tickN)).toFixed(3)}мс`,
+      )
+      endRoom(room)
+    }
   }, 1000 / TICK_HZ)
 }
 
 function endRoom(room) {
-  if (room.timer) clearInterval(room.timer)
+  clearInterval(room.timer)
+  clearTimeout(room.waitTimer)
   rooms.delete(room.id)
   if (waitingRoom === room) waitingRoom = null
+  // сокеты не рвём — клиент сам уходит после match-end
 }
 
 wss.on('connection', (ws) => {
   const id = `p${nextId++}`
   const room = getJoinRoom()
-  const slot = Object.keys(room.players).length
-  const player = makePlayer(id, slot)
-  room.players[id] = player
-  room.sockets.set(id, ws)
+  const human = { id, name: `Игрок ${id}`, team: 0, ws }
+  room.humans.push(human)
   ws.playerId = id
-  ws.roomId = room.id
+  ws.room = room
 
-  ws.send(JSON.stringify({ type: 'init', id, slot, map: MAP_SIZE, tickHz: TICK_HZ }))
-  console.log(`[ws] ${id} joined ${room.id} (slot ${slot})`)
+  send(ws, { type: 'init', id, map: MAP_SIZE, tickHz: TICK_HZ, teamSize: TEAM_SIZE, waitMs: WAIT_MS })
+  console.log(`[ws] ${id} → ${room.id} (${room.humans.length} чел.)`)
 
-  if (Object.keys(room.players).length === 2 && !room.started) startRoom(room)
+  if (room.humans.length === 1) {
+    room.waitTimer = setTimeout(() => startRoom(room), WAIT_MS)
+  }
+  if (room.humans.length >= TEAM_SIZE * 2) startRoom(room)
 
   ws.on('message', (raw) => {
     let msg
@@ -80,25 +132,26 @@ wss.on('connection', (ws) => {
     } catch {
       return
     }
-    const p = room.players[id]
-    if (!p) return
-    if (msg.type === 'input') {
-      applyInput(p, msg)
+    if (msg.type === 'name' && typeof msg.name === 'string') {
+      human.name = msg.name.slice(0, 24)
+    } else if (!room.sim) {
+      return
+    } else if (msg.type === 'input') {
+      room.sim.setInput(id, msg.throttle, msg.steer)
     } else if (msg.type === 'fire') {
-      const ev = tryFire(room, p)
-      broadcast(room, ev)
+      room.sim.fire(id)
     } else if (msg.type === 'ping') {
-      ws.send(JSON.stringify({ type: 'pong', ts: msg.ts }))
+      send(ws, { type: 'pong', ts: msg.ts })
     }
   })
 
   ws.on('close', () => {
-    console.log(`[ws] ${id} left ${room.id}`)
-    delete room.players[id]
-    room.sockets.delete(id)
-    broadcast(room, { type: 'player-left', id })
-    if (Object.keys(room.players).length === 0) endRoom(room)
+    console.log(`[ws] ${id} вышел из ${room.id}`)
+    room.humans = room.humans.filter((h) => h.id !== id)
+    if (room.sim) room.sim.humanLeft(id) // ИИ доигрывает за него
+    if (!room.started && room.humans.length === 0) endRoom(room)
+    if (room.started && room.humans.length === 0) endRoom(room) // некому слать
   })
 })
 
-console.log(`[ws] Panzer TG authoritative server on :${PORT} (${TICK_HZ}Hz)`)
+console.log(`[ws] Panzer TG ${TEAM_SIZE}x${TEAM_SIZE} authoritative server on :${PORT} (${TICK_HZ}Hz, добор ботами через ${WAIT_MS}мс)`)

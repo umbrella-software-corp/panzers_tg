@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test:sim": "node test-sim.js",
+    "test:smoke": "node smoke.js"
   },
   "dependencies": {
+    "panzer-tg-shared": "workspace:*",
     "ws": "^8.18.0"
   }
 }

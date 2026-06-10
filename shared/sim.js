@@ -1,0 +1,534 @@
+// ============ PANZER TG — авторитетная симуляция боя N×N ============
+// Чистая логика без рендера (порт правил из client Game.js): движение людей
+// по вводу, ИИ ботов (цели/точки/антизастревание), линия сведения, хитскан,
+// одна жизнь, точки захвата с большинством, криты модулей у людей.
+// Используется сервером (источник истины); клиент перейдёт на неё для PvE.
+import {
+  TANK_CLASSES,
+  DEFAULT_CLASS,
+  MAP_SIZE,
+  OBSTACLES,
+  WALLS,
+  BASES,
+  CAPTURE_POINTS,
+  CAP_TIME,
+  CAP_TICK,
+  SCORE_LIMIT,
+  MATCH_TIME,
+  CRIT_CHANCE,
+  CRIT_TIME,
+  RADIO_CRIT_MULT,
+  CRIT_SLOTS,
+  ENEMY_AI,
+  BOT_CLASS_MIX,
+  BOT_DMG_MULT,
+  BOT_SPEED_MULT,
+  BOT_SPOT_VISION,
+  TANK_RADIUS,
+  BOT_NAMES,
+  classToRadians,
+} from './config.js'
+import { angleDiff, segHitsCircle, segHitsRect } from './geometry.js'
+
+export class BattleSim {
+  /**
+   * humans: [{ id, team: 0|1, name, stats? }] — stats в deg-форме (лоадаут
+   * клиента) или null → DEFAULT_CLASS. Обе команды добираются ботами до teamSize.
+   */
+  constructor({ teamSize = 7, humans = [] } = {}) {
+    this.teamSize = teamSize
+    this.t = 0
+    this.matchTime = MATCH_TIME
+    this.matchOver = false
+    this.winner = null // 0 | 1 | null (ничья)
+    this.score = [0, 0]
+    this.capTimer = 0
+    this.events = [] // копятся за шаг, забираются takeEvents()
+
+    const c = MAP_SIZE / 2
+    this.obstacles = OBSTACLES.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
+    this.walls = WALLS.map((w) => ({ cx: c + w.dx, cy: c + w.dy, hw: w.w / 2, hh: w.h / 2 }))
+    this.bases = BASES.map((b) => ({ team: b.team, x: c + b.dx, y: c + b.dy, r: b.r }))
+    this.caps = CAPTURE_POINTS.map((p) => ({
+      id: p.id,
+      x: c + p.dx,
+      y: c + p.dy,
+      r: p.r,
+      owner: null,
+      capper: null,
+      progress: 0,
+    }))
+
+    // юниты: сначала люди, затем боты до полного состава
+    this.units = []
+    let uid = 1
+    for (const team of [0, 1]) {
+      const teamHumans = humans.filter((h) => h.team === team)
+      let slot = 0
+      for (const h of teamHumans.slice(0, teamSize)) {
+        this.units.push(this._makeUnit(uid++, team, slot++, true, h))
+      }
+      for (let i = 0; slot < teamSize; i++) {
+        this.units.push(this._makeUnit(uid++, team, slot++, false, null))
+      }
+    }
+    this.byId = new Map(this.units.map((u) => [u.id, u]))
+    // владелец-человек: внешний id → unit
+    this.byOwner = new Map(this.units.filter((u) => u.human).map((u) => [u.ownerId, u]))
+
+    this._spotted = [new Set(), new Set()] // [team] -> Set(unitId врагов)
+  }
+
+  _makeUnit(id, team, slot, human, h) {
+    const cls = human
+      ? h.stats && h.stats.sectorDeg
+        ? h.stats
+        : TANK_CLASSES[DEFAULT_CLASS]
+      : TANK_CLASSES[BOT_CLASS_MIX[slot % BOT_CLASS_MIX.length]]
+    const stats = classToRadians(cls)
+    const spread = ((slot - (this.teamSize - 1) / 2) / Math.max(1, this.teamSize)) * 1000
+    const c = MAP_SIZE / 2
+    return {
+      id,
+      team,
+      slot,
+      human,
+      ownerId: human ? h.id : null,
+      name: human ? h.name || `Игрок ${id}` : BOT_NAMES[team][slot % BOT_NAMES[team].length],
+      classId: stats.id,
+      stats,
+      x: c + spread,
+      y: team === 0 ? c + 560 : c - 560,
+      hull: team === 0 ? -Math.PI / 2 : Math.PI / 2,
+      speed: 0,
+      hp: stats.hp,
+      maxHp: stats.hp,
+      alive: true,
+      input: { throttle: 0, steer: 0 }, // люди
+      reload: 0, // люди: сек до готовности
+      sweep: 0,
+      crippled: { gun: 0, turret: 0, engine: 0, tracks: 0, radio: 0 },
+      kills: 0,
+      damageDealt: 0,
+      shots: 0,
+      hits: 0,
+      // боты
+      botDamage: Math.round(stats.damage * BOT_DMG_MULT),
+      botSpeed: stats.maxSpeed * BOT_SPEED_MULT,
+      botTurn: stats.turnRate * 0.9,
+      fireCd: 1 + slot * 0.2,
+      stuckT: 0,
+      avoidT: 0,
+      avoidDir: 1,
+    }
+  }
+
+  // --- внешний API ---
+
+  setInput(ownerId, throttle, steer) {
+    const u = this.byOwner.get(ownerId)
+    if (!u || !u.alive) return
+    u.input.throttle = Math.max(-1, Math.min(1, +throttle || 0))
+    u.input.steer = Math.max(-1, Math.min(1, +steer || 0))
+  }
+
+  // выстрел человека; событие уходит в общий поток events
+  fire(ownerId) {
+    const u = this.byOwner.get(ownerId)
+    if (!u || !u.alive || this.matchOver) return
+    if (u.crippled.gun > 0) {
+      this.events.push({ type: 'shot', unit: u.id, blocked: 'gun' })
+      return
+    }
+    if (u.reload > 0) {
+      this.events.push({ type: 'shot', unit: u.id, blocked: 'reload' })
+      return
+    }
+    u.reload = u.stats.reload
+    u.shots++
+
+    const lineAngle = u.hull + this._sweepOffset(u)
+    let best = null
+    for (const e of this.units) {
+      if (!e.alive || e.team === u.team) continue
+      const ang = Math.atan2(e.y - u.y, e.x - u.x)
+      const dist = Math.hypot(e.x - u.x, e.y - u.y)
+      if (dist > u.stats.range) continue
+      if (Math.abs(angleDiff(ang, u.hull)) > u.stats.sectorHalf + 0.01) continue
+      if (this._lineBlocked(u.x, u.y, e.x, e.y)) continue
+      const err = Math.abs(angleDiff(ang, lineAngle))
+      if (err <= u.stats.tolerance && (!best || err < best.err)) best = { e, err }
+    }
+
+    let killed = false
+    if (best) {
+      u.hits++
+      u.damageDealt += Math.min(u.stats.damage, best.e.hp)
+      killed = this._applyDamage(best.e, u.stats.damage, u)
+    }
+    const ex = best ? best.e.x : u.x + Math.cos(lineAngle) * u.stats.range
+    const ey = best ? best.e.y : u.y + Math.sin(lineAngle) * u.stats.range
+    this.events.push({
+      type: 'shot',
+      unit: u.id,
+      hit: !!best,
+      killed,
+      target: best ? best.e.id : null,
+      x1: Math.round(u.x),
+      y1: Math.round(u.y),
+      x2: Math.round(ex),
+      y2: Math.round(ey),
+    })
+  }
+
+  takeEvents() {
+    const ev = this.events
+    this.events = []
+    return ev
+  }
+
+  // отключившийся человек становится ботом (ИИ доигрывает)
+  humanLeft(ownerId) {
+    const u = this.byOwner.get(ownerId)
+    if (!u) return
+    u.human = false
+    this.byOwner.delete(ownerId)
+  }
+
+  aliveCount(team) {
+    return this.units.filter((u) => u.team === team && u.alive).length
+  }
+
+  // --- шаг ---
+
+  step(dt) {
+    if (this.matchOver) return
+    this.t += dt
+    this.matchTime = Math.max(0, this.matchTime - dt)
+
+    for (const u of this.units) {
+      if (!u.alive) continue
+      if (u.human) this._stepHuman(u, dt)
+      else this._stepBot(u, dt)
+    }
+    this._stepCaptures(dt)
+    this._stepSpotting()
+    this._checkEnd()
+  }
+
+  _stepHuman(u, dt) {
+    for (const s of CRIT_SLOTS) {
+      if (u.crippled[s] > 0) u.crippled[s] = Math.max(0, u.crippled[s] - dt)
+    }
+    if (u.reload > 0) u.reload = Math.max(0, u.reload - dt)
+
+    let { throttle, steer } = u.input
+    if (u.crippled.tracks > 0) steer = 0
+    if (u.crippled.engine > 0) throttle = 0
+
+    u.hull += steer * u.stats.turnRate * dt
+    const target = u.stats.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
+    const da = u.stats.accel * dt
+    if (u.speed < target) u.speed = Math.min(target, u.speed + da)
+    else u.speed = Math.max(target, u.speed - da * 1.4)
+    u.x += Math.cos(u.hull) * u.speed * dt
+    u.y += Math.sin(u.hull) * u.speed * dt
+    this._collide(u, TANK_RADIUS)
+  }
+
+  _stepBot(b, dt) {
+    const ai = ENEMY_AI
+    if (b.fireCd > 0) b.fireCd -= dt
+    const px = b.x
+    const py = b.y
+    let wantMove = true
+
+    let target = null
+    let bestD = Infinity
+    for (const f of this.units) {
+      if (!f.alive || f.team === b.team) continue
+      const d = Math.hypot(f.x - b.x, f.y - b.y)
+      if (d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
+        bestD = d
+        target = f
+      }
+    }
+
+    if (target) {
+      const ang = Math.atan2(target.y - b.y, target.x - b.x)
+      const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang
+      const diff = angleDiff(steerA, b.hull)
+      const maxTurn = b.botTurn * dt
+      b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
+
+      let move = 0
+      if (bestD > ai.idealRange * 1.15) move = 1
+      else if (bestD < ai.idealRange * 0.8) move = -1
+      const strafe = Math.sin(this.t * 1.3 + b.id * 1.7) * 0.5
+      wantMove = move !== 0
+
+      b.x += Math.cos(b.hull) * move * b.botSpeed * dt
+      b.y += Math.sin(b.hull) * move * b.botSpeed * dt
+      b.x += Math.cos(b.hull + Math.PI / 2) * strafe * b.botSpeed * dt
+      b.y += Math.sin(b.hull + Math.PI / 2) * strafe * b.botSpeed * dt
+
+      const inArc = Math.abs(angleDiff(ang, b.hull)) <= (ai.sectorHalfDeg * Math.PI) / 180
+      if (inArc && b.fireCd <= 0) {
+        b.fireCd = b.stats.reload
+        const hit = Math.random() < ai.hitChance
+        let killed = false
+        if (hit) {
+          b.damageDealt += Math.min(b.botDamage, target.hp)
+          killed = this._applyDamage(target, b.botDamage, b)
+        }
+        this.events.push({
+          type: 'shot',
+          unit: b.id,
+          hit,
+          killed,
+          target: target.id,
+          x1: Math.round(b.x),
+          y1: Math.round(b.y),
+          x2: Math.round(target.x),
+          y2: Math.round(target.y),
+        })
+      }
+    } else {
+      let goal = null
+      let gBest = Infinity
+      for (const cap of this.caps) {
+        if (cap.owner === b.team) continue
+        const d = Math.hypot(cap.x - b.x, cap.y - b.y)
+        if (d < gBest) {
+          gBest = d
+          goal = cap
+        }
+      }
+      const c = MAP_SIZE / 2
+      let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
+      if (b.avoidT > 0) a += b.avoidDir * 1.5
+      const diff = angleDiff(a, b.hull)
+      b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, diff))
+      b.x += Math.cos(b.hull) * b.botSpeed * 0.6 * dt
+      b.y += Math.sin(b.hull) * b.botSpeed * 0.6 * dt
+    }
+
+    this._collide(b, ENEMY_AI.radius)
+
+    if (b.avoidT > 0) b.avoidT -= dt
+    const moved = Math.hypot(b.x - px, b.y - py)
+    if (wantMove && moved < b.botSpeed * dt * 0.25) b.stuckT += dt
+    else b.stuckT = 0
+    if (b.stuckT > 0.5) {
+      b.stuckT = 0
+      b.avoidT = 0.9
+      b.avoidDir = Math.random() < 0.5 ? -1 : 1
+    }
+  }
+
+  _applyDamage(victim, dmg, attacker) {
+    victim.hp -= dmg
+    this.events.push({ type: 'hp', unit: victim.id, hp: Math.max(0, Math.round(victim.hp)) })
+    // криты модулей — только людям и только если жив
+    if (victim.human && victim.hp > 0 && Math.random() < CRIT_CHANCE) {
+      const free = CRIT_SLOTS.filter((s) => victim.crippled[s] <= 0)
+      if (free.length) {
+        const slot = free[Math.floor(Math.random() * free.length)]
+        victim.crippled[slot] = CRIT_TIME
+        this.events.push({ type: 'crit', unit: victim.id, slot })
+      }
+    }
+    if (victim.hp <= 0) {
+      victim.hp = 0
+      victim.alive = false
+      victim.speed = 0
+      attacker.kills++
+      this.score[attacker.team]++
+      this.events.push({ type: 'kill', killer: attacker.id, victim: victim.id })
+      return true
+    }
+    return false
+  }
+
+  _stepCaptures(dt) {
+    for (const cap of this.caps) {
+      let n = [0, 0]
+      for (const u of this.units) {
+        if (u.alive && Math.hypot(u.x - cap.x, u.y - cap.y) <= cap.r) n[u.team]++
+      }
+      let capTeam = null
+      if (n[0] > 0 && n[1] === 0) capTeam = 0
+      else if (n[1] > 0 && n[0] === 0) capTeam = 1
+      if (capTeam !== null && cap.owner !== capTeam) {
+        if (cap.capper === capTeam) {
+          cap.progress += dt / CAP_TIME
+          if (cap.progress >= 1) {
+            cap.progress = 1
+            cap.owner = capTeam
+          }
+        } else {
+          cap.progress -= dt / CAP_TIME
+          if (cap.progress <= 0) {
+            cap.progress = 0
+            cap.capper = capTeam
+          }
+        }
+      }
+    }
+    this.capTimer += dt
+    if (this.capTimer >= CAP_TICK) {
+      this.capTimer -= CAP_TICK
+      const owned = [0, 0]
+      for (const cap of this.caps) if (cap.owner !== null) owned[cap.owner]++
+      if (owned[0] > owned[1]) this.score[0]++
+      else if (owned[1] > owned[0]) this.score[1]++
+    }
+  }
+
+  // засвет: враг виден команде, если его видит любой её живой юнит
+  _stepSpotting() {
+    for (const team of [0, 1]) {
+      const seen = new Set()
+      for (const e of this.units) {
+        if (!e.alive || e.team === team) continue
+        for (const u of this.units) {
+          if (!u.alive || u.team !== team) continue
+          const vis = u.human
+            ? u.stats.vision * (u.crippled.radio > 0 ? RADIO_CRIT_MULT : 1)
+            : BOT_SPOT_VISION
+          if (Math.hypot(e.x - u.x, e.y - u.y) <= vis && !this._lineBlocked(u.x, u.y, e.x, e.y)) {
+            seen.add(e.id)
+            break
+          }
+        }
+      }
+      this._spotted[team] = seen
+    }
+  }
+
+  _checkEnd() {
+    const a0 = this.aliveCount(0)
+    const a1 = this.aliveCount(1)
+    if (a0 === 0 || a1 === 0) {
+      this.matchOver = true
+      this.winner = a0 === a1 ? (this.score[0] === this.score[1] ? null : this.score[0] > this.score[1] ? 0 : 1) : a0 > 0 ? 0 : 1
+      return
+    }
+    const limit = this.score[0] >= SCORE_LIMIT || this.score[1] >= SCORE_LIMIT
+    if (!limit && this.matchTime > 0) return
+    this.matchOver = true
+    this.winner = this.score[0] === this.score[1] ? null : this.score[0] > this.score[1] ? 0 : 1
+  }
+
+  // --- геометрия ---
+
+  _sweepOffset(u) {
+    if (u.crippled.turret > 0) return u.sweep
+    const p = (this.t % u.stats.sweepPeriod) / u.stats.sweepPeriod
+    const tri = p < 0.5 ? 4 * p - 1 : 3 - 4 * p
+    u.sweep = u.stats.sectorHalf * tri
+    return u.sweep
+  }
+
+  _lineBlocked(x1, y1, x2, y2) {
+    for (const o of this.obstacles) {
+      if (o.kind === 'water') continue
+      if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
+    }
+    for (const w of this.walls) {
+      if (segHitsRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true
+    }
+    return false
+  }
+
+  _collide(pos, radius) {
+    for (const o of this.obstacles) {
+      if (o.kind === 'bush') continue
+      const dx = pos.x - o.x
+      const dy = pos.y - o.y
+      const d = Math.hypot(dx, dy)
+      const min = o.r + radius
+      if (d < min && d > 0.0001) {
+        pos.x = o.x + (dx / d) * min
+        pos.y = o.y + (dy / d) * min
+      }
+    }
+    for (const w of this.walls) {
+      const minx = w.cx - w.hw
+      const maxx = w.cx + w.hw
+      const miny = w.cy - w.hh
+      const maxy = w.cy + w.hh
+      const nx = Math.max(minx, Math.min(pos.x, maxx))
+      const ny = Math.max(miny, Math.min(pos.y, maxy))
+      const dx = pos.x - nx
+      const dy = pos.y - ny
+      const d = Math.hypot(dx, dy)
+      if (d > 0.0001 && d < radius) {
+        pos.x = nx + (dx / d) * radius
+        pos.y = ny + (dy / d) * radius
+      } else if (d <= 0.0001) {
+        const left = pos.x - minx
+        const right = maxx - pos.x
+        const top = pos.y - miny
+        const bottom = maxy - pos.y
+        const m = Math.min(left, right, top, bottom)
+        if (m === left) pos.x = minx - radius
+        else if (m === right) pos.x = maxx + radius
+        else if (m === top) pos.y = miny - radius
+        else pos.y = maxy + radius
+      }
+    }
+    const m = 60
+    pos.x = Math.max(m, Math.min(MAP_SIZE - m, pos.x))
+    pos.y = Math.max(m, Math.min(MAP_SIZE - m, pos.y))
+  }
+
+  // --- снапшоты ---
+
+  // общий для команды: свои юниты всегда, враги при засвете, обломки всем
+  snapshotForTeam(team) {
+    const seen = this._spotted[team]
+    return {
+      type: 'state',
+      t: +this.t.toFixed(3),
+      matchTime: Math.ceil(this.matchTime),
+      matchOver: this.matchOver,
+      winner: this.winner,
+      score: this.score,
+      caps: this.caps.map((c) => ({ id: c.id, owner: c.owner, capper: c.capper, p: +c.progress.toFixed(2) })),
+      units: this.units
+        .filter((u) => !u.alive || u.team === team || seen.has(u.id))
+        .map((u) => ({
+          id: u.id,
+          team: u.team,
+          x: Math.round(u.x),
+          y: Math.round(u.y),
+          hull: +u.hull.toFixed(3),
+          hp: Math.round(u.hp),
+          maxHp: u.maxHp,
+          alive: u.alive,
+          name: u.name,
+          cls: u.classId,
+          human: u.human,
+        })),
+    }
+  }
+
+  // личная добавка получателю (криты/перезарядка/линия сведения)
+  personalFor(ownerId) {
+    const u = this.byOwner.get(ownerId)
+    if (!u) return null
+    return {
+      unit: u.id,
+      hp: Math.max(0, Math.round(u.hp)),
+      alive: u.alive,
+      reload01: u.stats.reload ? Math.max(0, Math.min(1, 1 - u.reload / u.stats.reload)) : 1,
+      ready: u.reload <= 0,
+      crippled: Object.fromEntries(CRIT_SLOTS.map((s) => [s, Math.ceil(u.crippled[s])])),
+      kills: u.kills,
+      shots: u.shots,
+      hits: u.hits,
+      damageDealt: Math.round(u.damageDealt),
+    }
+  }
+}
