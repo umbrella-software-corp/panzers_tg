@@ -77,7 +77,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
 </script>
 
 <template>
-  <div class="pz-screen">
+  <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.82), rgba(13, 15, 10, 0.92)), url('/sprites/bg_mm.png') center / cover no-repeat">
     <!-- шапка -->
     <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 0">
       <div class="pz-display" style="font-size: 17px">{{ phase === 'go' ? 'БОЙ НАЙДЕН' : 'ПОИСК БОЯ' }}</div>

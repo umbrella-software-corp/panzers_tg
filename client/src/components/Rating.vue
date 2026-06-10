@@ -7,7 +7,6 @@ import { profile } from '../store.js'
 import { RATING_RIVALS } from '../game/meta.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
-import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['go'])
 
@@ -34,7 +33,7 @@ const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
 </script>
 
 <template>
-  <div class="pz-screen">
+  <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.88), rgba(13, 15, 10, 0.94)), url('/sprites/bg_rating.png') center / cover no-repeat">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 8px">
       <div class="pz-display" style="font-size: 17px">РЕЙТИНГ</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
@@ -46,7 +45,7 @@ const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
         <div class="pz-stencil-h">МОЯ СТАТИСТИКА</div>
         <div class="pz-plate pz-brackets me" style="--bk: var(--amber)">
           <div style="display: flex; align-items: center; gap: 12px">
-            <div class="rank-badge"><PzIcon name="rank" :size="26" /></div>
+            <img src="/sprites/trophy.png" class="rank-badge" style="object-fit: cover" />
             <div style="flex: 1">
               <div class="pz-display" style="font-size: 22px">{{ profile.stats.rating }}</div>
               <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500">боевой рейтинг · место {{ myPlace }}</div>

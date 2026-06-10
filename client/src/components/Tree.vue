@@ -65,7 +65,7 @@ function diamondColor(tankId, modId) {
 </script>
 
 <template>
-  <div class="pz-screen">
+  <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.88), rgba(13, 15, 10, 0.94)), url('/sprites/bg_tree.png') center / cover no-repeat">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
       <div class="pz-display" style="font-size: 17px">РАЗВИТИЕ</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />

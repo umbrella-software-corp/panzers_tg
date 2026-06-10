@@ -96,7 +96,9 @@ const rows = computed(() => [
   width: 100%;
   max-width: 340px;
   position: relative;
-  background: linear-gradient(175deg, #f2e8cf, #e6d9b8 80%);
+  background:
+    linear-gradient(175deg, rgba(242, 232, 207, 0.92), rgba(230, 217, 184, 0.94) 80%),
+    url('/sprites/paper.png') center / cover;
   color: var(--paper-ink);
   border-radius: 4px;
   box-shadow:

@@ -237,13 +237,18 @@ export class Game {
 
     // спрайты (AI-ассеты); без файлов всё рисуется вектором, как раньше
     this.tex = {}
-    const texNames = ['ground', 'forest', 'rock', 'water', 'hill', 'building', 'explosion', 'tank_amber', 'tank_blue', 'tank_red']
+    const tankNames = []
+    for (const color of ['amber', 'blue', 'red']) {
+      tankNames.push(`tank_${color}`) // средний/базовый
+      for (const cls of ['light', 'heavy']) tankNames.push(`tank_${cls}_${color}`)
+    }
+    const texNames = ['ground', 'forest', 'rock', 'water', 'hill', 'building', 'explosion', ...tankNames]
     const loadedTex = await Promise.allSettled(texNames.map((n) => Assets.load(`/sprites/${n}.png`)))
     texNames.forEach((n, i) => {
       if (loadedTex[i].status === 'fulfilled') this.tex[n] = loadedTex[i].value
     })
-    for (const k of ['tank_amber', 'tank_blue', 'tank_red']) {
-      if (this.tex[k]) this.tex[k] = this._chromaKey(this.tex[k])
+    for (const k of Object.keys(this.tex)) {
+      if (k.startsWith('tank_')) this.tex[k] = this._chromaKey(this.tex[k])
     }
 
     this.world = new Container()
@@ -266,18 +271,28 @@ export class Game {
     this.fxSprites = []
     if (this.tex.tank_amber && this.tex.tank_blue && this.tex.tank_red) {
       this.unitSprites = new Map()
-      const mk = (texName, size) => {
-        const s = new Sprite(this.tex[texName])
+      // спрайт по классу танка с фоллбэком на базовый цветовой
+      const tankTex = (clsId, color) => this.tex[`tank_${clsId}_${color}`] || this.tex[`tank_${color}`]
+      const mk = (tex, size) => {
+        const s = new Sprite(tex)
         s.anchor.set(0.5)
         s.scale.set(size / s.texture.height)
         s.visible = false
         this.tankLayer.addChild(s)
         return s
       }
-      this.unitSprites.set('player', mk('tank_amber', 96))
-      for (const b of this.bots) this.unitSprites.set(b.id, mk(b.team === TEAM.ALLY ? 'tank_blue' : 'tank_red', 84))
+      this.unitSprites.set('player', mk(tankTex(this.cls.id, 'amber'), 96))
+      for (const b of this.bots) {
+        const size = b.classId === 'heavy' ? 92 : b.classId === 'light' ? 76 : 84
+        this.unitSprites.set(b.id, mk(tankTex(b.classId, b.team === TEAM.ALLY ? 'blue' : 'red'), size))
+      }
     }
 
+    // туман: полноэкранная тёмная заливка с дырой по обзору (без шва на краю
+    // спрайта) + градиентный спрайт, сглаживающий край дыры
+    this.fogDark = new Graphics()
+    this._fogDrawn = { w: 0, h: 0, r: 0 }
+    this.app.stage.addChild(this.fogDark)
     this.fog = new Sprite(this._makeFogTexture())
     this.fog.anchor.set(0.5)
     this.app.stage.addChild(this.fog)
@@ -376,10 +391,10 @@ export class Game {
     canvas.width = canvas.height = size
     const ctx = canvas.getContext('2d')
     const r = size / 2
-    const g = ctx.createRadialGradient(r, r, r * 0.34, r, r, r)
+    const g = ctx.createRadialGradient(r, r, r * 0.45, r, r, r)
     g.addColorStop(0, 'rgba(8,10,14,0)')
-    g.addColorStop(0.78, 'rgba(8,10,14,0.72)')
-    g.addColorStop(1, 'rgba(8,10,14,0.96)')
+    g.addColorStop(0.8, 'rgba(8,10,14,0.5)')
+    g.addColorStop(1, 'rgba(8,10,14,0.78)')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, size, size)
     return Texture.from(canvas)
@@ -993,10 +1008,22 @@ export class Game {
     this.world.rotation = -Math.PI / 2 - this.hullAngle
 
     this.fog.position.set(camX, camY)
-    // уничтожен — режим наблюдения: туман шире (смотрим глазами команды)
-    const fogD = this._vision() * 2 * 1.15 * (this.hp > 0 ? 1 : 1.8)
+    // визуальный радиус тумана: не уже 430px, чтобы низкий обзор не делал
+    // экран чёрным (засвет врагов всё равно по честному _vision)
+    // уничтожен — режим наблюдения: шире (смотрим глазами команды)
+    const fogD = Math.max(this._vision(), 430) * 2 * 1.15 * (this.hp > 0 ? 1 : 1.8)
     this.fog.width = fogD
     this.fog.height = fogD
+    // тёмная заливка на весь экран с дырой по краю градиента — края спрайта
+    // тумана больше не видно ни на каком экране
+    const fr = fogD / 2
+    const fd = this._fogDrawn
+    if (fd.w !== w || fd.h !== h || Math.abs(fd.r - fr) > 1) {
+      this.fogDark.clear()
+      this.fogDark.rect(0, 0, w, h).fill({ color: 0x080a0e, alpha: 0.78 })
+      this.fogDark.circle(camX, camY, fr).cut()
+      this._fogDrawn = { w, h, r: fr }
+    }
 
     const g = this.gfx
     g.clear()

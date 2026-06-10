@@ -6,15 +6,14 @@ import { profile, addRewards, spendTokens, buyGoldAmmo } from '../store.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
-import CrateIcon from './ui/CrateIcon.vue'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['go'])
 
 const CRATES = [
-  { id: 'c1', name: 'Полевой ящик', sub: '600 кредитов · обычные модули', tone: '#7d6434', costTokens: 5, gain: 600 },
-  { id: 'c2', name: 'Офицерский ящик', sub: '1 800 кредитов · шанс на камуфляж', tone: '#6f7d8a', costTokens: 12, gain: 1800 },
-  { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · гарантия редкости', tone: '#9a5a2c', costTokens: 25, gain: 4500 },
+  { id: 'c1', name: 'Полевой ящик', sub: '600 кредитов · обычные модули', icon: 'crate_field', costTokens: 5, gain: 600 },
+  { id: 'c2', name: 'Офицерский ящик', sub: '1 800 кредитов · шанс на камуфляж', icon: 'crate_officer', costTokens: 12, gain: 1800 },
+  { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · гарантия редкости', icon: 'crate_general', costTokens: 25, gain: 4500 },
 ]
 const CREDIT_PACKS = [
   { id: 'p1', amount: 1000, price: '50 ⭐' },
@@ -61,7 +60,7 @@ const fmt = (n) => n.toLocaleString('ru-RU')
 </script>
 
 <template>
-  <div class="pz-screen">
+  <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.88), rgba(13, 15, 10, 0.94)), url('/sprites/bg_shop.png') center / cover no-repeat">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 8px">
       <div class="pz-display" style="font-size: 17px">МАГАЗИН</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" />
@@ -73,7 +72,7 @@ const fmt = (n) => n.toLocaleString('ru-RU')
         <div class="pz-stencil-h">ЯЩИКИ СНАБЖЕНИЯ</div>
         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px">
           <div v-for="c in CRATES" :key="c.id" class="pz-plate" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px">
-            <CrateIcon :size="48" :tone="c.tone" star="var(--amber)" />
+            <img :src="`/sprites/${c.icon}.png`" style="width: 52px; height: 52px; border-radius: 8px; object-fit: cover" />
             <div style="flex: 1; min-width: 0">
               <div class="pz-display" style="font-size: 14.5px">{{ c.name }}</div>
               <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ c.sub }}</div>
@@ -90,6 +89,7 @@ const fmt = (n) => n.toLocaleString('ru-RU')
         <div class="pz-stencil-h">ГОЛДОВЫЕ СНАРЯДЫ</div>
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px">
           <button v-for="p in GOLD_AMMO_PACKS" :key="p.id" class="pz-plate pack" @click="buyGold(p)">
+            <img src="/sprites/icon_gold.png" style="width: 44px; height: 44px; border-radius: 8px; object-fit: cover" />
             <span class="pz-display" style="font-size: 16px; color: var(--amber)">★ ×{{ p.amount }}</span>
             <span style="font-size: 11px; color: var(--ink-dim); font-weight: 500">урон +35% за выстрел</span>
             <span class="pz-chip" style="font-size: 11px; margin-top: 2px"><PzIcon name="token" :size="12" /> {{ p.costTokens }}</span>
@@ -113,7 +113,7 @@ const fmt = (n) => n.toLocaleString('ru-RU')
             @click="buyCredits(p)"
           >
             <span v-if="p.hot" class="pz-pixel hot" style="background: var(--amber); color: #1d1604">ХИТ</span>
-            <PzIcon name="coin" :size="22" />
+            <img src="/sprites/icon_credits.png" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover" />
             <span class="pz-display" style="font-size: 15px">{{ fmt(p.amount) }}</span>
             <span style="font-size: 11.5px; color: var(--ink-dim); font-weight: 600">{{ p.price }}</span>
           </button>
@@ -133,7 +133,7 @@ const fmt = (n) => n.toLocaleString('ru-RU')
             @click="buyTokens(p)"
           >
             <span v-if="p.hot" class="pz-pixel hot" style="background: var(--blue); color: #0a1c30">ХИТ</span>
-            <PzIcon name="token" :size="22" />
+            <img src="/sprites/icon_tokens.png" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover" />
             <span class="pz-display" style="font-size: 15px">{{ p.amount }}</span>
             <span style="font-size: 11.5px; color: var(--ink-dim); font-weight: 600">{{ p.price }}</span>
           </button>

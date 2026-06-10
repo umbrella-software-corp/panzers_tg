@@ -259,9 +259,10 @@ onMounted(async () => {
   const myTier = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
   const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map(combatStats)
   game.setBotTanks(pool)
-  await game.mount(stage.value)
+  // статы до mount: спрайт игрока выбирается по классу лоадаута
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)
+  await game.mount(stage.value)
   game.setMinimap(minimap.value)
   startCountdown()
 })
