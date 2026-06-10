@@ -6,7 +6,7 @@ import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue'
 import { Game } from '../game/Game.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, spendGoldAmmo, addBattleResult } from '../store.js'
-import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT } from '../game/meta.js'
+import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT, SKIN_BY_ID } from '../game/meta.js'
 import Results from './Results.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -266,6 +266,7 @@ onMounted(async () => {
   const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map((t) => ({ ...combatStats(t), tankId: t.id }))
   game.setBotTanks(pool)
   game.playerTankId = profile.selectedTank // реальный спрайт своей машины
+  game.playerTint = (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff // камуфляж виден в бою
   // статы до mount: спрайт игрока выбирается по классу лоадаута
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)

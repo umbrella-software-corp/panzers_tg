@@ -1198,9 +1198,9 @@ export class Game {
       g.rect(b.x - bw / 2, b.y - 36, bw * (Math.max(0, b.hp) / b.maxHp), 5).fill(hpCol)
     }
 
-    // игрок: живой — янтарный, уничтожен — обломки
+    // игрок: живой — в своём камуфляже, уничтожен — обломки
     if (this.hp > 0) {
-      if (useSpr && placeSpr('player', tx, ty, hull, 0xffffff)) {
+      if (useSpr && placeSpr('player', tx, ty, hull, this.playerTint || 0xffffff)) {
         if (this.hurtFlash > 0) g.circle(tx, ty, 36).fill({ color: 0xff6a5a, alpha: 0.4 })
       } else {
         this._drawTank(

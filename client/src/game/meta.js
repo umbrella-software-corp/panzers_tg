@@ -140,6 +140,18 @@ export const DAILY_REWARDS = [
   { credits: 1200, tokens: 10, gold: 5 },
 ]
 
+// ---------- камуфляжи (платные скины — оттенок танка, виден всем) ----------
+export const SKINS = [
+  { id: 'std', name: 'Штатный', tint: 0xffffff, costTokens: 0 },
+  { id: 'winter', name: 'Зимний', tint: 0xdce8ff, costTokens: 15 },
+  { id: 'desert', name: 'Пустынный', tint: 0xffd9a0, costTokens: 15 },
+  { id: 'forest', name: 'Лесной', tint: 0xa8cc8e, costTokens: 15 },
+  { id: 'night', name: 'Ночной', tint: 0x9aa0ad, costTokens: 25 },
+  { id: 'gold', name: 'Парадный', tint: 0xffd24a, costTokens: 60 },
+]
+export const SKIN_BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]))
+export const RENAME_COST_TOKENS = 20
+
 // ---------- рейтинг ----------
 export const RATING_START = 1000
 export const RATING_DELTA = { victory: 24, draw: 2, defeat: -16 }

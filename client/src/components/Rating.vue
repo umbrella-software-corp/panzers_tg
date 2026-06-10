@@ -1,14 +1,23 @@
 <script setup>
-// Рейтинг: моя статистика (бои/победы/фраги/рейтинг) + таблица лидеров.
+// Рейтинг: вкладки Профиль (всё про меня: имя, статистика, история) /
+// Рейтинг (таблица лидеров) / Кланы и Турниры (СКОРО). Смена имени платная.
 // Соперники пока фейковые вокруг моего рейтинга (бэкенда нет) — но
 // стабильные между заходами, чтобы таблица не скакала.
-import { computed } from 'vue'
-import { profile } from '../store.js'
-import { RATING_RIVALS } from '../game/meta.js'
+import { computed, ref } from 'vue'
+import { profile, renamePlayer } from '../store.js'
+import { RATING_RIVALS, RENAME_COST_TOKENS } from '../game/meta.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 
 const emit = defineEmits(['go'])
+const tab = ref(0)
+const TABS = ['ПРОФИЛЬ', 'РЕЙТИНГ', 'КЛАНЫ', 'ТУРНИРЫ']
+
+function rename() {
+  const name = window.prompt(`Новый позывной (3-16 символов) — ${RENAME_COST_TOKENS} жетонов:`, profile.name)
+  if (name === null) return
+  if (!renamePlayer(name)) window.alert('Не вышло: короткое имя или не хватает жетонов')
+}
 
 const winrate = computed(() => {
   const s = profile.stats
@@ -25,7 +34,7 @@ const board = computed(() => {
     const delta = ((h % 21) - 10) * 18 + (i - RATING_RIVALS.length / 2) * 9
     return { name, rating: Math.max(120, Math.round(mine + delta)), you: false }
   })
-  rows.push({ name: 'ВЫ', rating: mine, you: true })
+  rows.push({ name: profile.name, rating: mine, you: true })
   rows.sort((a, b) => b.rating - a.rating)
   return rows
 })
@@ -51,9 +60,34 @@ const fmtTime = (t) => {
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
     </header>
 
+    <!-- вкладки -->
+    <div style="display: flex; gap: 6px; padding: 0 14px 8px">
+      <button v-for="(t, i) in TABS" :key="t" class="pz-display tabbtn" :class="{ on: tab === i }" @click="tab = i">{{ t }}</button>
+    </div>
+
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
+      <!-- ===== КЛАНЫ / ТУРНИРЫ: скоро ===== -->
+      <section v-if="tab >= 2" style="flex: 1; display: flex; align-items: center; justify-content: center">
+        <div class="pz-plate pz-brackets" style="--bk: var(--amber); padding: 26px 30px; text-align: center">
+          <div class="pz-display" style="font-size: 20px; letter-spacing: 0.14em">{{ TABS[tab] }}</div>
+          <div class="pz-pixel" style="font-size: 9px; color: var(--amber); margin-top: 10px">СКОРО</div>
+          <div style="font-size: 11.5px; color: var(--ink-dim); margin-top: 8px; font-weight: 500">
+            {{ tab === 2 ? 'Собирай взвод — клан будет его продолжением' : 'Сетевые бои 7×7 уже на подходе' }}
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== ПРОФИЛЬ: всё про меня ===== -->
+      <section v-if="tab === 0">
+        <div class="pz-stencil-h">ПОЗЫВНОЙ</div>
+        <div class="pz-plate" style="margin-top: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 10px">
+          <span class="pz-display" style="flex: 1; font-size: 18px">{{ profile.name }}</span>
+          <button class="pz-btn2" style="padding: 7px 12px; font-size: 11px" @click="rename">Сменить · {{ RENAME_COST_TOKENS }} жет.</button>
+        </div>
+      </section>
+
       <!-- моя карточка -->
-      <section>
+      <section v-if="tab === 0">
         <div class="pz-stencil-h">МОЯ СТАТИСТИКА</div>
         <div class="pz-plate pz-brackets me" style="--bk: var(--amber)">
           <div style="display: flex; align-items: center; gap: 12px">
@@ -73,7 +107,7 @@ const fmtTime = (t) => {
       </section>
 
       <!-- история боёв -->
-      <section>
+      <section v-if="tab === 0">
         <div class="pz-stencil-h">ИСТОРИЯ БОЁВ</div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
           <div v-if="!profile.history.length" style="font-size: 12px; color: var(--ink-faint); text-align: center; padding: 10px 0; font-weight: 500">
@@ -91,7 +125,7 @@ const fmtTime = (t) => {
       </section>
 
       <!-- таблица -->
-      <section>
+      <section v-if="tab === 1">
         <div class="pz-stencil-h">ТАБЛИЦА ЛИДЕРОВ</div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
           <div v-for="(r, i) in board" :key="r.name" class="row" :class="{ you: r.you }">
@@ -111,6 +145,22 @@ const fmtTime = (t) => {
 </template>
 
 <style scoped>
+.tabbtn {
+  flex: 1;
+  padding: 7px 0 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  color: var(--ink-dim);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+.tabbtn.on {
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi), var(--amber));
+  border-color: transparent;
+}
 .me {
   margin-top: 10px;
   padding: 14px;

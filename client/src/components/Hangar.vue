@@ -2,8 +2,8 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed } from 'vue'
-import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress } from '../store.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS } from '../game/meta.js'
+import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, buySkin, setSkin } from '../store.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, SKINS, SKIN_BY_ID } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -22,6 +22,13 @@ const tanks = computed(() => tanksOfNation(profile.nation))
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
 const partyMul = computed(() => profile.party.length)
+const skinTint = computed(() => (SKIN_BY_ID[profile.skin] || SKIN_BY_ID.std).tint)
+
+function pickSkin(s) {
+  if (profile.skins.includes(s.id)) setSkin(s.id)
+  else buySkin(s.id) // не хватило жетонов — просто ничего не произойдёт
+}
+const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
 </script>
 
 <template>
@@ -40,27 +47,18 @@ const partyMul = computed(() => profile.party.length)
             linear-gradient(180deg, #191c14 0%, #14160f 45%, #0e100a 100%);
         "
       ></div>
-      <!-- масляные пятна -->
-      <div style="position: absolute; left: 12%; top: 52%; width: 90px; height: 60px; border-radius: 50%; background: radial-gradient(ellipse, rgba(0, 0, 0, 0.4), transparent 70%)"></div>
-      <div style="position: absolute; left: 60%; top: 24%; width: 60px; height: 40px; border-radius: 50%; background: radial-gradient(ellipse, rgba(0, 0, 0, 0.3), transparent 70%)"></div>
-
-      <!-- размеченный отсек -->
+      <!-- размеченный отсек (бочки/пятна убраны — фон ангара уже фотореальный) -->
       <div class="bay">
         <span v-for="i in 4" :key="i" class="bay-tick" :class="'c' + i"></span>
         <div class="bay-num pz-display">Б-01</div>
         <div class="bay-hazard"></div>
       </div>
 
-      <!-- бочки -->
-      <div style="position: absolute; right: 16px; top: 42%; display: flex; gap: 6px; opacity: 0.9">
-        <div v-for="i in 2" :key="i" class="barrel"><div class="barrel-cap"></div></div>
-      </div>
-
       <!-- тень + танк -->
       <div class="tank-wrap">
         <div class="tank-shadow"></div>
-        <div :key="tank.id" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankImg :tank-id="tank.id" :size="170" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 10px 14px rgba(0,0,0,0.45))' }" />
+        <div :key="tank.id + profile.skin" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
+          <TankImg :tank-id="tank.id" :size="170" :tint="locked ? 0xffffff : skinTint" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 10px 14px rgba(0,0,0,0.45))' }" />
         </div>
         <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
           <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
@@ -106,6 +104,22 @@ const partyMul = computed(() => profile.party.length)
     <div v-if="ttx" class="pz-plate" style="margin: 0 14px 8px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; animation: pz-slide-up 0.22s ease">
       <StatRow v-for="(v, k) in tank.stats" :key="k" :label="STAT_LABELS[k]" :value="v" />
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
+    </div>
+
+    <!-- камуфляжи: платные скины, видны в бою -->
+    <div style="display: flex; align-items: center; gap: 7px; padding: 2px 14px 4px; flex-shrink: 0">
+      <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">КАМО</span>
+      <button
+        v-for="s in SKINS"
+        :key="s.id"
+        class="skin-dot"
+        :class="{ on: profile.skin === s.id }"
+        :style="{ background: tintCss(s.tint) }"
+        :title="s.name + (profile.skins.includes(s.id) ? '' : ` · ${s.costTokens} жет.`)"
+        @click="pickSkin(s)"
+      >
+        <PzIcon v-if="!profile.skins.includes(s.id)" name="lock" :size="9" color="#1d1604" />
+      </button>
     </div>
 
     <!-- карусель -->
@@ -226,20 +240,21 @@ const partyMul = computed(() => profile.party.length)
   border-radius: 2px;
   opacity: 0.5;
 }
-.barrel {
-  width: 30px;
-  height: 30px;
+.skin-dot {
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 32%, #3f4636, #20251a 70%);
-  border: 1.5px solid #0c0e08;
-  box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.25);
+  border: 1.5px solid rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
 }
-.barrel-cap {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #171a11;
-  margin: 10px auto;
+.skin-dot.on {
+  border-color: var(--amber);
+  box-shadow: 0 0 8px rgba(242, 165, 12, 0.6);
+  opacity: 1;
 }
 .tank-wrap {
   position: absolute;

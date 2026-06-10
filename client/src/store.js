@@ -12,6 +12,8 @@ import {
   modLevel,
   modsMaxedCount,
   REF_MILESTONES,
+  SKIN_BY_ID,
+  RENAME_COST_TOKENS,
   combatStats,
   DAILY_REWARDS,
   RATING_START,
@@ -55,6 +57,9 @@ if (!profile.daily || typeof profile.daily !== 'object') profile.daily = { last:
 if (!Array.isArray(profile.history)) profile.history = [] // последние бои
 if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } // экипаж один на все танки
 if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {} // опыт по веткам наций
+if (typeof profile.name !== 'string' || !profile.name) profile.name = 'Боец'
+if (!Array.isArray(profile.skins)) profile.skins = ['std'] // купленные камуфляжи
+if (typeof profile.skin !== 'string') profile.skin = 'std'
 
 watch(profile, () => localStorage.setItem(KEY, JSON.stringify(profile)), { deep: true })
 
@@ -180,6 +185,29 @@ export function bankBattleXp(xp) {
   addCrewXp(crew)
   addBranchXp(nationOf(profile.selectedTank), branch)
   return { crew, branch }
+}
+
+// ---------- камуфляжи и имя ----------
+export function buySkin(skinId) {
+  const s = SKIN_BY_ID[skinId]
+  if (!s || profile.skins.includes(skinId)) return false
+  if (!spendTokens(s.costTokens)) return false
+  profile.skins.push(skinId)
+  profile.skin = skinId
+  return true
+}
+
+export function setSkin(skinId) {
+  if (profile.skins.includes(skinId)) profile.skin = skinId
+}
+
+// платная смена позывного
+export function renamePlayer(name) {
+  const clean = String(name || '').trim().slice(0, 16)
+  if (clean.length < 3) return false
+  if (!spendTokens(RENAME_COST_TOKENS)) return false
+  profile.name = clean
+  return true
 }
 
 // ---------- голдовые снаряды ----------
