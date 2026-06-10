@@ -187,6 +187,8 @@ export class Game {
       damage: Math.round(cls.damage * BOT_DMG_MULT),
       reload: cls.reload,
       speed: cls.maxSpeed * BOT_SPEED_MULT,
+      accel: (cls.accel || cls.maxSpeed * 1.1) * BOT_SPEED_MULT,
+      vel: 0, // текущая скорость — боты разгоняются, а не телепортируются
       turnRate: cls.turnRate * 0.9,
       alive: true,
       fireCd: 1 + i * 0.2,
@@ -699,7 +701,9 @@ export class Game {
     if (this.crippled.tracks > 0) steer = 0 // сбита гусеница — нет поворота
     if (this.crippled.engine > 0) throttle = 0 // заглушён двигатель — нет хода
 
-    this.hullAngle += steer * this.cls.turnRate * dt
+    // на полном ходу руль тяжелеет — дуга поворота широкая, как у танка
+    const turnEff = this.cls.turnRate * (1 - 0.35 * Math.min(1, Math.abs(this.speed) / this.cls.maxSpeed))
+    this.hullAngle += steer * turnEff * dt
 
     // задний ход вдвое медленнее переднего
     const speedTarget = this.cls.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
@@ -737,22 +741,21 @@ export class Game {
 
     if (target) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
-      // при объезде временно целимся в сторону, стрельбу не сбиваем
-      const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang
+      // при объезде временно целимся в сторону; лёгкое вилянье курсом вместо
+      // прежнего «краба» (боком танки не ездят)
+      let steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18
       const diff = angleDiff(steerA, b.hull)
-      const maxTurn = b.turnRate * dt
+      // на ходу руль тяжелеет — как у игрока
+      const turnEff = b.turnRate * (1 - 0.35 * Math.min(1, Math.abs(b.vel) / b.speed))
+      const maxTurn = turnEff * dt
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
       if (bestD > ai.idealRange * 1.15) move = 1
-      else if (bestD < ai.idealRange * 0.8) move = -1
-      const strafe = Math.sin(this.t * 1.3 + b.id * 1.7) * 0.5
+      else if (bestD < ai.idealRange * 0.8) move = -0.5 // задний ход вдвое медленнее
       wantMove = move !== 0
 
-      b.x += Math.cos(b.hull) * move * b.speed * dt
-      b.y += Math.sin(b.hull) * move * b.speed * dt
-      b.x += Math.cos(b.hull + Math.PI / 2) * strafe * b.speed * dt
-      b.y += Math.sin(b.hull + Math.PI / 2) * strafe * b.speed * dt
+      this._botDrive(b, move, dt)
 
       const fireDiff = angleDiff(ang, b.hull)
       const inArc = Math.abs(fireDiff) <= (ai.sectorHalfDeg * Math.PI) / 180
@@ -791,9 +794,9 @@ export class Game {
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
       const diff = angleDiff(a, b.hull)
-      b.hull += Math.max(-b.turnRate * dt, Math.min(b.turnRate * dt, diff))
-      b.x += Math.cos(b.hull) * b.speed * 0.6 * dt
-      b.y += Math.sin(b.hull) * b.speed * 0.6 * dt
+      const turnEff = b.turnRate * (1 - 0.35 * Math.min(1, Math.abs(b.vel) / b.speed))
+      b.hull += Math.max(-turnEff * dt, Math.min(turnEff * dt, diff))
+      this._botDrive(b, 0.6, dt)
     }
 
     this._resolveCollisions(b, ai.radius)
@@ -801,13 +804,24 @@ export class Game {
     // антизастревание: хотел ехать, но упёрся — объезд по дуге случайной стороной
     if (b.avoidT > 0) b.avoidT -= dt
     const moved = Math.hypot(b.x - px, b.y - py)
-    if (wantMove && moved < b.speed * dt * 0.25) b.stuckT = (b.stuckT || 0) + dt
+    if (wantMove && moved < Math.abs(b.vel) * dt * 0.25) b.stuckT = (b.stuckT || 0) + dt
     else b.stuckT = 0
     if (b.stuckT > 0.5) {
       b.stuckT = 0
       b.avoidT = 0.9
       b.avoidDir = Math.random() < 0.5 ? -1 : 1
     }
+  }
+
+  // ход бота с инерцией: скорость стремится к move×speed, движение — только
+  // вдоль корпуса (никакого «краба»)
+  _botDrive(b, move, dt) {
+    const target = b.speed * move
+    const da = b.accel * dt
+    if (b.vel < target) b.vel = Math.min(target, b.vel + da)
+    else b.vel = Math.max(target, b.vel - da * 1.4)
+    b.x += Math.cos(b.hull) * b.vel * dt
+    b.y += Math.sin(b.hull) * b.vel * dt
   }
 
   _damageUnit(unit, dmg, byTeam) {
