@@ -7,7 +7,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, loadoutStats, dailyAvailable } from './store.js'
+import { profile, addRewards, addCrewXp, loadoutStats, dailyAvailable } from './store.js'
 
 // экраны: hangar | tree | shop | rating | matchmaking | battle
 const screen = ref('hangar')
@@ -31,11 +31,17 @@ function deploy() {
   screen.value = 'battle'
 }
 function exitBattle(reward) {
-  if (reward) addRewards(reward.silver || 0)
+  if (reward) {
+    addRewards(reward.silver || 0)
+    addCrewXp(reward.xp) // опыт боя качает экипаж
+  }
   screen.value = 'hangar'
 }
 function rematch(reward) {
-  if (reward) addRewards(reward.silver || 0)
+  if (reward) {
+    addRewards(reward.silver || 0)
+    addCrewXp(reward.xp)
+  }
   battleKey.value++
 }
 </script>

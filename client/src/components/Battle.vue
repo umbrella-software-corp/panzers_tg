@@ -33,6 +33,9 @@ const state = shallowRef({
   enemiesAlive: 5,
   reload01: 1,
   ready: true,
+  reloadLeft: 0,
+  ourBase: 0,
+  enemyBase: 0,
   classId: DEFAULT_CLASS,
   damageDealt: 0,
   matchTime: 0,
@@ -320,6 +323,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- захват базы: отсчёт 0-100 -->
+    <div v-if="state.enemyBase > 0" class="basecap pz-display" style="color: var(--amber); border-color: var(--amber)">
+      ЗАХВАТ БАЗЫ {{ state.enemyBase }}%
+    </div>
+    <div v-if="state.ourBase > 0" class="basecap ours pz-display">НАШУ БАЗУ ЗАХВАТЫВАЮТ {{ state.ourBase }}%</div>
+
     <!-- килл-фид -->
     <div class="feed">
       <div v-for="f in feed" :key="f.key" class="feed-row"><span style="color: var(--amber)">ВЫ</span> ▸ {{ f.text }}</div>
@@ -371,7 +380,7 @@ onBeforeUnmount(() => {
         <circle cx="46" cy="46" r="34" class="ring-bg" />
         <circle cx="46" cy="46" r="34" class="ring-fg" :stroke-dasharray="RING" :stroke-dashoffset="ringOffset" />
       </svg>
-      <span class="pz-display flabel">{{ state.ready ? 'ОГОНЬ' : '···' }}</span>
+      <span class="pz-display flabel">{{ state.ready ? 'ОГОНЬ' : state.reloadLeft.toFixed(1) + 'с' }}</span>
     </button>
 
     <!-- стартовый отсчёт -->
@@ -577,6 +586,29 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+
+/* захват базы */
+.basecap {
+  position: absolute;
+  top: calc(var(--safe-top) + 112px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+  z-index: 3;
+  pointer-events: none;
+  animation: pz-blink 1.4s linear infinite;
+}
+.basecap.ours {
+  top: calc(var(--safe-top) + 148px);
+  color: var(--red);
+  border-color: var(--red);
 }
 
 /* килл-фид */

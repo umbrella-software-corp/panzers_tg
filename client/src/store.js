@@ -53,6 +53,7 @@ if (!profile.stats || typeof profile.stats !== 'object')
   profile.stats = { battles: 0, wins: 0, kills: 0, rating: RATING_START }
 if (!profile.daily || typeof profile.daily !== 'object') profile.daily = { last: '', streak: 0 }
 if (!Array.isArray(profile.history)) profile.history = [] // последние бои
+if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } // экипаж один на все танки
 
 watch(profile, () => localStorage.setItem(KEY, JSON.stringify(profile)), { deep: true })
 
@@ -142,7 +143,28 @@ export function loadoutStats(tankId) {
   base.accel *= eng
   base.turnRate *= MODULE_COMBAT.trk[tankModLevel(tank.id, 'trk') - 1]
   base.vision *= MODULE_COMBAT.rad[tankModLevel(tank.id, 'rad') - 1]
+  // экипаж: +1% к темпу/обзору/ходу/манёвру за уровень после первого
+  const ck = 1 + (crewLevel() - 1) * 0.01
+  base.reload = +(base.reload / ck).toFixed(2)
+  base.vision *= ck
+  base.maxSpeed *= ck
+  base.turnRate *= ck
   return base
+}
+
+// ---------- экипаж: один на все танки, опыт из боёв, бафф к статам ----------
+export const CREW_LEVEL_XP = 600 // опыта на уровень
+export const CREW_MAX_LEVEL = 10
+
+export const crewLevel = () =>
+  Math.min(CREW_MAX_LEVEL, 1 + Math.floor(profile.crew.xp / CREW_LEVEL_XP))
+
+// прогресс к следующему уровню 0..1 (на максимуме всегда 1)
+export const crewProgress = () =>
+  crewLevel() >= CREW_MAX_LEVEL ? 1 : (profile.crew.xp % CREW_LEVEL_XP) / CREW_LEVEL_XP
+
+export function addCrewXp(xp) {
+  profile.crew.xp += Math.max(0, Math.round(xp || 0))
 }
 
 // ---------- голдовые снаряды ----------

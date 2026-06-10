@@ -2,7 +2,7 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed } from 'vue'
-import { profile, setNation, selectTank, isOwned } from '../store.js'
+import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress } from '../store.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
@@ -89,9 +89,17 @@ const partyMul = computed(() => profile.party.length)
         </div>
         <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 1px">{{ tank.cls }} · {{ nationLabel }}</div>
       </div>
-      <button class="pz-btn2" style="padding: 8px 12px; font-size: 11.5px" :style="{ borderColor: ttx ? 'var(--amber)' : 'var(--line-strong)', color: ttx ? 'var(--amber)' : 'var(--ink)' }" @click="ttx = !ttx">
-        ТТХ {{ ttx ? '▾' : '▸' }}
-      </button>
+      <div style="display: flex; gap: 6px; align-items: center">
+        <!-- экипаж: один на все танки, уровень баффает машину -->
+        <div class="crew-badge pz-display" :title="`Экипаж: +${crewLevel() - 1}% к темпу/обзору/ходу`">
+          <PzIcon name="star" :size="10" color="var(--amber)" />
+          <span>ЭКИПАЖ {{ crewLevel() }}</span>
+          <i class="bar"><b :style="{ width: crewProgress() * 100 + '%' }"></b></i>
+        </div>
+        <button class="pz-btn2" style="padding: 8px 12px; font-size: 11.5px" :style="{ borderColor: ttx ? 'var(--amber)' : 'var(--line-strong)', color: ttx ? 'var(--amber)' : 'var(--ink)' }" @click="ttx = !ttx">
+          ТТХ {{ ttx ? '▾' : '▸' }}
+        </button>
+      </div>
     </div>
 
     <!-- ТТХ-шторка -->
@@ -254,6 +262,37 @@ const partyMul = computed(() => profile.party.length)
   gap: 3px;
   padding: 8px 12px;
   font-size: 11px;
+}
+.crew-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 10px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+.crew-badge > div:first-child,
+.crew-badge span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.crew-badge .bar {
+  width: 54px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.crew-badge .bar b {
+  display: block;
+  height: 100%;
+  background: var(--amber);
 }
 .squad-btn .dots {
   display: flex;

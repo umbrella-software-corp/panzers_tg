@@ -106,7 +106,7 @@ export class Game {
       hp: w.hp || Infinity,
       destructible: !!w.hp,
     }))
-    this.bases = BASES.map((b) => ({ team: b.team, x: c + b.dx, y: c + b.dy, r: b.r }))
+    this.bases = BASES.map((b) => ({ team: b.team, x: c + b.dx, y: c + b.dy, r: b.r, progress: 0 }))
     this.caps = CAPTURE_POINTS.map((p) => ({
       id: p.id,
       x: c + p.dx,
@@ -305,14 +305,9 @@ export class Game {
       }
     }
 
-    // туман: полноэкранная тёмная заливка с дырой по обзору (без шва на краю
-    // спрайта) + градиентный спрайт, сглаживающий край дыры
-    this.fogDark = new Graphics()
-    this._fogDrawn = { w: 0, h: 0, r: 0 }
-    this.app.stage.addChild(this.fogDark)
-    this.fog = new Sprite(this._makeFogTexture())
-    this.fog.anchor.set(0.5)
-    this.app.stage.addChild(this.fog)
+    // визуального тумана нет (по фидбеку — было темно): скрытность врагов
+    // работает через засвет (не засвечен — просто не отрисован), баланс —
+    // через обзор и дальность выстрела
 
     // имена ботов — экранный слой поверх тумана (мир вращается, текст — нет)
     this.labels = new Container()
@@ -404,21 +399,6 @@ export class Game {
     s.scale.set(base * 0.5)
     this.fxLayer.addChild(s)
     this.fxSprites.push({ s, age: 0, life: 0.55, base })
-  }
-
-  _makeFogTexture() {
-    const size = 1024
-    const canvas = document.createElement('canvas')
-    canvas.width = canvas.height = size
-    const ctx = canvas.getContext('2d')
-    const r = size / 2
-    const g = ctx.createRadialGradient(r, r, r * 0.6, r, r, r)
-    g.addColorStop(0, 'rgba(8,10,14,0)')
-    g.addColorStop(0.85, 'rgba(8,10,14,0.38)')
-    g.addColorStop(1, 'rgba(8,10,14,0.6)')
-    ctx.fillStyle = g
-    ctx.fillRect(0, 0, size, size)
-    return Texture.from(canvas)
   }
 
   // --- управление ---
@@ -757,6 +737,7 @@ export class Game {
     this._moveTank(dt)
     for (const b of this.bots) this._updateBot(b, dt)
     this._updateCaptures(dt)
+    this._updateBases(dt)
 
     // засвет врагов: видит игрок или любой живой союзник
     for (const b of this.bots) {
@@ -857,6 +838,30 @@ export class Game {
     }
   }
 
+  // захват БАЗЫ: враги в круге без защитников тикают прогресс 0..100;
+  // 100 — мгновенная победа захватчиков. Пусто — прогресс спадает.
+  _updateBases(dt) {
+    const units = this._allUnits()
+    for (const base of this.bases) {
+      let attackers = 0
+      let defenders = 0
+      for (const u of units) {
+        if (Math.hypot(u.x - base.x, u.y - base.y) > base.r) continue
+        if (u.team === base.team) defenders++
+        else attackers++
+      }
+      if (attackers > 0 && defenders === 0) {
+        base.progress = Math.min(100, base.progress + dt * 6 * Math.min(2, attackers))
+        if (base.progress >= 100 && !this.matchOver) {
+          this.matchOver = true
+          this.result = base.team === TEAM.ENEMY ? 'victory' : 'defeat'
+        }
+      } else {
+        base.progress = Math.max(0, base.progress - dt * 12)
+      }
+    }
+  }
+
   _spottedByTeam(enemy) {
     // игрок: вплотную (PROX_SPOT) видно сквозь любой куст/стену
     if (this.hp > 0) {
@@ -889,8 +894,8 @@ export class Game {
       throttle = (k.fwd ? 1 : 0) - (k.back ? 1 : 0)
     }
 
-    if (this.crippled.tracks > 0) steer = 0 // сбита гусеница — нет поворота
-    if (this.crippled.engine > 0) throttle = 0 // заглушён двигатель — нет хода
+    if (this.crippled.tracks > 0) steer *= 0.35 // сбита гусеница — еле ворочается
+    if (this.crippled.engine > 0) throttle *= 0.35 // двигатель чадит — ползём
 
     // на полном ходу руль тяжелеет — дуга поворота широкая, как у танка
     const turnEff = this.cls.turnRate * (1 - 0.35 * Math.min(1, Math.abs(this.speed) / this.cls.maxSpeed))
@@ -919,7 +924,8 @@ export class Game {
     let bestD = Infinity
     for (const f of foes) {
       const d = Math.hypot(f.x - b.x, f.y - b.y)
-      if (d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
+      // боты не всевидящие: цель только в пределах обзора ИИ
+      if (d <= ai.vision && d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
         bestD = d
         target = f
       }
@@ -1061,6 +1067,10 @@ export class Game {
       enemiesAlive: this.bots.filter((b) => b.team === TEAM.ENEMY && b.alive).length,
       reload01,
       ready: this.ready,
+      reloadLeft: this.ready ? 0 : Math.ceil(this.reloadRemaining * 10) / 10,
+      // прогресс захвата баз: ourBase — нашу захватывают, enemyBase — мы их
+      ourBase: Math.round((this.bases.find((b) => b.team === TEAM.ALLY) || {}).progress || 0),
+      enemyBase: Math.round((this.bases.find((b) => b.team === TEAM.ENEMY) || {}).progress || 0),
       classId: this.cls.id,
       damageDealt: Math.round(this.damageDealt),
       matchTime: Math.ceil(this.matchTime),
@@ -1094,24 +1104,6 @@ export class Game {
     this.world.pivot.set(this.tank.x, this.tank.y)
     this.world.position.set(camX, camY)
     this.world.rotation = -Math.PI / 2 - this.hullAngle
-
-    this.fog.position.set(camX, camY)
-    // визуальный радиус тумана: не уже 430px, чтобы низкий обзор не делал
-    // экран чёрным (засвет врагов всё равно по честному _vision)
-    // уничтожен — режим наблюдения: шире (смотрим глазами команды)
-    const fogD = Math.max(this._vision(), 520) * 2 * 1.25 * (this.hp > 0 ? 1 : 1.8)
-    this.fog.width = fogD
-    this.fog.height = fogD
-    // тёмная заливка на весь экран с дырой по краю градиента — края спрайта
-    // тумана больше не видно ни на каком экране
-    const fr = fogD / 2
-    const fd = this._fogDrawn
-    if (fd.w !== w || fd.h !== h || Math.abs(fd.r - fr) > 1) {
-      this.fogDark.clear()
-      this.fogDark.rect(0, 0, w, h).fill({ color: 0x080a0e, alpha: 0.6 })
-      this.fogDark.circle(camX, camY, fr).cut()
-      this._fogDrawn = { w, h, r: fr }
-    }
 
     const g = this.gfx
     g.clear()
