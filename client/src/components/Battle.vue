@@ -4,6 +4,8 @@
 // плавающий джойстик и hazard-кнопка ОГОНЬ с кольцом перезарядки.
 import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue'
 import { Game } from '../game/Game.js'
+import { NetGame } from '../game/NetGame.js'
+import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, spendGoldAmmo, addBattleResult } from '../store.js'
 import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT, SKIN_BY_ID } from '../game/meta.js'
@@ -12,12 +14,22 @@ import PzIcon from './ui/PzIcon.vue'
 
 const props = defineProps({
   loadout: { type: Object, default: null },
+  mapId: { type: String, default: '' },
+  side: { type: Number, default: 0 }, // 0 — юг (синие), 1 — север (красные)
+  net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz }
 })
 const emit = defineEmits(['exit', 'rematch'])
 
 const stage = ref(null)
 const minimap = ref(null)
-const game = new Game()
+const isNet = !!props.net
+const game = isNet ? new NetGame(props.net) : new Game({ mapId: props.mapId, side: props.side })
+
+// цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
+const mySide = isNet ? props.net.side : props.side
+const teamCol = computed(() => (mySide === 1 ? 'var(--red)' : 'var(--blue)'))
+const foeCol = computed(() => (mySide === 1 ? 'var(--blue)' : 'var(--red)'))
+const mapName = computed(() => (MAP_BY_ID[isNet ? props.net.mapId : props.mapId] || MAPS[0]).name)
 
 const state = shallowRef({
   kills: 0,
@@ -36,6 +48,7 @@ const state = shallowRef({
   reloadLeft: 0,
   ourBase: 0,
   enemyBase: 0,
+  caps: [],
   classId: DEFAULT_CLASS,
   damageDealt: 0,
   matchTime: 0,
@@ -138,6 +151,11 @@ const reward = computed(() => {
     silver: (win ? 260 : draw ? 150 : 100) + s.kills * 45 + Math.round(s.allyScore * 6),
     kills: s.kills,
     allyScore: s.allyScore,
+    // для задач дня
+    damage: s.damageDealt || 0,
+    lightKills: s.lightKills || 0,
+    blocked: s.blocked || 0,
+    victory: win,
   }
 })
 
@@ -148,8 +166,16 @@ function toggleAmmo() {
   ammo.value = ammo.value === 'std' ? 'gold' : 'std'
   game.ammoMult = ammo.value === 'gold' ? GOLD_AMMO_MULT : 1
 }
+// корректные по роду/числу фразы повреждений модулей
+const CRIT_PHRASE = {
+  gun: 'ПУШКА ПОВРЕЖДЕНА',
+  turret: 'БАШНЯ ПОВРЕЖДЕНА',
+  engine: 'ДВИГАТЕЛЬ ПОВРЕЖДЁН',
+  tracks: 'ГУСЕНИЦЫ ПОВРЕЖДЕНЫ',
+  radio: 'РАЦИЯ ПОВРЕЖДЕНА',
+}
 game.onCrit = (slot) => {
-  showToast('miss', `${CRIT_LABELS[slot]} ПОВРЕЖДЕНА`)
+  showToast('miss', CRIT_PHRASE[slot] || `${CRIT_LABELS[slot]} ПОВРЕЖДЕНА`)
 }
 game.onSaved = (kind) => {
   showToast('hit', kind === 'ricochet' ? 'РИКОШЕТ ОТ БРОНИ' : 'БРОНЯ НЕ ПРОБИТА')
@@ -168,7 +194,7 @@ game.onShot = (r) => {
     }
   }
   if (r.type === 'hit') {
-    showToast('hit', 'ПОПАЛ')
+    showToast('hit', 'ПРОБИТИЕ')
   } else if (r.type === 'ricochet') {
     showToast('miss', 'РИКОШЕТ')
   } else if (r.type === 'nopen') {
@@ -284,7 +310,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="root" :class="{ shaken: shaking }">
+  <div class="root" :class="{ shaken: shaking }" :style="{ '--team': teamCol, '--foe': foeCol }">
     <div class="stage" ref="stage"></div>
 
     <!-- ===== верхний HUD ===== -->
@@ -300,11 +326,20 @@ onBeforeUnmount(() => {
           <span class="dmnds">
             <i v-for="i in 7" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
           </span>
-          <span class="pz-display timer">{{ fmtTime(state.matchTime) }}</span>
+          <span class="pz-display timer" :class="{ low: state.matchTime <= 60 }">⏱ {{ fmtTime(state.matchTime) }}</span>
           <span class="dmnds">
             <i v-for="i in 7" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
           </span>
           <span class="pz-pixel num enemy">{{ state.enemyScore }}</span>
+        </div>
+        <!-- точки захвата: цвет владельца, пульс при перехвате -->
+        <div v-if="state.caps && state.caps.length" class="caps">
+          <span
+            v-for="c in state.caps"
+            :key="c.id"
+            class="cap"
+            :class="[c.own, { capping: c.cap && c.cap !== c.own }]"
+          >{{ c.id }}<i v-if="c.cap && c.cap !== c.own && c.p > 0" class="capbar"><b :style="{ width: c.p * 100 + '%' }"></b></i></span>
         </div>
         <!-- HP -->
         <div class="hpbar">
@@ -364,9 +399,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- выбор снаряда -->
+    <!-- выбор снаряда (в онлайне снаряд решает сервер — голды пока нет) -->
     <button
-      v-show="phase === 'fighting' && !paused && state.playerHp > 0"
+      v-show="!isNet && phase === 'fighting' && !paused && state.playerHp > 0"
       class="ammo pz-display"
       :class="{ gold: ammo === 'gold' }"
       @click="toggleAmmo"
@@ -388,6 +423,10 @@ onBeforeUnmount(() => {
     <transition name="fade">
       <div v-if="phase === 'countdown'" class="overlay countdown">
         <div class="cd-num pz-display">{{ count > 0 ? count : 'В БОЙ!' }}</div>
+        <div class="cd-sub">
+          {{ mapName }} · вы за <b :style="{ color: teamCol }">{{ mySide === 1 ? 'красных' : 'синих' }}</b>
+          <template v-if="isNet"> · онлайн</template>
+        </div>
         <div class="cd-sub">до {{ state.scoreLimit }} очков · {{ fmtTime(state.matchTime) }}</div>
       </div>
     </transition>
@@ -490,16 +529,67 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .scoreplate .num.ally {
-  color: var(--blue);
+  color: var(--team);
 }
 .scoreplate .num.enemy {
-  color: var(--red);
+  color: var(--foe);
 }
 .scoreplate .timer {
-  font-size: 11px;
-  color: var(--ink-dim);
-  letter-spacing: 0.12em;
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.scoreplate .timer.low {
+  color: var(--red);
+  animation: pz-blink 1s linear infinite;
+}
+.caps {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.cap {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 11px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid var(--ink-faint);
+}
+.cap.ally {
+  border-color: var(--team);
+  background: color-mix(in oklab, var(--team) 25%, rgba(0, 0, 0, 0.55));
+}
+.cap.enemy {
+  border-color: var(--foe);
+  background: color-mix(in oklab, var(--foe) 25%, rgba(0, 0, 0, 0.55));
+}
+.cap.capping {
+  animation: pz-blink 0.7s linear infinite;
+}
+.cap .capbar {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: -4px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+.cap .capbar b {
+  display: block;
+  height: 100%;
+  background: var(--amber);
 }
 .dmnds {
   display: flex;
@@ -513,10 +603,10 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.12);
 }
 .dmnds .d.ally.on {
-  background: var(--blue);
+  background: var(--team);
 }
 .dmnds .d.enemy.on {
-  background: var(--red);
+  background: var(--foe);
 }
 .hpbar {
   position: relative;
@@ -544,12 +634,13 @@ onBeforeUnmount(() => {
   text-shadow: 0 1px 2px #000;
 }
 .minimap {
-  width: 72px;
-  height: 72px;
+  width: 56px;
+  height: 56px;
   flex-shrink: 0;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
+  opacity: 0.9;
 }
 
 /* индикаторы критов */
@@ -667,12 +758,11 @@ onBeforeUnmount(() => {
 }
 
 /* ===== управление ===== */
+/* джойстик появляется там, где палец коснулся экрана — зона на весь бой;
+   кнопки (огонь/снаряд/пауза) лежат выше по z-index и перехватывают свои тапы */
 .movezone {
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 62%;
+  inset: 0;
   z-index: 1;
   touch-action: none;
 }

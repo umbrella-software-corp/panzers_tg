@@ -3,10 +3,6 @@ import {
   TANK_CLASSES,
   DEFAULT_CLASS,
   MAP_SIZE,
-  OBSTACLES,
-  WALLS,
-  BASES,
-  CAPTURE_POINTS,
   CAP_TIME,
   CAP_TICK,
   SCORE_LIMIT,
@@ -24,6 +20,14 @@ import {
   BOT_SPEED_MULT,
   classToRadians,
 } from './config.js'
+import { MAPS, MAP_BY_ID } from './maps.js'
+
+// Палитры команд: юг всегда воюет синим, север — красным; чья из них «наша» —
+// решает жребий стороны (side). Игрок при этом остаётся янтарным.
+const TEAM_PALETTE = {
+  blue: { main: 0x4da3ff, hp: 0x5b9cff, muzzle: 0x9fd0ff, tint: 0x9ab8ff, body: 0x4a82c8, dark: 0x1b3a5c, sprite: 'blue', css: '#5b9cff' },
+  red: { main: 0xff8d7d, hp: 0xff5a4a, muzzle: 0xff7043, tint: 0xffa090, body: 0xd8543f, dark: 0x6e1f12, sprite: 'red', css: '#ff6a6a' },
+}
 
 function angleDiff(a, b) {
   let d = (a - b) % (Math.PI * 2)
@@ -75,17 +79,28 @@ const TEAM = { ALLY: 0, ENEMY: 1 }
 const ALLY_NAMES = ['ст. сержант Ефимов', 'ефрейтор Козлов', 'мл. сержант Орлов', 'рядовой Багиров', 'сержант Чистяков']
 const ENEMY_NAMES = ['Hans_77', 'Wolf_K', 'Otto_Panzer', 'Schnell88', 'Gretta_X', 'Fritz_22', 'Klaus_M', 'Dieter_9']
 
+// маркер класса над танком: лёгкий ▲ / средний ◆ / тяжёлый ■
+const CLS_MARK = { light: '▲', medium: '◆', heavy: '■' }
+
 /**
  * 5v5: игрок + союзные боты против вражеских ботов на карте с препятствиями,
  * стенами-укрытиями и туманом войны. Механика наведения через линию сведения.
  */
 export class Game {
-  constructor() {
+  constructor(opts = {}) {
     this.app = new Application()
     this.t = 0
 
-    this.tank = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 + 700 }
-    this.hullAngle = -Math.PI / 2
+    // карта боя и жребий стороны: 0 — юг (синие), 1 — север (красные)
+    this.map = MAP_BY_ID[opts.mapId] || MAPS[0]
+    this.side = opts.side === 1 ? 1 : 0
+    this.ySign = this.side === 0 ? 1 : -1 // множитель «вниз» для нашей половины
+    this.colors = this.side === 0
+      ? { ally: TEAM_PALETTE.blue, enemy: TEAM_PALETTE.red }
+      : { ally: TEAM_PALETTE.red, enemy: TEAM_PALETTE.blue }
+
+    this.tank = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 + 700 * this.ySign }
+    this.hullAngle = (-Math.PI / 2) * this.ySign
     this.speed = 0
     this.joystick = { x: 0, y: 0, active: false }
     this.keys = { fwd: false, back: false, left: false, right: false }
@@ -97,8 +112,8 @@ export class Game {
     this.ammoMult = 1 // 1 = обычный снаряд, GOLD_AMMO_MULT = голдовый
 
     const c = MAP_SIZE / 2
-    this.obstacles = OBSTACLES.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
-    this.walls = WALLS.map((w) => ({
+    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
+    this.walls = this.map.walls.map((w) => ({
       cx: c + w.dx,
       cy: c + w.dy,
       hw: w.w / 2,
@@ -106,8 +121,15 @@ export class Game {
       hp: w.hp || Infinity,
       destructible: !!w.hp,
     }))
-    this.bases = BASES.map((b) => ({ team: b.team, x: c + b.dx, y: c + b.dy, r: b.r, progress: 0 }))
-    this.caps = CAPTURE_POINTS.map((p) => ({
+    // базы: [юг, север] из карты; своя — на нашей стороне жребия
+    this.bases = this.map.bases.map((b, i) => ({
+      team: i === this.side ? TEAM.ALLY : TEAM.ENEMY,
+      x: c + b.dx,
+      y: c + b.dy,
+      r: b.r,
+      progress: 0,
+    }))
+    this.caps = this.map.caps.map((p) => ({
       id: p.id,
       x: c + p.dx,
       y: c + p.dy,
@@ -137,6 +159,8 @@ export class Game {
     this.muzzles = [] // {x,y,a,age,color}
 
     this.kills = 0
+    this.lightKills = 0 // фраги лёгких — для задач дня
+    this.blocked = 0 // снаряды, которые держала наша броня (рикошет/непробитие)
     this.deaths = 0
     this.shots = 0
     this.hits = 0
@@ -165,10 +189,10 @@ export class Game {
   }
 
   _spawnPoint(team, i, n) {
-    // союзники снизу карты, враги сверху; разносим по горизонтали
+    // союзники на нашей половине (жребий стороны), враги напротив; разносим по горизонтали
     const c = MAP_SIZE / 2
     const spread = ((i - (n - 1) / 2) / Math.max(1, n)) * 900
-    const y = team === TEAM.ALLY ? c + 560 : c - 560
+    const y = team === TEAM.ALLY ? c + 560 * this.ySign : c - 560 * this.ySign
     return { x: c + spread, y }
   }
 
@@ -186,7 +210,7 @@ export class Game {
       y: p.y,
       i,
       n,
-      hull: team === TEAM.ALLY ? -Math.PI / 2 : Math.PI / 2,
+      hull: (team === TEAM.ALLY ? -Math.PI / 2 : Math.PI / 2) * this.ySign,
       hp: cls.hp,
       maxHp: cls.hp,
       damage: Math.round(cls.damage * BOT_DMG_MULT),
@@ -247,7 +271,7 @@ export class Game {
       tankNames.push(`tank_${color}`) // средний/базовый
       for (const cls of ['light', 'heavy']) tankNames.push(`tank_${cls}_${color}`)
     }
-    const texNames = ['ground', 'forest', 'rock', 'water', 'hill', 'building', 'explosion', ...tankNames]
+    const texNames = ['ground', 'forest', 'rock', 'water', 'hill', 'building', 'explosion', 'smoke', 'muzzle', 'box', ...tankNames]
     const loadedTex = await Promise.allSettled(texNames.map((n) => Assets.load(`/sprites/${n}.png`)))
     texNames.forEach((n, i) => {
       if (loadedTex[i].status === 'fulfilled') this.tex[n] = loadedTex[i].value
@@ -255,6 +279,8 @@ export class Game {
     for (const k of Object.keys(this.tex)) {
       if (k.startsWith('tank_')) this.tex[k] = this._chromaKey(this.tex[k])
     }
+    // кусты/камни/горы — AI-спрайты с вырезанным фоном (прозрачная альфа),
+    // рисуются обычным спрайтом без круглой маски и «блина»
     // реальные виды сверху: танк игрока + все машины ботов из пула
     const unitIds = new Set(this.bots.map((b) => b.tankId).filter(Boolean))
     if (this.playerTankId) unitIds.add(this.playerTankId)
@@ -276,6 +302,7 @@ export class Game {
     if (this.tex.ground) {
       this.groundTile = new TilingSprite({ texture: this.tex.ground, width: MAP_SIZE, height: MAP_SIZE })
       this.groundTile.tileScale.set(0.55)
+      if (this.map.tint) this.groundTile.tint = this.map.tint // характер местности карты
       this.world.addChild(this.groundTile)
     }
     this.world.addChild(this.bg, this.terrLayer, this.terrain, this.tankLayer, this.gfx, this.fxLayer)
@@ -301,14 +328,20 @@ export class Game {
         const size = b.classId === 'heavy' ? 92 : b.classId === 'light' ? 76 : 84
         // реальная машина бота; фоллбэк — классовый цветной спрайт
         const real = b.tankId && this.tex[`unit_${b.tankId}`]
-        this.unitSprites.set(b.id, mk(real || tankTex(b.classId, b.team === TEAM.ALLY ? 'blue' : 'red'), size))
+        const teamCol = b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy
+        this.unitSprites.set(b.id, mk(real || tankTex(b.classId, teamCol.sprite), size))
         b.realSprite = !!real // реальным нужен командный оттенок tint'ом
       }
     }
 
-    // визуального тумана нет (по фидбеку — было темно): скрытность врагов
-    // работает через засвет (не засвечен — просто не отрисован), баланс —
-    // через обзор и дальность выстрела
+    // туман войны: затемняет местность вне зоны обзора. Слой В МИРЕ между
+    // террейном и танками — поэтому скрывает землю, но танки (свои и засвеченные
+    // враги) рисуются поверх и видны. Виньетка радиально-симметрична, вращение
+    // мира её не искажает.
+    this.fog = new Sprite(Texture.EMPTY)
+    this.fog.anchor.set(0.5)
+    this._fogKey = ''
+    this.world.addChildAt(this.fog, this.world.getChildIndex(this.tankLayer))
 
     // имена ботов — экранный слой поверх тумана (мир вращается, текст — нет)
     this.labels = new Container()
@@ -316,11 +349,11 @@ export class Game {
     this.botLabels = new Map()
     for (const b of this.bots) {
       const t = new Text({
-        text: b.name,
+        text: `${CLS_MARK[b.classId] || ''} ${b.name}`,
         style: {
           fontFamily: 'Russo One, sans-serif',
           fontSize: 11,
-          fill: b.team === TEAM.ALLY ? 0x4da3ff : 0xff8d7d,
+          fill: (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).main,
           stroke: { color: 0x000000, width: 3 },
           letterSpacing: 0.5,
         },
@@ -389,7 +422,8 @@ export class Game {
     return Texture.from(c)
   }
 
-  // взрыв-спрайт (аддитивный) в мировых координатах
+  // взрыв-спрайт (аддитивный) в мировых координатах; крупный взрыв (гибель) —
+  // ещё и облако дыма (обычное смешивание, медленно тает и всплывает)
   _spawnFx(x, y, scale = 1) {
     if (!this.tex || !this.tex.explosion || !this.fxLayer) return
     const s = new Sprite(this.tex.explosion)
@@ -400,6 +434,15 @@ export class Game {
     s.scale.set(base * 0.5)
     this.fxLayer.addChild(s)
     this.fxSprites.push({ s, age: 0, life: 0.55, base })
+    if (scale > 1.4 && this.tex.smoke) {
+      const sm = new Sprite(this.tex.smoke)
+      sm.anchor.set(0.5)
+      sm.position.set(x, y)
+      const sbase = (110 * scale) / sm.texture.height
+      sm.scale.set(sbase * 0.6)
+      this.fxLayer.addChild(sm)
+      this.fxSprites.push({ s: sm, age: 0, life: 1.5, base: sbase, smoke: true })
+    }
   }
 
   // --- управление ---
@@ -490,6 +533,7 @@ export class Game {
         best.b.flash = 0.25
         if (best.b.hp <= 0) {
           this.kills++
+          if (best.b.classId === 'light') this.lightKills++
           this.score.ally++
           this._killBot(best.b)
           this.onKill(best.b.name)
@@ -746,10 +790,11 @@ export class Game {
     this._updateCaptures(dt)
     this._updateBases(dt)
 
-    // засвет врагов: видит игрок или любой живой союзник
+    // засвет врагов для ОТРИСОВКИ — только личный обзор игрока (туман войны);
+    // союзники не «светят» врагов на экран. Мёртв — режим наблюдения, видно всех.
     for (const b of this.bots) {
       if (b.team !== TEAM.ENEMY) continue
-      b.spotted = b.alive && this._spottedByTeam(b)
+      b.spotted = b.alive && (this.hp <= 0 || this._spottedByPlayer(b))
     }
 
     if (!this.ready) {
@@ -777,8 +822,14 @@ export class Game {
       for (const f of this.fxSprites) {
         f.age += dt
         const k = Math.min(1, f.age / f.life)
-        f.s.scale.set(f.base * (0.5 + k * 1.2))
-        f.s.alpha = 1 - k
+        if (f.smoke) {
+          f.s.scale.set(f.base * (0.6 + k * 1.5))
+          f.s.alpha = 0.7 * (1 - k)
+          f.s.y -= dt * 18 // дым всплывает
+        } else {
+          f.s.scale.set(f.base * (0.5 + k * 1.2))
+          f.s.alpha = 1 - k
+        }
       }
       this.fxSprites = this.fxSprites.filter((f) => {
         if (f.age >= f.life) {
@@ -869,21 +920,13 @@ export class Game {
     }
   }
 
-  _spottedByTeam(enemy) {
-    // игрок: вплотную (PROX_SPOT) видно сквозь любой куст/стену
-    if (this.hp > 0) {
-      const d = Math.hypot(enemy.x - this.tank.x, enemy.y - this.tank.y)
-      if (d <= PROX_SPOT) return true
-      if (d <= this._vision() && !this._visionBlocked(this.tank.x, this.tank.y, enemy.x, enemy.y)) return true
-    }
-    // союзные боты
-    for (const a of this.bots) {
-      if (!a.alive || a.team !== TEAM.ALLY) continue
-      const d = Math.hypot(enemy.x - a.x, enemy.y - a.y)
-      if (d <= PROX_SPOT) return true
-      if (d <= ALLY_VISION && !this._visionBlocked(a.x, a.y, enemy.x, enemy.y)) return true
-    }
-    return false
+  // личный обзор игрока: вплотную (PROX_SPOT) видно сквозь куст/стену,
+  // иначе — в радиусе обзора и без преграды (куст/холм/камень)
+  _spottedByPlayer(enemy) {
+    if (this.hp <= 0) return false
+    const d = Math.hypot(enemy.x - this.tank.x, enemy.y - this.tank.y)
+    if (d <= PROX_SPOT) return true
+    return d <= this._vision() && !this._visionBlocked(this.tank.x, this.tank.y, enemy.x, enemy.y)
   }
 
   _moveTank(dt) {
@@ -965,7 +1008,7 @@ export class Game {
       const inArc = Math.abs(fireDiff) <= (ai.sectorHalfDeg * Math.PI) / 180
       if (inArc && b.fireCd <= 0) {
         b.fireCd = b.reload
-        const col = b.team === TEAM.ALLY ? 0x9fd0ff : 0xff7043
+        const col = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).muzzle
         this.muzzles.push({ x: b.x + Math.cos(b.hull) * 34, y: b.y + Math.sin(b.hull) * 34, a: b.hull, age: 0, color: col })
         const hit = Math.random() < ai.hitChance
         let pierced = false
@@ -978,7 +1021,10 @@ export class Game {
           pierced = pen.pen
           const dmg = Math.round(b.damage * pen.mult)
           if (dmg > 0) this._damageUnit(target, dmg, b.team)
-          if (target.isPlayer && !pen.pen) this.onSaved(pen.kind)
+          if (target.isPlayer && !pen.pen) {
+            this.blocked++
+            this.onSaved(pen.kind)
+          }
         }
         this._spawnShell(b.x, b.y, target.x, target.y, col, hit && pierced ? 'hit' : 'dust')
       }
@@ -1062,6 +1108,8 @@ export class Game {
     const reload01 = this.ready ? 1 : 1 - this.reloadRemaining / this.cls.reload
     return {
       kills: this.kills,
+      lightKills: this.lightKills,
+      blocked: this.blocked,
       deaths: this.deaths,
       shots: this.shots,
       hits: this.hits,
@@ -1078,6 +1126,13 @@ export class Game {
       // прогресс захвата баз: ourBase — нашу захватывают, enemyBase — мы их
       ourBase: Math.round((this.bases.find((b) => b.team === TEAM.ALLY) || {}).progress || 0),
       enemyBase: Math.round((this.bases.find((b) => b.team === TEAM.ENEMY) || {}).progress || 0),
+      // точки захвата для HUD: own/cap — 'ally'|'enemy'|null, p — прогресс 0..1
+      caps: this.caps.map((c) => ({
+        id: c.id,
+        own: c.owner === null ? null : c.owner === TEAM.ALLY ? 'ally' : 'enemy',
+        cap: c.capper === null ? null : c.capper === TEAM.ALLY ? 'ally' : 'enemy',
+        p: +c.progress.toFixed(2),
+      })),
       classId: this.cls.id,
       damageDealt: Math.round(this.damageDealt),
       damageLog: [...this.damageLog.values()]
@@ -1086,6 +1141,8 @@ export class Game {
       matchTime: Math.ceil(this.matchTime),
       matchOver: this.matchOver,
       result: this.result,
+      teamRed: this.side === 1, // мы за красных (север); иначе — за синих (юг)
+      mapName: this.map.name,
       scoreLimit: SCORE_LIMIT,
       crippled: {
         gun: Math.ceil(this.crippled.gun),
@@ -1122,15 +1179,15 @@ export class Game {
     const ty = this.tank.y
     const hull = this.hullAngle
     const half = this._sectorHalfEff() // разброс: стоя — уже, на ходу — шире
-    const L = this.cls.range
+    const L = this._vision() // длина прицела = дальность обнаружения (совпадает с туманом)
 
     // точки захвата (под всем)
     for (const cap of this.caps) {
-      const own = cap.owner === 0 ? 0x5b9cff : cap.owner === 1 ? 0xff6a6a : 0x7b8694
+      const own = cap.owner === TEAM.ALLY ? this.colors.ally.hp : cap.owner === TEAM.ENEMY ? this.colors.enemy.hp : 0x7b8694
       g.circle(cap.x, cap.y, cap.r).fill({ color: own, alpha: 0.1 })
       g.circle(cap.x, cap.y, cap.r).stroke({ width: 3, color: own, alpha: 0.55 })
       if (cap.progress > 0 && cap.progress < 1) {
-        const pc = cap.capper === 0 ? 0x5b9cff : 0xff6a6a
+        const pc = cap.capper === TEAM.ALLY ? this.colors.ally.hp : this.colors.enemy.hp
         g.moveTo(cap.x, cap.y)
         g.arc(cap.x, cap.y, cap.r * 0.72, -Math.PI / 2, -Math.PI / 2 + cap.progress * Math.PI * 2)
         g.lineTo(cap.x, cap.y)
@@ -1138,22 +1195,36 @@ export class Game {
       }
     }
 
-    // прицельные визуалы только у живого танка — обломки не целятся
+    // прицельные визуалы только у живого танка — обломки не целятся.
+    // Сектор приглушён, ГЛАВНОЕ — яркая движущаяся линия сведения (фишка боя):
+    // поймай врага этой линией в момент прохода — и попадёшь.
     if (this.hp > 0) {
       g.moveTo(tx, ty)
       g.arc(tx, ty, L, hull - half, hull + half)
       g.lineTo(tx, ty)
-      g.fill({ color: 0xf2a50c, alpha: 0.07 })
+      g.fill({ color: 0xf2a50c, alpha: 0.05 })
       for (const a of [hull - half, hull + half]) {
         g.moveTo(tx, ty)
           .lineTo(tx + Math.cos(a) * L, ty + Math.sin(a) * L)
-          .stroke({ width: 2, color: 0xf2a50c, alpha: 0.35 })
+          .stroke({ width: 1.5, color: 0xf2a50c, alpha: 0.22 })
       }
 
       const lineA = hull + this._sweepOffset()
-      g.moveTo(tx, ty)
-        .lineTo(tx + Math.cos(lineA) * L, ty + Math.sin(lineA) * L)
-        .stroke({ width: 4, color: 0xffd866, alpha: 0.95, cap: 'round' })
+      const ex = tx + Math.cos(lineA) * L
+      const ey = ty + Math.sin(lineA) * L
+      const ready = this.ready
+      const col = ready ? 0xffe066 : 0x9aa0ad // готов — золотая, на перезарядке — серая
+      // свечение под линией
+      g.moveTo(tx, ty).lineTo(ex, ey).stroke({ width: 9, color: col, alpha: ready ? 0.16 : 0.08, cap: 'round' })
+      // основная линия сведения
+      g.moveTo(tx, ty).lineTo(ex, ey).stroke({ width: 4, color: col, alpha: ready ? 1 : 0.5, cap: 'round' })
+      // поперечная засечка-прицел на конце линии (вместо набалдашника)
+      const tick = ready ? 15 : 10
+      const px = -Math.sin(lineA)
+      const py = Math.cos(lineA)
+      g.moveTo(ex - px * tick, ey - py * tick)
+        .lineTo(ex + px * tick, ey + py * tick)
+        .stroke({ width: ready ? 4 : 3, color: col, alpha: ready ? 1 : 0.5, cap: 'round' })
     }
 
     // спрайтовый режим: каждый кадр прячем все и включаем только видимых
@@ -1182,18 +1253,19 @@ export class Game {
       if (!b.alive) continue
       const isAlly = b.team === TEAM.ALLY
       if (!isAlly && !b.spotted) continue
+      const teamCol = isAlly ? this.colors.ally : this.colors.enemy
       // реальные машины подкрашиваем командным оттенком, классовые уже цветные
-      const aliveTint = b.realSprite ? (isAlly ? 0x9ab8ff : 0xffa090) : 0xffffff
+      const aliveTint = b.realSprite ? teamCol.tint : 0xffffff
       if (useSpr && placeSpr(b.id, b.x, b.y, b.hull, aliveTint)) {
         if (b.flash > 0) g.circle(b.x, b.y, 30).fill({ color: 0xffffff, alpha: 0.45 })
       } else {
-        const c = isAlly ? { body: 0x4a82c8, dark: 0x1b3a5c } : { body: 0xd8543f, dark: 0x6e1f12 }
+        const c = { body: teamCol.body, dark: teamCol.dark }
         if (b.flash > 0) c.body = 0xffffff
         this._drawTank(g, b.x, b.y, b.hull, c, 0.85)
       }
-      // ХП: союзники синие, враги красные — заметные полоски с подложкой
+      // ХП-полоски в цвет команды — с подложкой
       const bw = 48
-      const hpCol = isAlly ? 0x5b9cff : 0xff5a4a
+      const hpCol = teamCol.hp
       g.rect(b.x - bw / 2 - 1, b.y - 37, bw + 2, 7).fill({ color: 0x000000, alpha: 0.65 })
       g.rect(b.x - bw / 2, b.y - 36, bw * (Math.max(0, b.hp) / b.maxHp), 5).fill(hpCol)
     }
@@ -1256,6 +1328,16 @@ export class Game {
       }
     }
 
+    // куст, в котором стоит игрок, становится полупрозрачным (видно машину)
+    if (this.bushSprites) {
+      for (const b of this.bushSprites) {
+        const inside = this.hp > 0 && Math.hypot(this.tank.x - b.x, this.tank.y - b.y) < b.r * 0.95
+        const target = inside ? 0.32 : 1
+        b.s.alpha += (target - b.s.alpha) * 0.18
+      }
+    }
+
+    this._updateFog()
     this._updateLabels()
     this._drawMinimap()
   }
@@ -1273,6 +1355,40 @@ export class Game {
         t.position.set(p.x, p.y - 52) // выше ХП-полоски, не перекрывают друг друга
       }
     }
+  }
+
+  // туман войны: затемняет местность за радиусом обзора. Спрайт в мире,
+  // центр на танке; радиус виньетки покрывает экран (камера держит танк в w/2,h*0.66).
+  // Текстуру пересоздаём только при смене размера экрана/обзора.
+  _updateFog() {
+    if (this.hp <= 0) {
+      this.fog.visible = false // уничтожен — наблюдение без тумана
+      return
+    }
+    this.fog.visible = true
+    const w = this.app.screen.width
+    const h = this.app.screen.height
+    const vision = this._vision()
+    const radius = Math.ceil(Math.hypot(w / 2, h * 0.66) + 40) // до дальнего угла экрана
+    const key = `${radius}:${Math.round(vision)}`
+    if (key !== this._fogKey) {
+      this._fogKey = key
+      const S = 1024
+      const c = document.createElement('canvas')
+      c.width = c.height = S
+      const ctx = c.getContext('2d')
+      const frac = Math.max(0.18, Math.min(0.78, vision / radius)) // прозрачная зона = обзор
+      const grad = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
+      grad.addColorStop(0, 'rgba(7,9,13,0)')
+      grad.addColorStop(frac, 'rgba(7,9,13,0)')
+      grad.addColorStop(Math.min(1, frac + 0.1), 'rgba(7,9,13,0.55)')
+      grad.addColorStop(1, 'rgba(7,9,13,0.9)')
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, S, S)
+      this.fog.texture = Texture.from(c)
+      this.fog.width = this.fog.height = radius * 2
+    }
+    this.fog.position.set(this.tank.x, this.tank.y) // центр виньетки = танк (в мире)
   }
 
   _drawMinimap() {
@@ -1302,7 +1418,7 @@ export class Game {
     }
     // базы
     for (const b of this.bases) {
-      ctx.strokeStyle = b.team === 0 ? 'rgba(91,156,255,0.85)' : 'rgba(255,106,106,0.85)'
+      ctx.strokeStyle = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).css
       ctx.lineWidth = 1.5
       ctx.beginPath()
       ctx.arc(b.x * k, b.y * k, b.r * k, 0, Math.PI * 2)
@@ -1313,7 +1429,7 @@ export class Game {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     for (const cap of this.caps) {
-      const col = cap.owner === 0 ? '#5b9cff' : cap.owner === 1 ? '#ff6a6a' : '#9aa3b0'
+      const col = cap.owner === TEAM.ALLY ? this.colors.ally.css : cap.owner === TEAM.ENEMY ? this.colors.enemy.css : '#9aa3b0'
       ctx.fillStyle = col
       ctx.beginPath()
       ctx.arc(cap.x * k, cap.y * k, Math.max(5, cap.r * k * 0.55), 0, Math.PI * 2)
@@ -1325,7 +1441,7 @@ export class Game {
     for (const b of this.bots) {
       if (!b.alive) continue
       if (b.team === TEAM.ENEMY && !b.spotted) continue
-      ctx.fillStyle = b.team === TEAM.ALLY ? '#5b9cff' : '#ff5252'
+      ctx.fillStyle = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).css
       ctx.beginPath()
       ctx.arc(b.x * k, b.y * k, 3, 0, Math.PI * 2)
       ctx.fill()
@@ -1387,7 +1503,7 @@ export class Game {
     g.rect(0, 0, MAP_SIZE, MAP_SIZE).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
   }
 
-  // круглый текстурный участок местности (лес/камень/вода/холм) с маской
+  // круглый текстурный участок местности (лес/камень/вода) с маской
   _terrainPatch(texName, x, y, r) {
     const tex = this.tex && this.tex[texName]
     if (!tex) return false
@@ -1401,46 +1517,102 @@ export class Game {
     return true
   }
 
+  // растворяет края текстуры в прозрачность (мягкий радиальный край):
+  // центр до ~62% радиуса полностью непрозрачен, дальше плавно в 0
+  _featherTex(tex) {
+    const c = document.createElement('canvas')
+    const S = (c.width = c.height = tex.width)
+    const ctx = c.getContext('2d')
+    ctx.drawImage(tex.source.resource, 0, 0, S, S)
+    const g = ctx.createRadialGradient(S / 2, S / 2, S * 0.31, S / 2, S / 2, S * 0.5)
+    g.addColorStop(0, 'rgba(0,0,0,1)')
+    g.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, S, S)
+    return Texture.from(c)
+  }
+
+  // 3D-спрайт с прозрачным фоном — без маски и обводки. Возвращает спрайт.
+  _terrainSprite(texName, x, y, r, scale = 2.5) {
+    const tex = this.tex && this.tex[texName]
+    if (!tex) return null
+    const s = new Sprite(tex)
+    s.anchor.set(0.5)
+    s.position.set(x, y)
+    s.width = s.height = r * scale
+    this.terrLayer.addChild(s)
+    return s
+  }
+
+  // бетонная стена-укрытие: секции, светлая кромка, тень снизу (для длинных стен)
+  _drawConcreteWall(g, w) {
+    const x = w.cx - w.hw
+    const y = w.cy - w.hh
+    const ww = w.hw * 2
+    const hh = w.hh * 2
+    g.rect(x, y, ww, hh).fill(0x6b7178)
+    const seg = 64
+    if (w.hw >= w.hh) {
+      for (let sx = x + seg; sx < x + ww - 4; sx += seg)
+        g.moveTo(sx, y).lineTo(sx, y + hh).stroke({ width: 1.5, color: 0x3f444b, alpha: 0.6 })
+    } else {
+      for (let sy = y + seg; sy < y + hh - 4; sy += seg)
+        g.moveTo(x, sy).lineTo(x + ww, sy).stroke({ width: 1.5, color: 0x3f444b, alpha: 0.6 })
+    }
+    const edge = Math.min(6, hh * 0.25)
+    g.rect(x, y, ww, edge).fill({ color: 0x878d94, alpha: 0.8 }) // свет сверху
+    g.rect(x, y + hh - edge, ww, edge).fill({ color: 0x2c3036, alpha: 0.7 }) // тень снизу
+    g.rect(x, y, ww, hh).stroke({ width: 3, color: 0x2c3036 })
+  }
+
   _drawTerrain() {
     const g = this.terrain
     g.clear()
-    const TKIND = { bush: 'forest', block: 'rock', water: 'water', hill: 'hill' }
+    this.bushSprites = [] // кусты для динамической прозрачности при заезде
     for (const o of this.obstacles) {
-      const sprited = this._terrainPatch(TKIND[o.kind], o.x, o.y, o.r)
-      if (o.kind === 'bush') {
-        if (!sprited) g.circle(o.x, o.y, o.r).fill({ color: 0x2f6b3a, alpha: 0.85 })
-        g.circle(o.x, o.y, o.r).stroke({ width: 2, color: 0x224f2c })
-      } else if (o.kind === 'water') {
+      if (o.kind === 'water') {
+        // вода — круглый патч с маской (фон спрайта однородный)
+        const sprited = this._terrainPatch('water', o.x, o.y, o.r)
         if (!sprited) g.circle(o.x, o.y, o.r).fill({ color: 0x1d4a66, alpha: 0.9 })
         g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2e6e8e })
         if (!sprited) g.circle(o.x, o.y, o.r * 0.62).stroke({ width: 2, color: 0x2e6e8e, alpha: 0.4 })
       } else if (o.kind === 'hill') {
-        if (!sprited) g.circle(o.x, o.y, o.r).fill(0x47502f)
-        g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2f3520 })
-        if (!sprited) g.circle(o.x, o.y, o.r * 0.55).stroke({ width: 2, color: 0x5a6540, alpha: 0.7 })
+        // гора — спрайт с прозрачным фоном, чуть крупнее круга коллизии
+        if (!this._terrainSprite('hill', o.x, o.y, o.r)) {
+          g.circle(o.x, o.y, o.r).fill(0x47502f)
+          g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2f3520 })
+        }
       } else {
-        if (!sprited) g.circle(o.x, o.y, o.r).fill(0x4a4f57)
-        g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2c3036 })
+        // кусты/камни/ящики — AI-спрайт с прозрачным фоном (контент ~70% кадра)
+        const tex = o.kind === 'bush' ? 'forest' : o.kind === 'box' ? 'box' : 'rock'
+        const s = this._terrainSprite(tex, o.x, o.y, o.r, 2.8)
+        if (s) {
+          if (o.kind === 'bush') this.bushSprites.push({ s, x: o.x, y: o.y, r: o.r })
+        } else {
+          const col = o.kind === 'bush' ? 0x2f6b3a : o.kind === 'box' ? 0x6b5436 : 0x4a4f57
+          g.circle(o.x, o.y, o.r).fill({ color: col, alpha: 0.85 })
+        }
       }
     }
-    // стены-укрытия: почти квадратные — крыши зданий, длинные — бетон
+    // стены-укрытия: квадратные — крыши зданий-спрайтов, длинные — бетон
     for (const w of this.walls) {
       const aspect = w.hw / w.hh
-      if (this.tex && this.tex.building && aspect > 0.4 && aspect < 2.5) {
+      if (this.tex && this.tex.building && aspect > 0.45 && aspect < 2.2) {
         const s = new Sprite(this.tex.building)
         s.anchor.set(0.5)
         s.position.set(w.cx, w.cy)
         s.width = w.hw * 2
         s.height = w.hh * 2
         this.terrLayer.addChild(s)
+        g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).stroke({ width: 3, color: 0x33373d })
       } else {
-        g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).fill(0x5a6068)
+        this._drawConcreteWall(g, w)
       }
-      g.rect(w.cx - w.hw, w.cy - w.hh, w.hw * 2, w.hh * 2).stroke({ width: 3, color: 0x33373d })
     }
     // базы команд
     for (const b of this.bases) {
-      const col = b.team === 0 ? 0x5b9cff : 0xff6a6a
+      const col = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).hp
       g.circle(b.x, b.y, b.r).fill({ color: col, alpha: 0.08 })
       g.circle(b.x, b.y, b.r).stroke({ width: 4, color: col, alpha: 0.4 })
       g.circle(b.x, b.y, 14).fill(col)

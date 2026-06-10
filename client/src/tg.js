@@ -25,8 +25,24 @@ export function initTelegram() {
   } catch {
     /* старые клиенты */
   }
+  // на весь экран (Bot API 8.0): скрывает шапку Telegram — игра занимает дисплей.
+  // safe-area после этого считается через contentSafeAreaInset (apply ниже).
+  try {
+    if (typeof tg.requestFullscreen === 'function' && (!tg.isVersionAtLeast || tg.isVersionAtLeast('8.0'))) {
+      tg.requestFullscreen()
+    }
+  } catch {
+    /* fullscreen не поддержан — остаёмся в expand */
+  }
+  // вертикальная фиксация ориентации, если клиент умеет
+  try {
+    if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait')
+  } catch {
+    /* не поддержано */
+  }
   apply()
   tg.onEvent('safeAreaChanged', apply)
   tg.onEvent('contentSafeAreaChanged', apply)
   tg.onEvent('viewportChanged', apply)
+  tg.onEvent('fullscreenChanged', apply)
 }

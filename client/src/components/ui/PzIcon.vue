@@ -68,4 +68,19 @@ defineProps({
     <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
     <path d="M7.5 7.5a6.4 6.4 0 019 0M5 5a10 10 0 0114 0" />
   </svg>
+  <!-- экипаж: силуэт танкиста и снаряд заряжающего -->
+  <svg v-else-if="name === 'crew'" :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+    <circle cx="12" cy="8" r="3.6" />
+    <path d="M5.5 20a6.5 6.5 0 0113 0" />
+  </svg>
+  <svg v-else-if="name === 'ammo'" :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+    <path d="M9 10c0-3.2 1.2-5.6 3-7.2 1.8 1.6 3 4 3 7.2v6.5H9z" />
+    <path d="M8.5 18.5h7v2.5h-7z" fill="currentColor" stroke="none" opacity=".85" />
+  </svg>
+  <!-- задачи дня: планшет с галочкой -->
+  <svg v-else-if="name === 'tasks'" :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">
+    <rect x="5" y="4" width="14" height="17" rx="2" />
+    <path d="M9 4.5V3h6v1.5" />
+    <path d="M8.5 12.5l2.5 2.5 4.5-5" />
+  </svg>
 </template>

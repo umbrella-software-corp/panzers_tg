@@ -6,3 +6,4 @@ dist/
 .env.local
 design-ref/
 .claude/settings.local.json
+server/data/

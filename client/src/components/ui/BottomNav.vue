@@ -6,6 +6,7 @@ const emit = defineEmits(['go'])
 const items = [
   { id: 'hangar', label: 'Ангар', icon: 'hangar' },
   { id: 'tree', label: 'Развитие', icon: 'tree' },
+  { id: 'crew', label: 'Экипаж', icon: 'crew' },
   { id: 'shop', label: 'Магазин', icon: 'shop' },
   { id: 'rating', label: 'Рейтинг', icon: 'rank' },
 ]

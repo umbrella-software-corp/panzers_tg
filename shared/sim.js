@@ -7,10 +7,6 @@ import {
   TANK_CLASSES,
   DEFAULT_CLASS,
   MAP_SIZE,
-  OBSTACLES,
-  WALLS,
-  BASES,
-  CAPTURE_POINTS,
   CAP_TIME,
   CAP_TICK,
   SCORE_LIMIT,
@@ -29,14 +25,17 @@ import {
   classToRadians,
 } from './config.js'
 import { angleDiff, segHitsCircle, segHitsRect } from './geometry.js'
+import { MAPS, MAP_BY_ID } from './maps.js'
 
 export class BattleSim {
   /**
    * humans: [{ id, team: 0|1, name, stats? }] — stats в deg-форме (лоадаут
    * клиента) или null → DEFAULT_CLASS. Обе команды добираются ботами до teamSize.
    */
-  constructor({ teamSize = 7, humans = [] } = {}) {
+  constructor({ teamSize = 7, humans = [], mapId = null } = {}) {
     this.teamSize = teamSize
+    this.map = MAP_BY_ID[mapId] || MAPS[0]
+    this.mapId = this.map.id
     this.t = 0
     this.matchTime = MATCH_TIME
     this.matchOver = false
@@ -46,10 +45,12 @@ export class BattleSim {
     this.events = [] // копятся за шаг, забираются takeEvents()
 
     const c = MAP_SIZE / 2
-    this.obstacles = OBSTACLES.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
-    this.walls = WALLS.map((w) => ({ cx: c + w.dx, cy: c + w.dy, hw: w.w / 2, hh: w.h / 2 }))
-    this.bases = BASES.map((b) => ({ team: b.team, x: c + b.dx, y: c + b.dy, r: b.r }))
-    this.caps = CAPTURE_POINTS.map((p) => ({
+    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
+    // в PvP все стены капитальные (разрушаемость — клиентская фича PvE)
+    this.walls = this.map.walls.map((w) => ({ cx: c + w.dx, cy: c + w.dy, hw: w.w / 2, hh: w.h / 2 }))
+    // базы карты: [юг, север] — команда 0 всегда юг, команда 1 — север
+    this.bases = this.map.bases.map((b, i) => ({ team: i, x: c + b.dx, y: c + b.dy, r: b.r }))
+    this.caps = this.map.caps.map((p) => ({
       id: p.id,
       x: c + p.dx,
       y: c + p.dy,
@@ -94,6 +95,8 @@ export class BattleSim {
       slot,
       human,
       ownerId: human ? h.id : null,
+      tankId: human ? h.tankId || null : null, // реальная машина игрока (спрайт)
+      tint: human ? h.tint || 0 : 0, // камуфляж игрока
       name: human ? h.name || `Игрок ${id}` : BOT_NAMES[team][slot % BOT_NAMES[team].length],
       classId: stats.id,
       stats,
@@ -161,9 +164,11 @@ export class BattleSim {
     }
 
     let killed = false
+    let dealt = 0
     if (best) {
       u.hits++
-      u.damageDealt += Math.min(u.stats.damage, best.e.hp)
+      dealt = Math.min(u.stats.damage, best.e.hp)
+      u.damageDealt += dealt
       killed = this._applyDamage(best.e, u.stats.damage, u)
     }
     const ex = best ? best.e.x : u.x + Math.cos(lineAngle) * u.stats.range
@@ -173,6 +178,7 @@ export class BattleSim {
       unit: u.id,
       hit: !!best,
       killed,
+      dmg: Math.round(dealt),
       target: best ? best.e.id : null,
       x1: Math.round(u.x),
       y1: Math.round(u.y),
@@ -256,29 +262,30 @@ export class BattleSim {
 
     if (target) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
-      const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang
+      // лёгкое вилянье курсом вместо «краба» — танки боком не ездят
+      const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18
       const diff = angleDiff(steerA, b.hull)
       const maxTurn = b.botTurn * dt
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
       if (bestD > ai.idealRange * 1.15) move = 1
-      else if (bestD < ai.idealRange * 0.8) move = -1
-      const strafe = Math.sin(this.t * 1.3 + b.id * 1.7) * 0.5
+      else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
       wantMove = move !== 0
 
+      // движение строго вдоль корпуса
       b.x += Math.cos(b.hull) * move * b.botSpeed * dt
       b.y += Math.sin(b.hull) * move * b.botSpeed * dt
-      b.x += Math.cos(b.hull + Math.PI / 2) * strafe * b.botSpeed * dt
-      b.y += Math.sin(b.hull + Math.PI / 2) * strafe * b.botSpeed * dt
 
       const inArc = Math.abs(angleDiff(ang, b.hull)) <= (ai.sectorHalfDeg * Math.PI) / 180
       if (inArc && b.fireCd <= 0) {
         b.fireCd = b.stats.reload
         const hit = Math.random() < ai.hitChance
         let killed = false
+        let dealt = 0
         if (hit) {
-          b.damageDealt += Math.min(b.botDamage, target.hp)
+          dealt = Math.min(b.botDamage, target.hp)
+          b.damageDealt += dealt
           killed = this._applyDamage(target, b.botDamage, b)
         }
         this.events.push({
@@ -286,6 +293,7 @@ export class BattleSim {
           unit: b.id,
           hit,
           killed,
+          dmg: Math.round(dealt),
           target: target.id,
           x1: Math.round(b.x),
           y1: Math.round(b.y),
@@ -495,6 +503,7 @@ export class BattleSim {
       matchOver: this.matchOver,
       winner: this.winner,
       score: this.score,
+      alive: [this.aliveCount(0), this.aliveCount(1)],
       caps: this.caps.map((c) => ({ id: c.id, owner: c.owner, capper: c.capper, p: +c.progress.toFixed(2) })),
       units: this.units
         .filter((u) => !u.alive || u.team === team || seen.has(u.id))
@@ -510,6 +519,8 @@ export class BattleSim {
           name: u.name,
           cls: u.classId,
           human: u.human,
+          tankId: u.tankId,
+          tint: u.tint,
         })),
     }
   }

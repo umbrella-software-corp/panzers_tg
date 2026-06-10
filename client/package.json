@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "pixi.js": "^8.6.6",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "panzer-tg-shared": "workspace:*"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

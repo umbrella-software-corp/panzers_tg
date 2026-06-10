@@ -15,7 +15,7 @@ import {
   tankModLevel,
 } from '../store.js'
 import { tanksOfNation, MODULE_DEFS, moduleCost, modsMaxedCount } from '../game/meta.js'
-import TankTopDown from './ui/TankTopDown.vue'
+import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
 import BottomNav from './ui/BottomNav.vue'
@@ -105,6 +105,9 @@ function diamondColor(tankId, modId) {
             <PzIcon v-else name="lock" :size="12" />
           </div>
 
+          <!-- реальный силуэт машины -->
+          <TankImg :tank-id="t.id" :size="40" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)', flexShrink: 0 }" />
+
           <div>
             <div style="display: flex; align-items: baseline; gap: 7px">
               <span class="pz-display" style="font-size: 15.5px">{{ t.name }}</span>
@@ -132,7 +135,7 @@ function diamondColor(tankId, modId) {
     <!-- ===== док выбранной машины ===== -->
     <div v-if="selected" :key="selected.id" class="pz-plate dock">
       <div style="display: flex; gap: 12px; align-items: center">
-        <TankTopDown :size="40" :color="isOwned(selected.id) ? 'var(--amber)' : '#5c634f'" dark="#33382b" />
+        <TankImg :tank-id="selected.id" :size="48" :style="{ filter: isOwned(selected.id) ? 'none' : 'grayscale(0.9) brightness(0.6)', flexShrink: 0 }" />
         <div style="flex: 1">
           <div class="pz-display" style="font-size: 16px">{{ selected.name }}</div>
           <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.4; margin-top: 2px">
@@ -236,7 +239,7 @@ function diamondColor(tankId, modId) {
 }
 .node {
   display: grid;
-  grid-template-columns: 46px 1fr auto;
+  grid-template-columns: 46px 40px 1fr auto;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;

@@ -100,6 +100,20 @@ export const MODULE_COMBAT = {
   rad: [1, 1.12, 1.24], // обзор
 }
 
+// ---------- экипаж: 5 специалистов, у каждого перк 0..3 ранга ----------
+// Ранг перка стоит 1 очко навыка (+1 очко за уровень экипажа после первого,
+// см. store) и кредиты. Очков меньше, чем рангов всего, — выбор имеет цену.
+export const CREW_MEMBERS = [
+  { id: 'cmd', role: 'Командир', name: 'к-н Орлов', icon: 'star', perk: 'Боевое братство', effect: '+1% к темпу, обзору, ходу и манёвру за ранг' },
+  { id: 'gnr', role: 'Наводчик', name: 'ст. с-т Зайцев', icon: 'gun', perk: 'Снайпер', effect: '+3% к урону за ранг' },
+  { id: 'lod', role: 'Заряжающий', name: 'ефр. Котов', icon: 'ammo', perk: 'Досылатель', effect: '−3% к перезарядке за ранг' },
+  { id: 'drv', role: 'Мехвод', name: 'с-т Громов', icon: 'trk', perk: 'Виртуоз', effect: '+3% к ходу и манёвру за ранг' },
+  { id: 'rad', role: 'Радист', name: 'мл. с-т Соколов', icon: 'rad', perk: 'Орлиный глаз', effect: '+4% к обзору за ранг' },
+]
+export const CREW_PERK_MAX = 3
+export const CREW_PERK_COSTS = [800, 2000, 4500] // кредиты за ранг I/II/III
+export const crewPerkCost = (curLevel) => CREW_PERK_COSTS[curLevel] ?? Infinity
+
 // ---------- взвод и рефералы (порт screen-squad) ----------
 export const FRIENDS = [
   { id: 'f1', name: 'Серый_152', tank: 'КВ-1', status: 'online' },
@@ -128,6 +142,27 @@ export const GOLD_AMMO_PACKS = [
   { id: 'g1', amount: 10, costTokens: 12 },
   { id: 'g2', amount: 30, costTokens: 30 },
 ]
+
+// ---------- ежедневные задачи (3 в день, ротация по дате) ----------
+// key — счётчик из итогов боя (см. bankTaskProgress): damage/kills/lightKills/
+// blocked/wins/battles. Блок бронёй копится только в боях с ботами (в PvP
+// брони пока нет).
+export const DAILY_TASKS = [
+  { id: 'dmg600', label: 'Нанеси 600 урона', goal: 600, key: 'damage', credits: 400 },
+  { id: 'kills3', label: 'Уничтожь 3 машины', goal: 3, key: 'kills', credits: 500 },
+  { id: 'light2', label: 'Уничтожь 2 лёгких танка', goal: 2, key: 'lightKills', tokens: 5 },
+  { id: 'block3', label: 'Заблокируй 3 снаряда бронёй', goal: 3, key: 'blocked', credits: 350 },
+  { id: 'win1', label: 'Одержи победу', goal: 1, key: 'wins', credits: 600 },
+  { id: 'battles3', label: 'Сыграй 3 боя', goal: 3, key: 'battles', credits: 300 },
+]
+export const TASKS_PER_DAY = 3
+
+// детерминированный выбор трёх задач дня (у всех игроков одинаковые)
+export function tasksOfDay(dayString) {
+  const seed = [...String(dayString)].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) >>> 0, 7)
+  const start = seed % DAILY_TASKS.length
+  return [0, 1, 2].map((i) => DAILY_TASKS[(start + i * 2) % DAILY_TASKS.length])
+}
 
 // ---------- ежедневный вход (цикл 7 дней) ----------
 export const DAILY_REWARDS = [

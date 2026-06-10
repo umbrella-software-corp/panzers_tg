@@ -1,77 +1,134 @@
 <script setup>
-// Поиск боя (порт MatchmakingScreen): радар, честный поиск «живых» (фейк),
-// добор ботов по дедлайну, развёртывание → бой. Отмена возвращает в ангар.
+// Поиск боя: НАСТОЯЩИЙ онлайн через WS (живые игроки, добор ботами на
+// сервере по дедлайну). Сервер недоступен — офлайн-бой с ботами, как раньше.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { profile } from '../store.js'
-import { TANK_BY_ID, FRIENDS, MAX_TIER } from '../game/meta.js'
+import { profile, loadoutStats } from '../store.js'
+import { TANK_BY_ID, FRIENDS, MAX_TIER, SKIN_BY_ID } from '../game/meta.js'
+import { MAP_BY_ID, MAPS } from '../game/maps.js'
+import { connectMatch } from '../game/net.js'
 import TankTopDown from './ui/TankTopDown.vue'
 import PzIcon from './ui/PzIcon.vue'
 
+const props = defineProps({
+  mapId: { type: String, default: '' }, // жребий для офлайна
+  side: { type: Number, default: 0 },
+})
 const emit = defineEmits(['battle', 'cancel'])
 
 const TEAM = 7
-const SEARCH_MS = 5200 // сколько «честно ждём живых»
+const OFFLINE_SEARCH_MS = 5200 // офлайн: сколько «ищем», прежде чем добрать ИИ
 
-const MM_PLAYERS = [
-  { name: 'Kolyan_T34', ping: 32 },
-  { name: 'дед_максим', ping: 58 },
-  { name: 'Shtorm_88', ping: 41 },
-]
 const MM_BOTS = ['ст. сержант Ефимов', 'ефрейтор Козлов', 'мл. сержант Орлов', 'рядовой Багиров', 'сержант Чистяков', 'рядовой Тёркин', 'ефрейтор Махов']
 
 const secs = ref(0)
 const allies = ref([]) // { name, kind: 'party'|'player'|'bot', ping? }
 const phase = ref('search') // search → fill → go
+const online = ref(null) // null — пробуем, true/false — режим определён
+const botsEtaOnline = ref(Math.ceil(6000 / 1000))
 
+const map = computed(() => MAP_BY_ID[props.mapId] || MAPS[0])
 const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name || '')
 const tierRange = computed(() => {
   const t = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
   return `${Math.max(1, t - 1)}–${Math.min(MAX_TIER, t + 1)}`
 })
-const slots = computed(() => [...Array(TEAM)].map((_, i) => (i === 0 ? { name: 'ВЫ', kind: 'you' } : allies.value[i - 1] || null)))
+const slots = computed(() => [...Array(TEAM)].map((_, i) => (i === 0 ? { name: profile.name || 'ВЫ', kind: 'you' } : allies.value[i - 1] || null)))
 const liveTotal = computed(() => 1 + allies.value.filter((a) => a.kind !== 'bot').length)
 const botTotal = computed(() => allies.value.filter((a) => a.kind === 'bot').length)
-const botsEta = computed(() => Math.max(0, Math.ceil(SEARCH_MS / 1000 - secs.value)))
+const botsEta = computed(() =>
+  online.value ? botsEtaOnline.value : Math.max(0, Math.ceil(OFFLINE_SEARCH_MS / 1000 - secs.value)),
+)
 const mmss = computed(() => `${Math.floor(secs.value / 60)}:${String(secs.value % 60).padStart(2, '0')}`)
 
 const timers = []
 let tick = null
-onMounted(() => {
-  tick = setInterval(() => secs.value++, 1000)
+let client = null
+let gone = false
 
-  // взвод присоединяется мгновенно (в party — id друзей)
-  profile.party.forEach((id, i) => {
-    const name = (FRIENDS.find((f) => f.id === id) || {}).name || String(id)
-    timers.push(setTimeout(() => allies.value.push({ name, kind: 'party' }), 300 + i * 250))
-  })
-
-  // «живые» подтягиваются по одному
-  const liveCount = 1 + Math.floor(Math.random() * 2) // 1-2 живых
-  MM_PLAYERS.slice(0, liveCount).forEach((p, i) =>
+// офлайн-фоллбэк: прежний «театр» поиска + локальный бой с ботами
+function startOffline() {
+  online.value = false
+  const liveNames = ['Kolyan_T34', 'дед_максим', 'Shtorm_88']
+  const liveCount = 1 + Math.floor(Math.random() * 2)
+  liveNames.slice(0, liveCount).forEach((name, i) =>
     timers.push(
       setTimeout(() => {
-        if (allies.value.length + 1 < TEAM) allies.value.push({ ...p, kind: 'player' })
+        if (allies.value.length + 1 < TEAM) allies.value.push({ name, kind: 'player', ping: 30 + Math.round(Math.random() * 40) })
       }, 1400 + i * 1600 + Math.random() * 600),
     ),
   )
-
-  // дедлайн: добор ботов
   timers.push(
     setTimeout(() => {
       phase.value = 'fill'
       const need = TEAM - 1 - allies.value.length
       MM_BOTS.slice(0, Math.max(0, need)).forEach((n) => allies.value.push({ name: n, kind: 'bot' }))
-    }, SEARCH_MS),
+    }, OFFLINE_SEARCH_MS),
   )
+  timers.push(setTimeout(() => (phase.value = 'go'), OFFLINE_SEARCH_MS + 1300))
+  timers.push(setTimeout(() => !gone && ((gone = true), emit('battle', null)), OFFLINE_SEARCH_MS + 2100))
+}
 
-  // развёртывание → бой
-  timers.push(setTimeout(() => (phase.value = 'go'), SEARCH_MS + 1300))
-  timers.push(setTimeout(() => emit('battle'), SEARCH_MS + 2100))
+onMounted(async () => {
+  tick = setInterval(() => secs.value++, 1000)
+
+  // взвод — мгновенно (визуально; в онлайне взвод пока соло)
+  profile.party.forEach((id, i) => {
+    const name = (FRIENDS.find((f) => f.id === id) || {}).name || String(id)
+    timers.push(setTimeout(() => allies.value.push({ name, kind: 'party' }), 300 + i * 250))
+  })
+
+  try {
+    client = await connectMatch({
+      name: profile.name,
+      tankId: profile.selectedTank,
+      tint: (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff,
+      stats: JSON.parse(JSON.stringify(loadoutStats(profile.selectedTank))),
+      onLobby: (msg) => {
+        // живые игроки комнаты (кроме нас) + таймер добора ботов
+        allies.value = msg.players
+          .filter((p) => p.id !== msg.you)
+          .map((p) => ({ name: p.name, kind: 'player' }))
+        botsEtaOnline.value = Math.max(0, Math.ceil(msg.startsIn / 1000))
+      },
+      onStart: (msg) => {
+        phase.value = 'go'
+        const need = TEAM - 1 - allies.value.length
+        MM_BOTS.slice(0, Math.max(0, need)).forEach((n) => allies.value.push({ name: n, kind: 'bot' }))
+        timers.push(
+          setTimeout(() => {
+            if (gone) return
+            gone = true
+            emit('battle', {
+              client,
+              mapId: msg.mapId,
+              side: msg.youTeam,
+              youUnit: msg.youUnit,
+              tickHz: msg.tickHz,
+            })
+          }, 900),
+        )
+      },
+      onClose: () => {
+        // сервер оборвал до старта — уходим в офлайн
+        if (!gone && online.value && phase.value !== 'go') startOffline()
+      },
+    })
+    online.value = true
+  } catch {
+    startOffline()
+  }
 })
 onUnmounted(() => {
   clearInterval(tick)
   timers.forEach(clearTimeout)
+  // бой не начался — соединение никому не нужно
+  if (!gone && client) client.close()
 })
+
+function cancel() {
+  if (client) client.close()
+  emit('cancel')
+}
 
 const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'party' ? 'var(--blue)' : 'var(--green)')
 </script>
@@ -82,10 +139,27 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
     <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 0">
       <div class="pz-display" style="font-size: 17px">{{ phase === 'go' ? 'БОЙ НАЙДЕН' : 'ПОИСК БОЯ' }}</div>
       <span class="pz-chip" style="color: var(--ink-dim)">
+        <span
+          v-if="online !== null"
+          class="pz-pixel"
+          style="font-size: 7px; margin-right: 4px"
+          :style="{ color: online ? 'var(--green)' : 'var(--ink-faint)' }"
+        >{{ online ? 'ОНЛАЙН' : 'ОФЛАЙН' }}</span>
         <span class="pz-pixel" style="font-size: 9px" :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ mmss }}</span>
       </span>
     </div>
-    <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">{{ tankName }} · бой 7×7 · уровни {{ tierRange }} · сектор Б-4</div>
+    <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">
+      {{ tankName }} · бой 7×7 · уровни {{ tierRange }}
+    </div>
+    <!-- жребий офлайна; в онлайне карту и сторону объявит сервер -->
+    <div v-if="online === false" style="font-size: 11.5px; font-weight: 500; padding: 2px 14px 0; display: flex; align-items: center; gap: 6px">
+      <span class="pz-display" style="font-size: 12px; color: var(--ink)">{{ map.name }}</span>
+      <span style="color: var(--ink-faint)">· {{ map.desc }} · вы за</span>
+      <span class="pz-display" style="font-size: 11px" :style="{ color: side === 1 ? 'var(--red)' : 'var(--blue)' }">{{ side === 1 ? 'КРАСНЫХ' : 'СИНИХ' }}</span>
+    </div>
+    <div v-else style="font-size: 11.5px; font-weight: 500; padding: 2px 14px 0; color: var(--ink-faint)">
+      карту и сторону объявит штаб при развёртывании
+    </div>
 
     <!-- радар -->
     <div style="display: flex; justify-content: center; padding: 18px 0 6px">
@@ -96,7 +170,6 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
           style="position: absolute; inset: 0; border-radius: 50%; overflow: hidden; background: conic-gradient(from 0deg, rgba(242, 165, 12, 0.2) 0deg, transparent 80deg)"
           :style="{ animation: phase === 'go' ? 'none' : 'pz-radar-sweep 1.8s linear infinite' }"
         ></div>
-        <!-- отметки найденных -->
         <span
           v-for="(a, i) in allies"
           :key="i"
@@ -142,7 +215,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
           <span v-if="s.kind === 'you'" class="pz-chip" style="color: var(--amber); font-size: 10px"><PzIcon name="star" :size="9" color="var(--amber)" /> вы</span>
           <span v-else-if="s.kind === 'party'" class="pz-chip" style="color: var(--blue); font-size: 10px">взвод</span>
           <span v-else-if="s.kind === 'player'" class="pz-chip" style="color: var(--green); font-size: 10px">
-            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green)"></span>{{ s.ping }} мс
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green)"></span>живой
           </span>
           <span v-else class="pz-chip" style="color: var(--ink-faint); font-size: 10px">БОТ</span>
         </template>
@@ -159,7 +232,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
     <!-- отмена / в бой -->
     <div style="padding: 8px 14px 18px">
       <div v-if="phase === 'go'" class="pz-display" style="text-align: center; font-size: 15px; letter-spacing: 0.12em; color: var(--green); padding: 12px 0; animation: pz-pop 0.3s ease">▸ В БОЙ</div>
-      <button v-else class="pz-btn2" style="width: 100%" @click="emit('cancel')">Отменить поиск</button>
+      <button v-else class="pz-btn2" style="width: 100%" @click="cancel">Отменить поиск</button>
     </div>
   </div>
 </template>

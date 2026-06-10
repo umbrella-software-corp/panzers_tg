@@ -1,0 +1,17 @@
+[Unit]
+Description=Panzer TG game server (HTTP API + WS battles)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/panzers/server
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=WEBAPP_URL=https://panzertg.online
+EnvironmentFile=/opt/panzers/server/.env
+
+[Install]
+WantedBy=multi-user.target

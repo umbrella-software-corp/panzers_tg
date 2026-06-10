@@ -2,7 +2,7 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed } from 'vue'
-import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, buySkin, setSkin } from '../store.js'
+import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, buySkin, setSkin, tasksClaimable } from '../store.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, SKINS, SKIN_BY_ID } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
@@ -11,9 +11,11 @@ import BottomNav from './ui/BottomNav.vue'
 import StatRow from './ui/StatRow.vue'
 import PzIcon from './ui/PzIcon.vue'
 import SquadSheet from './SquadSheet.vue'
+import TasksSheet from './TasksSheet.vue'
 
 const emit = defineEmits(['play', 'go'])
 const squadOpen = ref(false)
+const tasksOpen = ref(false)
 
 const tank = computed(() => TANK_BY_ID[profile.selectedTank] || tanksOfNation(profile.nation)[0])
 const locked = computed(() => !isOwned(tank.value.id))
@@ -71,7 +73,7 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
       <div class="tank-wrap">
         <div class="tank-shadow"></div>
         <div :key="tank.id + profile.skin" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankImg :tank-id="tank.id" :size="238" :tint="locked ? 0xffffff : skinTint" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 14px 18px rgba(0,0,0,0.5))' }" />
+          <TankImg :tank-id="tank.id" :size="300" :tint="locked ? 0xffffff : skinTint" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
         </div>
         <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
           <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
@@ -101,12 +103,11 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
         <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 1px">{{ tank.cls }} · {{ nationLabel }}</div>
       </div>
       <div style="display: flex; gap: 6px; align-items: center">
-        <!-- экипаж: один на все танки, уровень баффает машину -->
-        <div class="crew-badge pz-display" :title="`Экипаж: +${crewLevel() - 1}% к темпу/обзору/ходу`">
-          <PzIcon name="star" :size="10" color="var(--amber)" />
-          <span>ЭКИПАЖ {{ crewLevel() }}</span>
+        <!-- экипаж: один на все танки, уровень баффает машину; клик — прокачка -->
+        <button class="crew-badge pz-display" title="Открыть прокачку экипажа" @click="emit('go', 'crew')">
+          <span>ЭКИПАЖ {{ crewLevel() }} ▸</span>
           <i class="bar"><b :style="{ width: crewProgress() * 100 + '%' }"></b></i>
-        </div>
+        </button>
         <button class="pz-btn2" style="padding: 8px 12px; font-size: 11.5px" :style="{ borderColor: ttx ? 'var(--amber)' : 'var(--line-strong)', color: ttx ? 'var(--amber)' : 'var(--ink)' }" @click="ttx = !ttx">
           ТТХ {{ ttx ? '▾' : '▸' }}
         </button>
@@ -162,6 +163,7 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
         @click="selectTank(t.id)"
       >
         <span class="pz-pixel" style="font-size: 8px" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">{{ t.tier }}</span>
+        <TankImg :tank-id="t.id" :size="42" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)' }" />
         <span class="pz-display" style="font-size: 12.5px; white-space: nowrap">{{ t.name }}</span>
         <span style="height: 14px; display: flex; align-items: center" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">
           <PzIcon :name="isOwned(t.id) ? 'star' : 'lock'" :size="11" :color="t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)'" />
@@ -171,6 +173,13 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
 
     <!-- CTA -->
     <div style="padding: 8px 14px 4px; flex-shrink: 0; display: flex; gap: 8px">
+      <button class="pz-btn2 squad-btn tasks-btn" @click="tasksOpen = true">
+        <span style="position: relative">
+          <PzIcon name="tasks" :size="18" />
+          <i v-if="tasksClaimable() > 0" class="task-dot"></i>
+        </span>
+        ЗАДАЧИ
+      </button>
       <button class="pz-btn2 squad-btn" @click="squadOpen = true">
         <span class="dots">
           <span class="slot you"><PzIcon name="star" :size="7" color="var(--amber)" /></span>
@@ -188,6 +197,7 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
     <BottomNav screen="hangar" @go="emit('go', $event)" />
 
     <SquadSheet v-if="squadOpen" @close="squadOpen = false" />
+    <TasksSheet v-if="tasksOpen" @close="tasksOpen = false" />
   </div>
 </template>
 
@@ -295,8 +305,8 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
   position: absolute;
   left: 50%;
   top: 54%;
-  width: 150px;
-  height: 170px;
+  width: 190px;
+  height: 210px;
   transform: translate(-50%, -50%);
   background: radial-gradient(ellipse, rgba(0, 0, 0, 0.55), transparent 68%);
   border-radius: 50%;
@@ -306,6 +316,17 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
   gap: 3px;
   padding: 8px 12px;
   font-size: 11px;
+}
+.task-dot {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 6px rgba(242, 165, 12, 0.8);
+  animation: pz-blink 1.4s linear infinite;
 }
 .crew-badge {
   display: flex;
@@ -319,6 +340,12 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
   background: rgba(0, 0, 0, 0.5);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
+  font-family: var(--font-display);
+  cursor: pointer;
+}
+.crew-badge:active {
+  border-color: var(--amber);
+  color: var(--amber);
 }
 .crew-badge > div:first-child,
 .crew-badge span {

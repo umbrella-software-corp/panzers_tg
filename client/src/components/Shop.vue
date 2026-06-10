@@ -2,7 +2,8 @@
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin, syncProfile } from '../store.js'
+import { apiBuy } from '../api.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
@@ -52,14 +53,32 @@ function buyCrate(c) {
   }
   showToast(`${c.name} — получено!`)
 }
-function buyCredits(p) {
-  addRewards(p.amount, 0)
-  showToast(`${p.amount.toLocaleString('ru-RU')} кредитов — получено!`)
+// паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
+// Без BOT_TOKEN сервер начисляет сразу (dev-режим).
+async function buyPack(p, label) {
+  try {
+    const r = await apiBuy(p.id)
+    if (r.granted) {
+      await syncProfile()
+      showToast(`${label} — зачислено${r.dev ? ' (dev)' : ''}!`)
+    } else if (r.link && window.Telegram?.WebApp?.openInvoice) {
+      window.Telegram.WebApp.openInvoice(r.link, async (status) => {
+        if (status === 'paid') {
+          setTimeout(async () => {
+            await syncProfile()
+            showToast(`${label} — оплачено!`)
+          }, 1200) // даём поллингу зачислить
+        }
+      })
+    } else {
+      showToast('Оплата недоступна', true)
+    }
+  } catch {
+    showToast('Сервер недоступен', true)
+  }
 }
-function buyTokens(p) {
-  addRewards(0, p.amount)
-  showToast(`${p.amount} жетонов — получено!`)
-}
+const buyCredits = (p) => buyPack(p, `${p.amount.toLocaleString('ru-RU')} кредитов`)
+const buyTokens = (p) => buyPack(p, `${p.amount} жетонов`)
 function buyGold(p) {
   if (!buyGoldAmmo(p.id)) {
     showToast('Не хватает жетонов', true)
