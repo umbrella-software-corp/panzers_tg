@@ -285,7 +285,7 @@ function joyEnd(e) {
 }
 
 function onFire() {
-  haptic('light') // тап по «огонь» — лёгкая отдача выстрела
+  haptic('medium') // тап по «огонь» — ощутимая отдача выстрела
   game.fire()
 }
 

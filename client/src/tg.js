@@ -33,17 +33,31 @@ export function setBackButton(handler) {
   }
 }
 
-// тактильная отдача Telegram (вибрация на событиях). Безопасно вне Telegram.
+// тактильная отдача на событиях. Путь 1 — Telegram HapticFeedback (нужен Bot API
+// 6.1+, единственный способ на iOS). Путь 2 — нативная navigator.vibrate (Android;
+// на iOS не работает). Безопасно вне Telegram.
 // kind: light|medium|heavy|rigid|soft (impact) | success|warning|error (notify) | select
+const VIBE_MS = { select: 8, light: 12, soft: 12, medium: 22, rigid: 28, heavy: 40, success: 24, warning: 30, error: 45 }
 export function haptic(kind = 'light') {
+  const tg = window.Telegram && window.Telegram.WebApp
+  const h = tg && tg.HapticFeedback
+  // Telegram-хаптик, если клиент достаточно свежий (≥6.1). isVersionAtLeast нет у
+  // совсем старых — тогда не рискуем и идём в нативную вибру.
+  if (h && tg.isVersionAtLeast && tg.isVersionAtLeast('6.1')) {
+    try {
+      if (kind === 'success' || kind === 'warning' || kind === 'error') h.notificationOccurred(kind)
+      else if (kind === 'select') h.selectionChanged()
+      else h.impactOccurred(kind)
+      return
+    } catch {
+      /* падаем в нативную вибрацию ниже */
+    }
+  }
+  // фолбэк: нативная вибрация (Android и обычный браузер; на iOS — no-op)
   try {
-    const h = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback
-    if (!h) return
-    if (kind === 'success' || kind === 'warning' || kind === 'error') h.notificationOccurred(kind)
-    else if (kind === 'select') h.selectionChanged()
-    else h.impactOccurred(kind)
+    if (navigator.vibrate) navigator.vibrate(VIBE_MS[kind] || 15)
   } catch {
-    /* старый клиент без HapticFeedback */
+    /* вибро-API недоступно */
   }
 }
 
