@@ -367,17 +367,7 @@ export class Game {
     this.app.stage.addChild(this.labels)
     this.botLabels = new Map()
     for (const b of this.bots) {
-      const t = new Text({
-        text: `${CLS_MARK[b.classId] || ''} ${b.name}`,
-        style: {
-          fontFamily: 'Russo One, sans-serif',
-          fontSize: 11,
-          fill: (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).main,
-          stroke: { color: 0x000000, width: 3 },
-          letterSpacing: 0.5,
-        },
-      })
-      t.anchor.set(0.5, 1)
+      const t = this._makeNamePlate(b.name, b.classId, b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy)
       t.visible = false
       this.labels.addChild(t)
       this.botLabels.set(b.id, t)
@@ -1389,6 +1379,29 @@ export class Game {
     this._updateFog()
     this._updateLabels()
     this._drawMinimap()
+  }
+
+  // плашка ника над танком: тёмный фон + рамка цвета команды — читается на любой местности
+  _makeNamePlate(name, classId, pal) {
+    const txt = new Text({
+      text: `${CLS_MARK[classId] || ''} ${name}`,
+      style: {
+        fontFamily: 'Russo One, sans-serif',
+        fontSize: 12.5,
+        fill: 0xffffff,
+        stroke: { color: 0x000000, width: 3 },
+        letterSpacing: 0.5,
+      },
+    })
+    txt.anchor.set(0.5, 0.5)
+    const bw = txt.width + 14
+    const bh = txt.height + 5
+    const bg = new Graphics()
+    bg.roundRect(-bw / 2, -bh / 2, bw, bh, 5).fill({ color: 0x05070a, alpha: 0.6 })
+    bg.roundRect(-bw / 2, -bh / 2, bw, bh, 5).stroke({ width: 1.5, color: pal.main, alpha: 0.85 })
+    const c = new Container()
+    c.addChild(bg, txt)
+    return c
   }
 
   // имена над танками: союзники всегда, враги при засвете

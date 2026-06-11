@@ -745,28 +745,44 @@ export class NetGame {
       seen.add(u.id)
       let t = this.unitLabels.get(u.id)
       if (!t) {
-        const pal = u.team === this.side ? this.colors.ally : this.colors.enemy
-        t = new Text({
-          text: `${CLS_MARK[u.cls] || ''} ${u.name}`,
-          style: {
-            fontFamily: 'Russo One, sans-serif',
-            fontSize: 11,
-            fill: u.id === this.youUnit ? 0xf2a50c : pal.main,
-            stroke: { color: 0x000000, width: 3 },
-            letterSpacing: 0.5,
-          },
-        })
-        t.anchor.set(0.5, 1)
+        t = this._makeNamePlate(u)
         this.labels.addChild(t)
         this.unitLabels.set(u.id, t)
       }
       t.visible = true
       const p = this.world.toGlobal({ x: u.x, y: u.y })
-      t.position.set(p.x, p.y - 52)
+      t.position.set(p.x, p.y - 50)
     }
     for (const [id, t] of this.unitLabels) {
       if (!seen.has(id)) t.visible = false
     }
+  }
+
+  // плашка ника над танком: тёмный фон + рамка цвета команды (своя — янтарь),
+  // чтобы ник читался на любой местности
+  _makeNamePlate(u) {
+    const isYou = u.id === this.youUnit
+    const pal = u.team === this.side ? this.colors.ally : this.colors.enemy
+    const txt = new Text({
+      text: `${CLS_MARK[u.cls] || ''} ${u.name}`,
+      style: {
+        fontFamily: 'Russo One, sans-serif',
+        fontSize: 12.5,
+        fill: isYou ? 0xffd54a : 0xffffff,
+        stroke: { color: 0x000000, width: 3 },
+        letterSpacing: 0.5,
+      },
+    })
+    txt.anchor.set(0.5, 0.5)
+    const bw = txt.width + 14
+    const bh = txt.height + 5
+    const border = isYou ? 0xf2a50c : pal.main
+    const bg = new Graphics()
+    bg.roundRect(-bw / 2, -bh / 2, bw, bh, 5).fill({ color: 0x05070a, alpha: 0.6 })
+    bg.roundRect(-bw / 2, -bh / 2, bw, bh, 5).stroke({ width: 1.5, color: border, alpha: 0.85 })
+    const c = new Container()
+    c.addChild(bg, txt)
+    return c
   }
 
   _drawMinimap(units) {
