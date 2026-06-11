@@ -170,7 +170,9 @@ export class BattleSim {
       if (Math.abs(angleDiff(ang, u.hull)) > u.stats.sectorHalf + 0.01) continue
       if (this._lineBlocked(u.x, u.y, e.x, e.y)) continue
       const err = Math.abs(angleDiff(ang, lineAngle))
-      if (err <= u.stats.tolerance && (!best || err < best.err)) best = { e, err }
+      // снаряд летит по прямой → бьёт БЛИЖАЙШЕГО на линии (а не «ровнее по углу»
+      // дальнего). Иначе «стреляю по первому, попадаю по тем, кто сзади».
+      if (err <= u.stats.tolerance && (!best || dist < best.dist)) best = { e, err, dist }
     }
 
     let killed = false

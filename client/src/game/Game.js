@@ -532,7 +532,8 @@ export class Game {
       if (inSector) anyInSector = true
       if (inSector && los) anyLos = true
       if (inSector && los && err <= this.cls.tolerance) {
-        if (!best || err < best.err) best = { b, err }
+        // снаряд бьёт БЛИЖАЙШЕГО на линии (не «ровнее по углу» дальнего)
+        if (!best || dist < best.dist) best = { b, err, dist }
       }
     }
 

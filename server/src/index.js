@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting } from './db.js'
-import { PRODUCTS, createInvoice, grantProduct, startPaymentsLoop } from './payments.js'
+import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { adminPage } from './admin.js'
 
 const ADMIN_KEY = process.env.ADMIN_KEY || ''
@@ -78,6 +78,12 @@ async function handleAdmin(req, res) {
   }
   if (req.url === '/api/admin/profiles' && req.method === 'GET') {
     return json(res, 200, { profiles: await listProfiles() })
+  }
+  if (req.url === '/api/admin/refund' && req.method === 'POST') {
+    const { charge } = await readBody(req)
+    if (!charge) return json(res, 400, { error: 'нет charge' })
+    const out = await refundPayment(String(charge))
+    return json(res, out.ok ? 200 : 400, out)
   }
   json(res, 404, { error: 'not found' })
 }

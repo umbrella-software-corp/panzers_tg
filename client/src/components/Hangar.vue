@@ -189,9 +189,12 @@ function pickCamo(id) {
         </span>
         ВЗВОД
       </button>
-      <button class="pz-cta pz-cta--hazard" :disabled="locked" @click="emit('play')">
+      <button class="pz-cta pz-cta--hazard playbtn" :disabled="locked" @click="emit('play')">
         <template v-if="locked">ИССЛЕДУЙ В РАЗВИТИИ</template>
-        <template v-else>В БОЙ <span style="font-size: 14px; opacity: 0.75">▸ {{ tank.name }}<template v-if="partyMul > 0"> ×{{ 1 + partyMul }}</template></span></template>
+        <span v-else class="play-stack">
+          <span class="play-main">В БОЙ<template v-if="partyMul > 0"> ×{{ 1 + partyMul }}</template></span>
+          <span class="play-sub">▸ {{ tank.name }}</span>
+        </span>
       </button>
     </div>
 
@@ -336,6 +339,32 @@ function pickCamo(id) {
   gap: 3px;
   padding: 8px 12px;
   font-size: 11px;
+  flex-shrink: 0; /* ЗАДАЧИ/ВЗВОД фиксированы, не жмутся под длинное имя танка */
+}
+/* кнопка В БОЙ: «В БОЙ» крупно + имя танка отдельной строкой (длинные имена
+   вроде «Т-34-85»/«Leopard 2A7» не распирают и не переносятся как попало) */
+.playbtn {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 14px;
+}
+.play-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  line-height: 1.05;
+}
+.play-main {
+  font-size: 19px;
+}
+.play-sub {
+  max-width: 100%;
+  font-size: 11px;
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .task-dot {
   position: absolute;

@@ -2,7 +2,7 @@
 // pre_checkout_query и successful_payment. Товары — серверный каталог
 // (клиентским ценам не верим). Идемпотентность по telegram charge id.
 import { botToken, hasBot } from './auth.js'
-import { loadProfile, saveProfile, paymentSeen, markPayment } from './db.js'
+import { loadProfile, saveProfile, paymentSeen, markPayment, listPayments, markRefunded } from './db.js'
 
 // каталог: что начисляем за звёзды
 export const PRODUCTS = {
@@ -76,6 +76,32 @@ export async function grantProduct(uid, productId, extra = {}) {
   }
   await saveProfile(uid, profile)
   return true
+}
+
+// рефанд звёзд игроку по charge id (из админки): возвращает звёзды через
+// Telegram refundStarPayment и откатывает начисленный товар (кредиты/жетоны/
+// премиум) с клампом ≥0, чтобы не остались и звёзды, и товар.
+export async function refundPayment(charge) {
+  const rec = (await listPayments()).find((p) => p.charge === charge)
+  if (!rec) return { error: 'платёж не найден' }
+  if (rec.refunded) return { error: 'уже возвращён' }
+  if (!hasBot()) return { error: 'нет BOT_TOKEN (dev-режим)' }
+  const userId = Number(rec.uid)
+  if (!Number.isFinite(userId) || userId <= 0) return { error: 'не Telegram-оплата (гость)' }
+  const res = await api('refundStarPayment', { user_id: userId, telegram_payment_charge_id: charge })
+  if (!res.ok) return { error: res.description || 'Telegram отклонил рефанд' }
+  // откат начисленного товара (кламп ≥0)
+  const p = PRODUCTS[rec.productId]
+  if (p) {
+    const profile = (await loadProfile(rec.uid)) || {}
+    if (p.credits) profile.credits = Math.max(0, (profile.credits || 0) - p.credits)
+    if (p.tokens) profile.tokens = Math.max(0, (profile.tokens || 0) - p.tokens)
+    if (p.premiumDays) profile.premiumUntil = Math.max(Date.now(), (profile.premiumUntil || 0) - p.premiumDays * 86400000)
+    await saveProfile(rec.uid, profile)
+  }
+  await markRefunded(charge)
+  console.log(`[pay] РЕФАНД ${rec.uid} · ${rec.productId} · ${rec.stars} XTR возвращены`)
+  return { ok: true, stars: rec.stars }
 }
 
 // приветствие бота: на /start — кнопка, открывающая Mini App

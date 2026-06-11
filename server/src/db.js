@@ -139,6 +139,19 @@ export async function listPayments() {
   return [...(await loadPaid())].reverse() // свежие сверху
 }
 
+// пометить платёж возвращённым (admin-рефанд) — чтобы не вернуть дважды
+export async function markRefunded(chargeId) {
+  const list = await loadPaid()
+  const rec = list.find((p) => p.charge === chargeId)
+  if (!rec) return false
+  rec.refunded = true
+  rec.refundedAt = Date.now()
+  const tmp = `${PAYMENTS}.${process.pid}.tmp`
+  await fs.writeFile(tmp, JSON.stringify(list))
+  await fs.rename(tmp, PAYMENTS)
+  return true
+}
+
 // сводка профилей для админки; чтение всех файлов кэшируем на 5с —
 // поллинг админки не должен молотить диск на каждый запрос
 let profilesCache = null

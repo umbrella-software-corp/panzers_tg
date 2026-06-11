@@ -27,6 +27,8 @@ export const adminPage = () => `<!doctype html>
   #login { max-width:340px; margin:80px auto; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px; }
   input { width:100%; padding:10px; background:#0d100a; border:1px solid var(--line); border-radius:8px; color:var(--ink); margin:10px 0; }
   button { width:100%; padding:10px; background:var(--amber); border:none; border-radius:8px; font-weight:700; cursor:pointer; }
+  .refbtn { width:auto; padding:5px 12px; font-size:12px; background:var(--red); color:#fff; }
+  .refbtn:disabled { opacity:.5; cursor:default; }
   .err { color:var(--red); font-size:12px; }
   #status { position:fixed; top:12px; right:16px; font-size:11px; color:var(--dim); }
 </style>
@@ -93,12 +95,15 @@ async function refresh() {
   )
 
   $('payments').innerHTML = table(
-    ['Когда', 'Игрок', 'Товар', '★ Звёзды'],
+    ['Когда', 'Игрок', 'Товар', '★ Звёзды', 'Действие'],
     s.payments.slice(0, 50).map((p) => [
       dt(p.ts),
       esc(p.uid || '—'),
       esc((s.products[p.productId] || {}).title || p.productId || '—'),
       p.stars || 0,
+      p.refunded
+        ? '<span class="muted">возвращён</span>'
+        : (p.charge ? '<button class="refbtn" onclick="refund(\\'' + esc(p.charge) + '\\', this)">Рефанд</button>' : '<span class="muted">—</span>'),
     ]),
   )
 
@@ -120,6 +125,22 @@ async function toggleTournaments(on) {
   refresh()
 }
 window.toggleTournaments = toggleTournaments
+
+async function refund(charge, btn) {
+  if (!confirm('Вернуть звёзды за этот платёж? Начисленный товар тоже спишется у игрока.')) return
+  btn.disabled = true; btn.textContent = '…'
+  try {
+    const r = await fetch('/api/admin/refund', {
+      method: 'POST',
+      headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' },
+      body: JSON.stringify({ charge }),
+    })
+    const d = await r.json()
+    if (d.ok) { alert('Возвращено ★' + d.stars); refresh() }
+    else { alert('Не вышло: ' + (d.error || '?')); btn.disabled = false; btn.textContent = 'Рефанд' }
+  } catch (e) { alert('Сеть: ' + e.message); btn.disabled = false; btn.textContent = 'Рефанд' }
+}
+window.refund = refund
 
 let timer = null
 async function boot() {
