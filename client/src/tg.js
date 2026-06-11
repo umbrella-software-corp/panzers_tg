@@ -15,6 +15,24 @@ export function tgUser() {
   return name ? { id: u.id, name } : null
 }
 
+// текущий обработчик кнопки «Назад» (его дёргает единый onClick из initTelegram)
+let backHandler = null
+
+// Управление кнопкой «Назад» Telegram. Передать функцию — кнопка показана и
+// по нажатию делает навигацию внутри игры; передать null — спрятать (на корне
+// «назад» штатно сворачивает мини-апп).
+export function setBackButton(handler) {
+  backHandler = typeof handler === 'function' ? handler : null
+  const bb = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton
+  if (!bb) return
+  try {
+    if (backHandler) bb.show()
+    else bb.hide()
+  } catch {
+    /* старый клиент без BackButton */
+  }
+}
+
 export function initTelegram() {
   const tg = window.Telegram && window.Telegram.WebApp
   const root = document.documentElement
@@ -53,6 +71,19 @@ export function initTelegram() {
     if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait')
   } catch {
     /* не поддержано */
+  }
+  // свайп вниз не должен сворачивать игру (особенно в бою — джойстик/огонь)
+  try {
+    if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes()
+  } catch {
+    /* старый клиент */
+  }
+  // кнопка «Назад» Telegram: один обработчик, вызывает текущий backHandler.
+  // Без этого «назад»/свайп сворачивает мини-апп вместо навигации внутри игры.
+  try {
+    if (tg.BackButton) tg.BackButton.onClick(() => backHandler && backHandler())
+  } catch {
+    /* нет BackButton */
   }
   apply()
   tg.onEvent('safeAreaChanged', apply)

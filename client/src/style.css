@@ -56,6 +56,8 @@
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
+  /* iOS: без этого долгий тап всё равно выделяет текст и зовёт callout-меню */
+  -webkit-touch-callout: none;
 }
 
 html,

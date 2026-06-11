@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { setBackButton } from './tg.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
 import Crew from './components/Crew.vue'
@@ -31,6 +32,14 @@ onMounted(async () => {
 function go(to) {
   screen.value = to
 }
+
+// кнопка «Назад» Telegram: на корне (ангар) и в бою — спрятана (там свои
+// выходы), на остальных экранах ведёт в ангар вместо сворачивания мини-аппа
+watch(
+  screen,
+  (s) => setBackButton(s === 'hangar' || s === 'battle' ? null : () => go('hangar')),
+  { immediate: true },
+)
 function play() {
   draw.value = { mapId: randomMap().id, side: Math.random() < 0.5 ? 0 : 1 }
   screen.value = 'matchmaking'
