@@ -92,15 +92,10 @@ function exitBattle(reward) {
 }
 function rematch(reward) {
   bankBattle(reward)
-  if (netMatch.value) {
-    // онлайн: соединение матча уже закрыто — реванш через новый поиск
-    netMatch.value = null
-    play()
-  } else {
-    // офлайн-реванш: новая случайная карта/сторона, а не та же самая
-    draw.value = { mapId: randomMap().id, side: Math.random() < 0.5 ? 0 : 1 }
-    battleKey.value++
-  }
+  // каждый «ЕЩЁ БОЙ» — через ПОИСК нового боя (как первый раз): попытка найти
+  // живых/друзей, затем добор ботами. Не кидаем мгновенно в офлайн-бой.
+  netMatch.value = null
+  play()
 }
 </script>
 
