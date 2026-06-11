@@ -42,7 +42,7 @@ export async function leaderboard(limit = 20) {
     .filter((p) => p.name)
     .sort((a, b) => b.rating - a.rating)
     .slice(0, limit)
-    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.rating, battles: p.battles, wins: p.wins }))
+    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.rating, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > Date.now() }))
 }
 
 // публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):
@@ -68,6 +68,7 @@ export async function playerByRank(rank) {
     kills: s.kills || 0,
     tank: p.selectedTank || null, // id текущей машины (для спрайта)
     favoriteTank, // имя самой частой машины в истории
+    premium: (p.premiumUntil || 0) > Date.now(),
   }
 }
 

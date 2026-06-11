@@ -2,21 +2,30 @@
 // Карточка профиля игрока (модалка): рейтинг, место, бои/винрейт/фраги,
 // любимая техника. Медали добавятся, когда будет система медалей.
 import { computed } from 'vue'
-import { TANK_BY_ID } from '../game/meta.js'
+import { TANK_BY_ID, MEDALS } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
+import Medal from './ui/Medal.vue'
 
 const props = defineProps({ player: { type: Object, required: true } })
 const emit = defineEmits(['close'])
 const p = computed(() => props.player)
 const winrate = computed(() => (p.value.battles ? Math.round((p.value.wins / p.value.battles) * 100) : 0))
 const tankName = computed(() => (TANK_BY_ID[p.value.tank] || {}).name || p.value.favoriteTank || '—')
+// медали игрока: карта { id: счётчик } → значки в порядке каталога
+const medals = computed(() => {
+  const m = p.value.medals || {}
+  return MEDALS.filter((d) => (m[d.id] || 0) > 0).map((d) => ({ def: d, count: m[d.id] }))
+})
 </script>
 
 <template>
   <div class="overlay" @click.self="emit('close')">
     <div class="card pz-plate pz-brackets" style="--bk: var(--amber)">
       <button class="x" @click="emit('close')">✕</button>
-      <div class="pz-display" style="font-size: 19px; text-align: center; padding: 0 20px">{{ p.name }}</div>
+      <div class="pz-display" style="font-size: 19px; text-align: center; padding: 0 20px" :style="{ color: p.premium ? 'var(--amber-hi)' : undefined }">
+        <span v-if="p.premium" style="text-shadow: 0 0 6px rgba(242,165,12,.6)">♛ </span>{{ p.name }}
+      </div>
+      <div v-if="p.premium" class="pz-pixel" style="text-align: center; font-size: 7px; color: var(--amber); letter-spacing: 0.14em; margin-top: 3px">ПРЕМИУМ-АККАУНТ</div>
       <div v-if="p.place" class="pz-pixel place">МЕСТО {{ p.place }} В РЕЙТИНГЕ</div>
 
       <div class="rating-big pz-display">{{ p.rating }}<span class="unit">рейтинг</span></div>
@@ -36,8 +45,11 @@ const tankName = computed(() => (TANK_BY_ID[p.value.tank] || {}).name || p.value
       </div>
 
       <div class="medals">
-        <div class="pz-pixel label">МЕДАЛИ</div>
-        <div style="font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 500">скоро — за урон, фраги, победы и подвиги</div>
+        <div class="pz-pixel label">МЕДАЛИ <span v-if="medals.length" style="color: var(--amber)">{{ medals.length }}</span></div>
+        <div v-if="medals.length" class="medal-grid">
+          <Medal v-for="m in medals" :key="m.def.id" :medal="m.def" :count="m.count" :size="42" />
+        </div>
+        <div v-else style="font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 500">пока нет — впереди бои и подвиги</div>
       </div>
     </div>
   </div>
@@ -134,5 +146,11 @@ const tankName = computed(() => (TANK_BY_ID[p.value.tank] || {}).name || p.value
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px dashed var(--line-strong);
+}
+.medal-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 9px;
 }
 </style>

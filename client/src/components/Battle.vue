@@ -7,8 +7,8 @@ import { Game } from '../game/Game.js'
 import { NetGame } from '../game/NetGame.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
-import { profile, spendGoldAmmo, addBattleResult } from '../store.js'
-import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT, SKIN_BY_ID } from '../game/meta.js'
+import { profile, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
+import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import Results from './Results.vue'
 import PzIcon from './ui/PzIcon.vue'
@@ -72,8 +72,10 @@ const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name ||
 const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
 
-// фаза боя: countdown (стартовый отсчёт) | fighting | result (донесение)
-const phase = ref('countdown')
+// фаза боя: connecting (онлайн ждёт сервер) | countdown (отсчёт) | fighting | result
+// офлайн стартует сразу с отсчёта; онлайн — после первого снапшота (ОДИН отсчёт,
+// а не «3-2-1 → ждём → опять 3-2-1»)
+const phase = ref(isNet ? 'connecting' : 'countdown')
 const count = ref(3)
 let countTimer = null
 
@@ -110,6 +112,17 @@ game.onKill = (name) => {
   }, 4500)
 }
 
+// награды за действия (засвет/захват) — всплывающие подписи «+опыт»
+const actionFeed = ref([])
+game.onReward = ({ text, xp }) => {
+  haptic('light')
+  const key = Date.now() + Math.random()
+  actionFeed.value = [{ key, text, xp }, ...actionFeed.value].slice(0, 3)
+  setTimeout(() => {
+    actionFeed.value = actionFeed.value.filter((f) => f.key !== key)
+  }, 2200)
+}
+
 // тряска экрана при получении урона
 const shaking = ref(false)
 let shakeTimer = null
@@ -126,8 +139,11 @@ function clearNetWatchdog() {
 
 let statsCounted = false // статистика матча банкается один раз
 game.onState = (s) => {
-  // первые данные мира пришли — снимаем сторож (онлайн поехал)
-  if (isNet && netWatchdog && game.cur) clearNetWatchdog()
+  // первые данные мира пришли — снимаем сторож и запускаем ЕДИНСТВЕННЫЙ отсчёт
+  if (isNet && game.cur && phase.value === 'connecting') {
+    clearNetWatchdog()
+    startCountdown()
+  }
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
   if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
   if (s.playerHp < prevHp && s.playerHp > 0) {
@@ -161,7 +177,7 @@ const reward = computed(() => {
   const win = s.result === 'victory'
   const draw = s.result === 'draw'
   return {
-    xp: (win ? 200 : draw ? 120 : 80) + s.kills * 45 + s.hits * 4,
+    xp: (win ? 200 : draw ? 120 : 80) + s.kills * 45 + s.hits * 4 + (s.bonusXp || 0),
     silver: (win ? 260 : draw ? 150 : 100) + s.kills * 45 + Math.round(s.allyScore * 6),
     kills: s.kills,
     allyScore: s.allyScore,
@@ -170,6 +186,7 @@ const reward = computed(() => {
     lightKills: s.lightKills || 0,
     blocked: s.blocked || 0,
     victory: win,
+    survived: !s.deaths, // одна жизнь: дожил до конца боя
   }
 })
 
@@ -309,23 +326,25 @@ onMounted(async () => {
   const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map((t) => ({ ...combatStats(t), tankId: t.id }))
   game.setBotTanks(pool)
   game.playerTankId = profile.selectedTank // реальный спрайт своей машины
-  game.playerTint = (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff // оттенок-фоллбэк
-  game.playerSkin = profile.skin // узорный камуфляж (печётся в текстуру)
+  game.playerCamo = tankCamo(profile.selectedTank) // per-tank камуфляж (перекрашенный спрайт)
   // статы до mount: спрайт игрока выбирается по классу лоадаута
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)
   await game.mount(stage.value)
   game.setMinimap(minimap.value)
-  startCountdown()
-  // онлайн: ждём снапшоты не дольше 8с, иначе откат в офлайн-бой с ботами
   if (isNet) {
+    // онлайн: НЕ запускаем отсчёт сразу — ждём первый снапшот сервера (см. onState),
+    // тогда будет единственный отсчёт. Нет данных за 4.5с → откат в офлайн с ботами.
+    game.setPaused(true)
     netWatchdog = setTimeout(() => {
       netWatchdog = null
       if (!game.cur) {
-        console.warn('[battle] онлайн-бой без снапшотов 8с — откат в офлайн с ботами')
+        console.warn('[battle] онлайн-бой без снапшотов 4.5с — откат в офлайн с ботами')
         emit('netfail')
       }
-    }, 8000)
+    }, 4500)
+  } else {
+    startCountdown()
   }
 })
 // диагностика прода: состояние боя доступно из консоли (window.__pz)
@@ -405,6 +424,13 @@ onBeforeUnmount(() => {
       <div v-for="f in feed" :key="f.key" class="feed-row"><span style="color: var(--amber)">ВЫ</span> ▸ {{ f.text }}</div>
     </div>
 
+    <!-- награды за действия: засвет/захват -->
+    <div class="actfeed">
+      <transition-group name="pop">
+        <div v-for="f in actionFeed" :key="f.key" class="actfeed-row pz-display">{{ f.text }} <span class="ax">+{{ f.xp }} ОП</span></div>
+      </transition-group>
+    </div>
+
     <transition name="pop">
       <div v-if="toast" class="toast pz-display" :class="toast.kind">{{ toast.text }}</div>
     </transition>
@@ -454,6 +480,14 @@ onBeforeUnmount(() => {
       </svg>
       <span class="pz-display flabel">{{ state.ready ? 'ОГОНЬ' : state.reloadLeft.toFixed(1) + 'с' }}</span>
     </button>
+
+    <!-- онлайн: ждём данные сервера, чтобы отсчёт был один -->
+    <transition name="fade">
+      <div v-if="phase === 'connecting'" class="overlay countdown">
+        <div class="cd-num pz-display" style="font-size: 28px; letter-spacing: 0.2em">СВЯЗЬ…</div>
+        <div class="cd-sub">собираем команду на сервере</div>
+      </div>
+    </transition>
 
     <!-- стартовый отсчёт -->
     <transition name="fade">
@@ -771,6 +805,33 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   border-left: 2px solid var(--amber);
   animation: pz-slide-up 0.25s ease;
+}
+
+/* награды за действия (засвет/захват) — под счётом, по центру сверху */
+.actfeed {
+  position: absolute;
+  top: calc(var(--safe-top) + 188px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  z-index: 3;
+}
+.actfeed-row {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.55);
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--green);
+}
+.actfeed-row .ax {
+  color: var(--green);
+  font-size: 11px;
 }
 
 .toast {

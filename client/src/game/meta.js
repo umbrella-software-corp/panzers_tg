@@ -197,6 +197,18 @@ export const SKINS = [
   { id: 'gold', name: 'Парадный', tint: 0xffd24a, costTokens: 60 },
 ]
 export const SKIN_BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]))
+
+// ---------- камуфляжи (3 на КАЖДЫЙ танк, AI-спрайты, не CSS) ----------
+// Реальная перекраска машины: спрайт /sprites/camo/<tankId>_<camoId>.png
+// (наш танк top-down, перекрашенный flux-kontext, на той же магенте — кеится
+// в рантайме как обычный танк). id '' — заводская окраска (базовый спрайт).
+export const CAMOS = [
+  { id: '', name: 'Заводская', short: 'СТД' },
+  { id: 'woodland', name: 'Лес', short: 'ЛЕС' },
+  { id: 'desert', name: 'Пустыня', short: 'ПУСТ' },
+  { id: 'winter', name: 'Зима', short: 'ЗИМА' },
+]
+export const CAMO_IDS = CAMOS.map((c) => c.id).filter(Boolean)
 // смена позывного — за Telegram Stars (цена авторитетна на сервере, PRODUCTS.rename)
 export const RENAME_COST_STARS = 50
 
@@ -208,3 +220,29 @@ export const RATING_RIVALS = ['Kolyan_T34', 'дед_максим', 'Shtorm_88', 
 export const modLevel = (modules, tankId, modId) => ((modules || {})[tankId] || {})[modId] || 1
 export const modsMaxed = (modules, tankId) => MODULE_DEFS.every((m) => modLevel(modules, tankId, m.id) >= 3)
 export const modsMaxedCount = (modules, tankId) => MODULE_DEFS.filter((m) => modLevel(modules, tankId, m.id) >= 3).length
+
+// ---------- медали (как в Блице, но свои) ----------
+// kind: 'battle' — начисляется за каждый подходящий бой, копится счётчик-престиж;
+//       'career' — рубеж по суммарной статистике, выдаётся один раз.
+// Награда (credits/tokens) выдаётся только за ПЕРВОЕ получение медали.
+// metric/need — декларативное условие (см. store.battleMedalIds / careerMedalIds).
+// glyph — символ-фоллбэк, если спрайт /sprites/medals/<id>.png ещё не подгрузился.
+export const MEDALS = [
+  // боевые — за один бой
+  { id: 'warrior', name: 'Воин', desc: '3+ фрага за бой', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150 } },
+  { id: 'sniper', name: 'Снайпер раунда', desc: '5+ фрагов за бой', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2 } },
+  { id: 'firestorm', name: 'Огневой вал', desc: '1200+ урона за бой', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 1200, reward: { credits: 300, tokens: 1 } },
+  { id: 'wall', name: 'Стальная стена', desc: '300+ урона отражено бронёй', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blocked', need: 300, reward: { credits: 300, tokens: 1 } },
+  { id: 'scout', name: 'Орлиный глаз', desc: '2+ фрага по засвеченным', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200 } },
+  { id: 'survivor', name: 'Уцелевший', desc: 'Выжил в бою (одна жизнь)', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150 } },
+  { id: 'triumph', name: 'Чистая победа', desc: 'Победа без потери машины', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3 } },
+  // карьерные — рубежи
+  { id: 'recruit', name: 'Новобранец', desc: '10 боёв', tier: 'bronze', glyph: '➀', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
+  { id: 'veteran', name: 'Ветеран', desc: '100 боёв', tier: 'silver', glyph: '➁', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
+  { id: 'guards', name: 'Гвардеец', desc: '500 боёв', tier: 'gold', glyph: '➂', kind: 'career', metric: 'battles', need: 500, reward: { credits: 1500, tokens: 5 } },
+  { id: 'hunter', name: 'Истребитель', desc: '100 уничтоженных машин', tier: 'silver', glyph: '⊗', kind: 'career', metric: 'kills', need: 100, reward: { credits: 600, tokens: 2 } },
+  { id: 'ace', name: 'Ас войны', desc: '1000 уничтоженных машин', tier: 'gold', glyph: '✺', kind: 'career', metric: 'kills', need: 1000, reward: { credits: 2000, tokens: 8 } },
+  { id: 'legend', name: 'Легенда', desc: 'Рейтинг 1500', tier: 'gold', glyph: '♛', kind: 'career', metric: 'rating', need: 1500, reward: { credits: 1500, tokens: 5 } },
+]
+export const MEDAL_BY_ID = Object.fromEntries(MEDALS.map((m) => [m.id, m]))
+export const MEDAL_TIER_COLOR = { bronze: '#c08349', silver: '#cfd4da', gold: '#f2a50c' }

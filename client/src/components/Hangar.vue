@@ -2,9 +2,8 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed } from 'vue'
-import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, buySkin, setSkin, tasksClaimable, tankModLevel } from '../store.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, SKINS, SKIN_BY_ID, MODULE_COMBAT } from '../game/meta.js'
-import { camoCss } from '../game/camo.js'
+import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, tankCamo, tasksClaimable, tankModLevel } from '../store.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, MODULE_COMBAT } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -40,22 +39,10 @@ const tanks = computed(() => tanksOfNation(profile.nation))
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
 const partyMul = computed(() => profile.party.length)
-// превью: клик по запертому камуфляжу примеряет его, покупка — отдельной кнопкой
-const previewSkin = ref(null)
-const skinId = computed(() => previewSkin.value || profile.skin)
-const skinTint = computed(() => (SKIN_BY_ID[skinId.value] || SKIN_BY_ID.std).tint)
-const previewDef = computed(() => (previewSkin.value ? SKIN_BY_ID[previewSkin.value] : null))
-
-function pickSkin(s) {
-  if (profile.skins.includes(s.id)) {
-    previewSkin.value = null
-    setSkin(s.id)
-  } else {
-    previewSkin.value = previewSkin.value === s.id ? null : s.id // примерка
-  }
-}
-function buyPreviewed() {
-  if (previewDef.value && buySkin(previewDef.value.id)) previewSkin.value = null
+// камуфляж выбирается на КАЖДЫЙ танк (бесплатная покраска перекрашенным спрайтом)
+const selCamo = computed(() => tankCamo(tank.value.id))
+function pickCamo(id) {
+  setCamo(tank.value.id, id)
 }
 </script>
 
@@ -85,8 +72,8 @@ function buyPreviewed() {
       <!-- тень + танк -->
       <div class="tank-wrap">
         <div class="tank-shadow"></div>
-        <div :key="tank.id + profile.skin" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankImg :tank-id="tank.id" :size="300" :tint="locked ? 0xffffff : skinTint" :skin="locked ? '' : skinId" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
+        <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
+          <TankImg :tank-id="tank.id" :size="300" :camo="locked ? '' : selCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
         </div>
         <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
           <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
@@ -133,26 +120,23 @@ function buyPreviewed() {
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
     </div>
 
-    <!-- камуфляжи: шапка (метка + кнопка покупки справа) с резервом высоты не
-         прыгает при примерке; сами точки — в отдельном скроллящемся ряду, не
-         разъезжаются от ширины кнопки -->
+    <!-- камуфляж: 3 схемы + заводская, на КАЖДЫЙ танк. Превью — сам танк в этом
+         камо (перекрашенный спрайт), покраска бесплатная -->
     <div class="camo-head">
       <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">КАМУФЛЯЖ</span>
-      <button v-if="previewDef" class="pz-btn2 buy-skin" @click="buyPreviewed">
-        {{ previewDef.name }} · <PzIcon name="token" :size="11" /> {{ previewDef.costTokens }}
-      </button>
     </div>
     <div class="camo-dots pz-noscroll">
       <button
-        v-for="s in SKINS"
-        :key="s.id"
-        class="skin-dot"
-        :class="{ on: profile.skin === s.id && !previewSkin, fit: previewSkin === s.id }"
-        :style="{ background: camoCss(s) }"
-        :title="s.name + (profile.skins.includes(s.id) ? '' : ` · ${s.costTokens} жет.`)"
-        @click="pickSkin(s)"
+        v-for="c in CAMOS"
+        :key="c.id || 'std'"
+        class="camo-cell"
+        :class="{ on: selCamo === c.id }"
+        :disabled="locked"
+        :title="c.name"
+        @click="pickCamo(c.id)"
       >
-        <PzIcon v-if="!profile.skins.includes(s.id)" name="lock" :size="9" color="#1d1604" />
+        <TankImg :tank-id="tank.id" :camo="c.id" :size="40" :rotate="180" />
+        <span class="camo-lbl">{{ c.short }}</span>
       </button>
     </div>
 
@@ -289,7 +273,6 @@ function buyPreviewed() {
   justify-content: space-between;
   gap: 8px;
   padding: 2px 14px 0;
-  min-height: 40px; /* резерв под кнопку покупки — ряд точек не прыгает при примерке */
   flex-shrink: 0;
 }
 .camo-dots {
@@ -300,35 +283,37 @@ function buyPreviewed() {
   overflow-x: auto; /* много скинов — горизонтальный скролл, ряд не ломается */
   flex-shrink: 0;
 }
-.skin-dot {
-  width: 20px;
-  height: 20px;
+.camo-cell {
   flex-shrink: 0;
-  border-radius: 50%;
-  border: 1.5px solid rgba(0, 0, 0, 0.5);
-  cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  opacity: 0.85;
+  gap: 1px;
+  padding: 4px 6px 3px;
+  border-radius: 9px;
+  border: 1.5px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.32);
+  cursor: pointer;
+  opacity: 0.9;
 }
-.skin-dot.on {
+.camo-cell.on {
   border-color: var(--amber);
-  box-shadow: 0 0 8px rgba(242, 165, 12, 0.6);
+  background: rgba(242, 165, 12, 0.12);
+  box-shadow: 0 0 8px rgba(242, 165, 12, 0.4);
   opacity: 1;
 }
-.skin-dot.fit {
-  border-color: var(--ink);
-  box-shadow: 0 0 8px rgba(232, 230, 218, 0.5);
-  opacity: 1;
+.camo-cell:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
-.buy-skin {
-  padding: 5px 10px;
-  font-size: 10px;
-  gap: 4px;
-  border-color: var(--amber);
+.camo-lbl {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+}
+.camo-cell.on .camo-lbl {
   color: var(--amber);
-  animation: pz-slide-up 0.2s ease;
 }
 .tank-wrap {
   position: absolute;

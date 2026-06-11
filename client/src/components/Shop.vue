@@ -2,7 +2,7 @@
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin, syncProfile, isPremium, premiumDaysLeft } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft } from '../store.js'
 import { apiBuy } from '../api.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
@@ -14,9 +14,9 @@ import PzIcon from './ui/PzIcon.vue'
 const emit = defineEmits(['go'])
 
 const CRATES = [
-  { id: 'c1', name: 'Полевой ящик', sub: '600 кредитов · шанс на камуфляж 10%', icon: 'crate_field', costTokens: 5, gain: 600, drop: 0.1 },
-  { id: 'c2', name: 'Офицерский ящик', sub: '1 800 кредитов · камуфляж 35%', icon: 'crate_officer', costTokens: 12, gain: 1800, drop: 0.35 },
-  { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · камуфляж гарантирован', icon: 'crate_general', costTokens: 25, gain: 4500, drop: 1 },
+  { id: 'c1', name: 'Полевой ящик', sub: '600 кредитов · шанс на бонус жетонов 10%', icon: 'crate_field', costTokens: 5, gain: 600, drop: 0.1, bonus: 3 },
+  { id: 'c2', name: 'Офицерский ящик', sub: '1 800 кредитов · бонус жетонов 35%', icon: 'crate_officer', costTokens: 12, gain: 1800, drop: 0.35, bonus: 5 },
+  { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · бонус жетонов гарантирован', icon: 'crate_general', costTokens: 25, gain: 4500, drop: 1, bonus: 8 },
 ]
 const CREDIT_PACKS = [
   { id: 'p1', amount: 1000, price: '50 ⭐' },
@@ -44,17 +44,15 @@ function buyCrate(c) {
     return
   }
   addRewards(c.gain, 0)
-  let skin = null
+  // камуфляжи теперь бесплатные и на каждый танк (в ангаре) — ящик даёт
+  // кредиты + шанс на бонус жетонов
   let tokens = 0
   if (Math.random() < c.drop) {
-    skin = grantRandomSkin()
-    if (!skin) {
-      tokens = 3 // камуфляжи собраны — компенсация жетонами
-      addRewards(0, tokens)
-    }
+    tokens = c.bonus || 3
+    addRewards(0, tokens)
   }
   haptic('success') // вскрытие ящика — приятная отдача
-  reveal.value = { name: c.name, credits: c.gain, skin, tokens }
+  reveal.value = { name: c.name, credits: c.gain, skin: null, tokens }
 }
 // паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
 // Без BOT_TOKEN сервер начисляет сразу (dev-режим).

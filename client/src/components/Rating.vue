@@ -4,13 +4,14 @@
 // Соперники пока фейковые вокруг моего рейтинга (бэкенда нет) — но
 // стабильные между заходами, чтобы таблица не скакала.
 import { computed, ref, onMounted } from 'vue'
-import { profile, setCustomName, syncProfile, serverConfig } from '../store.js'
-import { RATING_RIVALS, RENAME_COST_STARS } from '../game/meta.js'
+import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft } from '../store.js'
+import { RATING_RIVALS, RENAME_COST_STARS, MEDALS } from '../game/meta.js'
 import { apiRename, apiLeaderboard, apiPlayer } from '../api.js'
 import { haptic } from '../tg.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PlayerCard from './PlayerCard.vue'
+import Medal from './ui/Medal.vue'
 
 const emit = defineEmits(['go'])
 const tab = ref(0)
@@ -81,9 +82,10 @@ const board = computed(() => {
       rating: p.rating,
       winrate: p.battles ? Math.round((p.wins / p.battles) * 100) : 0,
       you: p.name === profile.name,
+      premium: p.name === profile.name ? isPremium() : !!p.premium, // ★ прем-игрок
       live: true,
     }))
-    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.rating, you: true, live: false }) // я вне топа
+    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.rating, you: true, premium: isPremium(), live: false }) // я вне топа
     return rows
   }
   // фоллбэк: детерминированные «соперники» вокруг моего рейтинга
@@ -94,7 +96,7 @@ const board = computed(() => {
     const delta = ((h % 21) - 10) * 18 + (i - RATING_RIVALS.length / 2) * 9
     return { name, rating: Math.max(120, Math.round(mine + delta)), you: false, live: false }
   })
-  rows.push({ name: profile.name, rating: mine, you: true, live: false })
+  rows.push({ name: profile.name, rating: mine, you: true, premium: isPremium(), live: false })
   rows.sort((a, b) => b.rating - a.rating)
   return rows
 })
@@ -123,8 +125,12 @@ function openMe() {
     kills: profile.stats.kills,
     tank: profile.selectedTank,
     favoriteTank: null,
+    medals: { ...profile.medals },
+    premium: isPremium(),
   }
 }
+// витрина медалей: весь каталог, полученные — ярко со счётчиком, остальные тусклые
+const medalShelf = computed(() => MEDALS.map((d) => ({ def: d, count: profile.medals[d.id] || 0 })))
 const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
 // турнир активен (вкладка ТУРНИРЫ + включён в админке)
 const tournamentLive = computed(() => tab.value === 3 && serverConfig.tournaments)
@@ -172,9 +178,14 @@ const fmtTime = (t) => {
       <section v-if="tab === 0">
         <div class="pz-stencil-h">ПОЗЫВНОЙ</div>
         <div class="pz-plate" style="margin-top: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 10px">
-          <span class="pz-display" style="flex: 1; font-size: 18px">{{ profile.name }}</span>
+          <span class="pz-display" style="font-size: 18px" :style="{ color: isPremium() ? 'var(--amber-hi)' : 'var(--ink)' }">
+            <span v-if="isPremium()" class="prem-crown">♛</span>{{ profile.name }}
+          </span>
+          <span v-if="isPremium()" class="prem-badge pz-pixel">ПРЕМИУМ · {{ premiumDaysLeft() }} дн</span>
+          <span style="flex: 1"></span>
           <button class="pz-btn2" style="padding: 7px 12px; font-size: 11px" :disabled="renaming" @click="rename">Сменить · {{ RENAME_COST_STARS }} ⭐</button>
         </div>
+        <button v-if="!isPremium()" class="prem-cta pz-display" @click="emit('go', 'shop')">★ ОФОРМИТЬ ПРЕМИУМ — бонусы к опыту и кредитам</button>
       </section>
 
       <!-- моя карточка (тап — открыть карточку профиля) -->
@@ -193,6 +204,17 @@ const fmtTime = (t) => {
             <div class="cell"><b class="pz-display">{{ profile.stats.wins }}</b><span>побед</span></div>
             <div class="cell"><b class="pz-display">{{ winrate }}%</b><span>винрейт</span></div>
             <div class="cell"><b class="pz-display">{{ profile.stats.kills }}</b><span>фрагов</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- витрина медалей -->
+      <section v-if="tab === 0">
+        <div class="pz-stencil-h">МЕДАЛИ <span style="color: var(--amber)">{{ medalsEarnedCount() }}</span><span style="color: var(--ink-faint)">/{{ medalsTotal() }}</span></div>
+        <div class="medal-shelf">
+          <div v-for="m in medalShelf" :key="m.def.id" class="shelf-item" :title="m.def.desc">
+            <Medal :medal="m.def" :count="m.count" :size="46" :locked="m.count === 0" />
+            <div class="shelf-name" :class="{ off: m.count === 0 }">{{ m.def.name }}</div>
           </div>
         </div>
       </section>
@@ -221,7 +243,9 @@ const fmtTime = (t) => {
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
           <div v-for="(r, i) in board" :key="r.name + '-' + i" class="row" :class="{ you: r.you, tappable: r.live }" @click="openPlayer(r)">
             <span class="pz-pixel place" :style="{ color: i < 3 ? 'var(--amber)' : 'var(--ink-faint)' }">{{ i + 1 }}</span>
-            <span class="lb-name" :style="{ color: r.you ? 'var(--amber)' : 'var(--ink)' }">{{ r.name }}</span>
+            <span class="lb-name" :style="{ color: r.premium ? 'var(--amber-hi)' : r.you ? 'var(--amber)' : 'var(--ink)' }">
+              <span v-if="r.premium" class="prem-crown" title="Премиум">♛</span>{{ r.name }}
+            </span>
             <span v-if="r.live" style="font-size: 10.5px; color: var(--ink-dim); font-weight: 600; margin-right: 6px">{{ r.winrate }}%</span>
             <span class="pz-display" style="font-size: 13.5px">{{ r.rating }}</span>
           </div>
@@ -339,10 +363,63 @@ const fmtTime = (t) => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.prem-crown {
+  color: var(--amber-hi);
+  margin-right: 4px;
+  text-shadow: 0 0 6px rgba(242, 165, 12, 0.6);
+}
+.prem-badge {
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi), var(--amber));
+  padding: 3px 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.prem-cta {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  background: rgba(242, 165, 12, 0.08);
+  border: 1px solid var(--amber);
+  border-radius: 8px;
+  cursor: pointer;
+}
 .place {
   font-size: 9px;
   width: 22px;
   flex-shrink: 0;
   text-align: center;
+}
+.medal-shelf {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px 6px;
+  margin-top: 12px;
+  padding: 14px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.shelf-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.shelf-name {
+  margin-top: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--ink);
+}
+.shelf-name.off {
+  color: var(--ink-faint);
+  opacity: 0.7;
 }
 </style>

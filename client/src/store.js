@@ -36,6 +36,8 @@ import {
   CREW_PERK_MAX,
   crewPerkCost,
   tasksOfDay,
+  MEDALS,
+  MEDAL_BY_ID,
 } from './game/meta.js'
 
 const KEY = 'pz.state.v1'
@@ -75,6 +77,8 @@ if (!Array.isArray(profile.history)) profile.history = [] // последние 
 if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } // экипаж один на все танки
 if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {} // перки специалистов { memberId: 0..3 }
 if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {} // опыт по веткам наций
+if (!profile.medals || typeof profile.medals !== 'object') profile.medals = {} // { medalId: счётчик получений }
+if (!profile.camos || typeof profile.camos !== 'object') profile.camos = {} // { tankId: camoId } — камуфляж на танк
 if (typeof profile.name !== 'string' || !profile.name) profile.name = 'Боец'
 if (typeof profile.nameCustom !== 'boolean') profile.nameCustom = false // имя сменено платно (за звёзды)
 if (!Array.isArray(profile.skins)) profile.skins = ['std'] // купленные камуфляжи
@@ -290,6 +294,13 @@ export function setSkin(skinId) {
 }
 
 // дроп случайного непринадлежащего камуфляжа (из ящиков); null — все собраны
+// ---------- камуфляж на танк (3 схемы, бесплатная покраска) ----------
+export const tankCamo = (tankId) => profile.camos[tankId] || ''
+export function setCamo(tankId, camoId) {
+  if (camoId) profile.camos[tankId] = camoId
+  else delete profile.camos[tankId]
+}
+
 export function grantRandomSkin() {
   const pool = SKINS.filter((s) => s.id !== 'std' && !profile.skins.includes(s.id))
   if (!pool.length) return null
@@ -347,6 +358,51 @@ export function addBattleResult(result, kills = 0, extra = {}) {
   })
   if (profile.history.length > 12) profile.history.length = 12
 }
+
+// ---------- медали ----------
+// b — итоги одного боя: { kills, damage, blocked, lightKills, survived, victory }
+function battleMedalIds(b) {
+  return MEDALS.filter((m) => m.kind === 'battle')
+    .filter((m) => {
+      if (m.metric === 'triumph') return !!b.survived && !!b.victory
+      if (m.metric === 'survived') return !!b.survived
+      return (+b[m.metric] || 0) >= m.need
+    })
+    .map((m) => m.id)
+}
+// карьерные рубежи, достигнутые по текущей суммарной статистике
+function careerMedalIds() {
+  const s = profile.stats
+  return MEDALS.filter((m) => m.kind === 'career')
+    .filter((m) => (+s[m.metric] || 0) >= m.need)
+    .map((m) => m.id)
+}
+// какие медали заработаны в этом бою (для донесения), с флагом «впервые».
+// Боевые показываем за каждый бой; карьерные — только в момент взятия рубежа.
+// Считается ДО bankMedals, поэтому profile.medals ещё отражает состояние до боя.
+export function battleEarnedMedals(b) {
+  const battle = battleMedalIds(b).map((id) => ({ id, isNew: !profile.medals[id] }))
+  const career = careerMedalIds()
+    .filter((id) => !profile.medals[id])
+    .map((id) => ({ id, isNew: true }))
+  return [...battle, ...career]
+}
+// начисляет медали по итогам боя: счётчик +1, награда за ПЕРВОЕ получение каждой
+export function bankMedals(b) {
+  const earned = battleEarnedMedals(b)
+  for (const e of earned) {
+    const first = !profile.medals[e.id]
+    profile.medals[e.id] = (profile.medals[e.id] || 0) + 1
+    const r = MEDAL_BY_ID[e.id]?.reward
+    if (first && r) addRewards(r.credits || 0, r.tokens || 0)
+  }
+  return earned
+}
+// витрина: все полученные медали со счётчиком, в порядке каталога
+export const ownedMedals = () =>
+  MEDALS.filter((m) => (profile.medals[m.id] || 0) > 0).map((m) => ({ ...m, count: profile.medals[m.id] }))
+export const medalsTotal = () => MEDALS.length
+export const medalsEarnedCount = () => MEDALS.filter((m) => (profile.medals[m.id] || 0) > 0).length
 
 // ---------- ежедневный вход ----------
 const dayStr = (d = new Date()) => d.toISOString().slice(0, 10)

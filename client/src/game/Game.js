@@ -21,11 +21,6 @@ import {
   classToRadians,
 } from './config.js'
 import { MAPS, MAP_BY_ID } from './maps.js'
-import { SKIN_BY_ID } from './meta.js'
-import { applyCamo } from './camo.js'
-
-// камуфляж с узором (для скинов-оттенков и неизвестных id — null)
-const camoOf = (skinId) => (skinId && SKIN_BY_ID[skinId] ? SKIN_BY_ID[skinId].camo || null : null)
 
 // Палитры команд: юг всегда воюет синим, север — красным; чья из них «наша» —
 // решает жребий стороны (side). Игрок при этом остаётся янтарным.
@@ -175,6 +170,8 @@ export class Game {
     this.damageDealt = 0
     this.damageLog = new Map() // по-целевой лог урона игрока (лист «По целям»)
     this.score = { ally: 0, enemy: 0 }
+    this.bonusXp = 0 // доп. опыт за засвет/захват (плюсуется к награде боя)
+    this.spotScored = new Set() // id врагов, за чей засвет уже дали опыт (без спама)
 
     // матч (Фаза 4)
     this.matchTime = MATCH_TIME
@@ -223,6 +220,7 @@ export class Game {
       maxHp: cls.hp,
       damage: Math.round(cls.damage * BOT_DMG_MULT),
       reload: cls.reload,
+      vision: cls.vision, // обзор/дальность стрельбы = как у игрока на этом классе (не всевидящие)
       speed: cls.maxSpeed * BOT_SPEED_MULT,
       accel: (cls.accel || cls.maxSpeed * 1.1) * BOT_SPEED_MULT,
       vel: 0, // текущая скорость — боты разгоняются, а не телепортируются
@@ -299,15 +297,16 @@ export class Game {
     })
     if (this.playerTankId && this.tex[`unit_${this.playerTankId}`]) {
       this.tex.player_tank = this.tex[`unit_${this.playerTankId}`]
-      // узорный камуфляж игрока печём отдельно: бот на той же машине
-      // останется в заводской окраске
-      const camo = camoOf(this.playerSkin)
-      const raw = unitTex[idList.indexOf(this.playerTankId)]
-      if (camo && raw && raw.status === 'fulfilled') {
-        const c = this._chromaCanvas(raw.value)
-        applyCamo(c.getContext('2d'), c.width, camo)
-        this.tex.player_tank = this._bake(Texture.from(c))
-        this.playerCamoBaked = true
+      // per-tank камуфляж игрока: отдельный перекрашенный AI-спрайт (на той же
+      // магенте) → кеим как player_tank; бот на той же машине остаётся заводским
+      if (this.playerCamo) {
+        try {
+          const camTex = await Assets.load(`/sprites/camo/${this.playerTankId}_${this.playerCamo}.png`)
+          this.tex.player_tank = this._chromaKey(camTex)
+          this.playerCamoBaked = true // тинт поверх не накладываем
+        } catch {
+          /* камо-спрайт ещё не сгенерён — заводская окраска */
+        }
       }
     }
 
@@ -622,6 +621,9 @@ export class Game {
   _visionBlocked(x1, y1, x2, y2) {
     for (const o of this.obstacles) {
       if (o.kind === 'water') continue
+      // куст, в котором СТОИТ наблюдатель, не слепит его — видно наружу (WoT-«свет
+      // из кустов»); куст у цели её по-прежнему скрывает (он далеко от x1,y1)
+      if (o.kind === 'bush' && Math.hypot(o.x - x1, o.y - y1) <= o.r) continue
       if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
     }
     return false
@@ -845,7 +847,13 @@ export class Game {
     // союзники не «светят» врагов на экран. Мёртв — режим наблюдения, видно всех.
     for (const b of this.bots) {
       if (b.team !== TEAM.ENEMY) continue
-      b.spotted = b.alive && (this.hp <= 0 || this._spottedByPlayer(b))
+      const wasVisible = this.hp > 0 && this._spottedByPlayer(b)
+      b.spotted = b.alive && (this.hp <= 0 || wasVisible)
+      // опыт за РАЗВЕДКУ: первый личный засвет каждого живого врага (без спама)
+      if (wasVisible && b.alive && !this.spotScored.has(b.id)) {
+        this.spotScored.add(b.id)
+        this._awardXp(12, 'ЗАСВЕТ')
+      }
     }
 
     if (!this.ready) {
@@ -945,8 +953,11 @@ export class Game {
     if (this.capTimer >= CAP_TICK) {
       this.capTimer -= CAP_TICK
       for (const c of this.caps) {
-        if (c.owner === TEAM.ALLY) this.score.ally++
-        else if (c.owner === TEAM.ENEMY) this.score.enemy++
+        if (c.owner === TEAM.ALLY) {
+          this.score.ally++
+          // опыт за УДЕРЖАНИЕ: игрок жив и стоит на нашей точке в момент тика
+          if (this.hp > 0 && Math.hypot(this.tank.x - c.x, this.tank.y - c.y) <= c.r) this._awardXp(15, 'ЗАХВАТ')
+        } else if (c.owner === TEAM.ENEMY) this.score.enemy++
       }
     }
   }
@@ -982,6 +993,12 @@ export class Game {
     const d = Math.hypot(enemy.x - this.tank.x, enemy.y - this.tank.y)
     if (d <= PROX_SPOT) return true
     return d <= this._vision() && !this._visionBlocked(this.tank.x, this.tank.y, enemy.x, enemy.y)
+  }
+
+  // доп. опыт за действие (засвет/захват) + всплывающая подпись в HUD
+  _awardXp(amount, label) {
+    this.bonusXp += amount
+    if (this.onReward) this.onReward({ text: label, xp: amount })
   }
 
   _moveTank(dt) {
@@ -1035,12 +1052,15 @@ export class Game {
 
     // ближайший живой враг своей команды
     const foes = this._enemiesOf(b.team)
+    const vision = b.vision || ai.vision // обзор = как у игрока на классе
+    const ideal = vision * 0.5 // держит дистанцию ВДВОЕ ближе обзора (близкий бой)
+    const fireRange = vision * 0.66 // стреляет только сблизившись — не лупит издалека
     let target = null
     let bestD = Infinity
     for (const f of foes) {
       const d = Math.hypot(f.x - b.x, f.y - b.y)
-      // боты не всевидящие: цель только в пределах обзора ИИ
-      if (d <= ai.vision && d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
+      // боты не всевидящие: цель только в пределах своего обзора и при прямой видимости
+      if (d <= vision && d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
         bestD = d
         target = f
       }
@@ -1064,19 +1084,22 @@ export class Game {
 
       let move = 0
       if (b.hp < b.maxHp * 0.3) move = -1 // мало хп — отступаем, продолжая отстреливаться
-      else if (bestD > ai.idealRange * 1.15) move = 1
-      else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
+      else if (bestD > ideal * 1.1) move = 1 // далеко — едет на сближение
+      else if (bestD < ideal * 0.55) move = -0.5 // совсем вплотную — чуть назад
       wantMove = move !== 0
 
       this._botDrive(b, move, dt)
 
       const fireDiff = angleDiff(ang, b.hull)
       const inArc = Math.abs(fireDiff) <= (ai.sectorHalfDeg * Math.PI) / 180
-      if (inArc && b.fireCd <= 0) {
+      // огонь только в ближней зоне (≤ fireRange) — издалека бот едет, а не стреляет
+      if (inArc && b.fireCd <= 0 && bestD <= fireRange) {
         b.fireCd = b.reload
         const col = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).muzzle
         this.muzzles.push({ x: b.x + Math.cos(b.hull) * 34, y: b.y + Math.sin(b.hull) * 34, a: b.hull, age: 0, color: col })
-        const hit = Math.random() < ai.hitChance
+        // точность падает с дистанцией: в упор полная, у края дальности стрельбы ~0.45
+        const accFalloff = 1 - 0.55 * Math.min(1, bestD / fireRange)
+        const hit = Math.random() < ai.hitChance * accFalloff
         let pierced = false
         if (hit) {
           // броня цели может срикошетить и ботский снаряд
@@ -1181,6 +1204,7 @@ export class Game {
     return {
       kills: this.kills,
       lightKills: this.lightKills,
+      bonusXp: Math.round(this.bonusXp),
       blocked: this.blocked,
       deaths: this.deaths,
       shots: this.shots,

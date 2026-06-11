@@ -3,9 +3,10 @@
 // как в макете — «Сводка» и «По целям» (по-целевой лог урона из движка).
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref } from 'vue'
-import { profile } from '../store.js'
-import { TANK_BY_ID, NATIONS, nationOf, RATING_DELTA } from '../game/meta.js'
+import { profile, battleEarnedMedals } from '../store.js'
+import { TANK_BY_ID, NATIONS, nationOf, RATING_DELTA, MEDAL_BY_ID } from '../game/meta.js'
 import PzIcon from './ui/PzIcon.vue'
+import Medal from './ui/Medal.vue'
 
 const props = defineProps({
   // снапшот матча из Battle: result/kills/deaths/damageDealt/accuracy/allyScore/enemyScore
@@ -38,6 +39,19 @@ const rows = computed(() => [
   ['Урон по противнику', props.state.damageDealt],
   ['Точность', props.state.accuracy + '%'],
 ])
+// медали, заработанные в этом бою (считаются до начисления — флаг «впервые» точен)
+const medals = computed(() =>
+  battleEarnedMedals({
+    kills: props.reward.kills,
+    damage: props.reward.damage,
+    blocked: props.reward.blocked,
+    lightKills: props.reward.lightKills,
+    survived: props.reward.survived,
+    victory: props.reward.victory,
+  })
+    .map((e) => ({ ...e, def: MEDAL_BY_ID[e.id] }))
+    .filter((e) => e.def),
+)
 </script>
 
 <template>
@@ -101,6 +115,17 @@ const rows = computed(() => [
           <span class="pz-display" style="font-size: 16px">{{ profile.stats.rating }}</span>
           <span class="pz-display" style="font-size: 14px" :style="{ color: ratingDelta >= 0 ? '#2f7a1f' : '#9a1f10' }">{{ ratingDelta >= 0 ? '+' : '' }}{{ ratingDelta }}</span>
         </div>
+
+        <!-- медали за бой -->
+        <div v-if="medals.length" class="medals-strip">
+          <div class="pz-display medals-cap">ПОЛУЧЕНЫ МЕДАЛИ</div>
+          <div class="medals-row">
+            <div v-for="m in medals" :key="m.id" class="medal-item">
+              <Medal :medal="m.def" :size="46" :is-new="m.isNew" />
+              <div class="medal-name">{{ m.def.name }}</div>
+            </div>
+          </div>
+        </div>
       </template>
 
       <template v-else>
@@ -134,6 +159,42 @@ const rows = computed(() => [
 </template>
 
 <style scoped>
+/* медали за бой — на крафт-бумаге донесения */
+.medals-strip {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1.5px dashed rgba(33, 29, 18, 0.35);
+}
+.medals-cap {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-align: center;
+  color: var(--paper-ink);
+  opacity: 0.6;
+  margin-bottom: 10px;
+}
+.medals-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 14px;
+}
+.medal-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 62px;
+}
+.medal-name {
+  margin-top: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--paper-ink);
+  opacity: 0.82;
+}
+
 /* таблица «По бойцам» — на крафт-бумаге донесения */
 .sb-row {
   display: flex;

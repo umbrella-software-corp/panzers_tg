@@ -9,7 +9,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, bankBattleXp, bankTaskProgress, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig } from './store.js'
+import { profile, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig } from './store.js'
 import { randomMap } from './game/maps.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
@@ -73,6 +73,16 @@ function bankBattle(reward) {
     blocked: reward.blocked,
     wins: reward.victory ? 1 : 0,
     battles: 1,
+  })
+  // медали по итогам боя (награда за первое получение начисляется внутри);
+  // карьерные рубежи считаются от уже обновлённой addBattleResult статистики
+  bankMedals({
+    kills: reward.kills,
+    damage: reward.damage,
+    blocked: reward.blocked,
+    lightKills: reward.lightKills,
+    survived: reward.survived,
+    victory: reward.victory,
   })
 }
 function exitBattle(reward) {

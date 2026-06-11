@@ -11,14 +11,24 @@ const props = defineProps({
   size: { type: Number, default: 132 },
   rotate: { type: Number, default: 180 },
   tint: { type: Number, default: 0xffffff }, // камуфляж-оттенок (фоллбэк)
-  skin: { type: String, default: '' }, // id скина — узорный камуфляж поверх
+  skin: { type: String, default: '' }, // id скина — узорный камуфляж поверх (старое)
+  camo: { type: String, default: '' }, // per-tank камуфляж — отдельный AI-спрайт
 })
 
 const canvas = ref(null)
 
 function render() {
   const img = new Image()
-  img.src = `/sprites/tanks/${props.tankId}.png`
+  // камуфляж — отдельный перекрашенный спрайт на той же магенте; кеится так же.
+  // при ошибке загрузки (камо ещё не сгенерён) откатываемся на базовый спрайт.
+  const usingCamo = !!props.camo
+  img.src = usingCamo ? `/sprites/camo/${props.tankId}_${props.camo}.png` : `/sprites/tanks/${props.tankId}.png`
+  img.onerror = () => {
+    if (usingCamo) {
+      img.onerror = null
+      img.src = `/sprites/tanks/${props.tankId}.png`
+    }
+  }
   img.onload = () => {
     const c = canvas.value
     if (!c) return
@@ -30,11 +40,12 @@ function render() {
     ctx.drawImage(img, 0, 0, S, S)
     const d = ctx.getImageData(0, 0, S, S)
     const p = d.data
-    const camo = (SKIN_BY_ID[props.skin] || {}).camo
+    // при per-tank камуфляже спрайт уже перекрашен — старый узор/оттенок не нужны
+    const camo = usingCamo ? null : (SKIN_BY_ID[props.skin] || {}).camo
     const tr = (props.tint >> 16) & 0xff
     const tg = (props.tint >> 8) & 0xff
     const tb = props.tint & 0xff
-    const tinted = !camo && props.tint !== 0xffffff
+    const tinted = !usingCamo && !camo && props.tint !== 0xffffff
     for (let i = 0; i < p.length; i += 4) {
       if (p[i] > p[i + 1] * 1.5 && p[i + 2] > p[i + 1] * 1.2) {
         p[i + 3] = 0
@@ -50,7 +61,7 @@ function render() {
 }
 
 onMounted(render)
-watch(() => [props.tankId, props.tint, props.skin], render)
+watch(() => [props.tankId, props.tint, props.skin, props.camo], render)
 </script>
 
 <template>
