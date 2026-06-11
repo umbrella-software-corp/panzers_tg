@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin, syncProfile } from '../store.js'
 import { apiBuy } from '../api.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
+import { camoCss } from '../game/camo.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PzIcon from './ui/PzIcon.vue'
@@ -34,24 +35,24 @@ function showToast(text, bad = false) {
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => (toast.value = null), 1800)
 }
+// вскрытие ящика: показываем окно-награду с тем, ЧТО именно выпало
+const reveal = ref(null) // { name, credits, skin, tokens }
 function buyCrate(c) {
   if (!spendTokens(c.costTokens)) {
     showToast('Не хватает жетонов', true)
     return
   }
   addRewards(c.gain, 0)
-  // дроп камуфляжа: все собраны — компенсация жетонами
+  let skin = null
+  let tokens = 0
   if (Math.random() < c.drop) {
-    const skin = grantRandomSkin()
-    if (skin) {
-      showToast(`${c.name}: выпал камуфляж «${skin.name}»!`)
-      return
+    skin = grantRandomSkin()
+    if (!skin) {
+      tokens = 3 // камуфляжи собраны — компенсация жетонами
+      addRewards(0, tokens)
     }
-    addRewards(0, 3)
-    showToast(`${c.name}: камуфляжи собраны, +3 жетона!`)
-    return
   }
-  showToast(`${c.name} — получено!`)
+  reveal.value = { name: c.name, credits: c.gain, skin, tokens }
 }
 // паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
 // Без BOT_TOKEN сервер начисляет сразу (dev-режим).
@@ -184,11 +185,86 @@ const fmt = (n) => n.toLocaleString('ru-RU')
       {{ toast.text }}
     </div>
 
+    <!-- окно-награда: что именно выпало из ящика -->
+    <transition name="pz-fade">
+      <div v-if="reveal" class="reveal-overlay" @click.self="reveal = null">
+        <div class="reveal-card pz-plate pz-brackets" style="--bk: var(--amber)">
+          <div class="pz-display" style="font-size: 17px; letter-spacing: 0.06em; text-align: center">{{ reveal.name }}</div>
+          <div class="pz-pixel" style="font-size: 8px; color: var(--amber); margin-top: 6px; letter-spacing: 0.14em; text-align: center">ВЫ ПОЛУЧИЛИ</div>
+          <div class="reveal-items">
+            <div class="reveal-item">
+              <PzIcon name="coin" :size="20" />
+              <span class="pz-display" style="font-size: 18px">+{{ reveal.credits.toLocaleString('ru-RU') }}</span>
+              <span style="color: var(--ink-dim); font-size: 12px">кредитов</span>
+            </div>
+            <div v-if="reveal.skin" class="reveal-item">
+              <span class="reveal-swatch" :style="{ background: camoCss(reveal.skin) }"></span>
+              <span class="pz-display" style="font-size: 15px; flex: 1">Камуфляж «{{ reveal.skin.name }}»</span>
+              <span class="pz-pixel" style="font-size: 7px; color: var(--green)">НОВЫЙ</span>
+            </div>
+            <div v-if="reveal.tokens" class="reveal-item">
+              <PzIcon name="token" :size="18" />
+              <span class="pz-display" style="font-size: 16px">+{{ reveal.tokens }}</span>
+              <span style="color: var(--ink-dim); font-size: 12px">жетона · камуфляжи собраны</span>
+            </div>
+          </div>
+          <button class="pz-cta" style="width: 100%; margin-top: 14px" @click="reveal = null">Забрать</button>
+        </div>
+      </div>
+    </transition>
+
     <BottomNav screen="shop" @go="emit('go', $event)" />
   </div>
 </template>
 
 <style scoped>
+.reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 9, 14, 0.72);
+  backdrop-filter: blur(4px);
+}
+.reveal-card {
+  width: 100%;
+  max-width: 320px;
+  padding: 20px 18px;
+  animation: pz-pop 0.25s ease;
+}
+.reveal-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.reveal-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line-strong);
+}
+.reveal-swatch {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.5);
+}
+.pz-fade-enter-active,
+.pz-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.pz-fade-enter-from,
+.pz-fade-leave-to {
+  opacity: 0;
+}
 .pack {
   padding: 12px 6px 10px;
   display: flex;

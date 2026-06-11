@@ -4,7 +4,7 @@
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref } from 'vue'
 import { profile } from '../store.js'
-import { TANK_BY_ID, NATIONS, nationOf } from '../game/meta.js'
+import { TANK_BY_ID, NATIONS, nationOf, RATING_DELTA } from '../game/meta.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const props = defineProps({
@@ -25,6 +25,8 @@ const crewXp = computed(() => Math.round(props.reward.xp / 2))
 const branchXp = computed(() => props.reward.xp - crewXp.value)
 const branchLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(profile.selectedTank)) || {}).label || '')
 const won = computed(() => props.state.result === 'victory')
+// изменение боевого рейтинга за этот бой (rating уже обновлён в store)
+const ratingDelta = computed(() => RATING_DELTA[props.state.result] ?? RATING_DELTA.defeat)
 const stamp = computed(() =>
   props.state.result === 'victory' ? 'ПОБЕДА' : props.state.result === 'defeat' ? 'ПОРАЖЕНИЕ' : 'НИЧЬЯ',
 )
@@ -90,6 +92,12 @@ const rows = computed(() => [
         <!-- куда ушёл опыт -->
         <div style="font-size: 11.5px; font-weight: 600; opacity: 0.75; text-align: center; margin-top: 8px">
           ветка {{ branchLabel }} +{{ branchXp }} ОП · экипаж +{{ crewXp }} ОП
+        </div>
+        <!-- изменение боевого рейтинга -->
+        <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1.5px dashed rgba(33, 29, 18, 0.35)">
+          <span style="font-size: 12.5px; font-weight: 600; opacity: 0.7">Боевой рейтинг</span>
+          <span class="pz-display" style="font-size: 16px">{{ profile.stats.rating }}</span>
+          <span class="pz-display" style="font-size: 14px" :style="{ color: ratingDelta >= 0 ? '#2f7a1f' : '#9a1f10' }">{{ ratingDelta >= 0 ? '+' : '' }}{{ ratingDelta }}</span>
         </div>
       </template>
 
