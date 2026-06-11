@@ -153,7 +153,7 @@ const fmtTime = (t) => {
               {{ RES[h.result].label }}
             </span>
             <span style="flex: 1; font-size: 12.5px; font-weight: 600">{{ h.tank }} <span style="color: var(--ink-dim)">· {{ h.score }}</span></span>
-            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 600">{{ h.kills }} фр.</span>
+            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 600">урон {{ h.damage ?? 0 }}</span>
             <span style="font-size: 10px; color: var(--ink-faint); font-weight: 500">{{ fmtTime(h.t) }}</span>
           </div>
         </div>

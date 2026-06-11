@@ -323,6 +323,7 @@ export function addBattleResult(result, kills = 0, extra = {}) {
     t: Date.now(),
     result,
     kills,
+    damage: Math.round(extra.damage || 0),
     score: extra.score || '',
     tank: extra.tank || '',
   })

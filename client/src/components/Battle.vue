@@ -141,7 +141,7 @@ game.onState = (s) => {
     phase.value = 'result'
     if (!statsCounted) {
       statsCounted = true
-      addBattleResult(s.result, s.kills, { score: `${s.allyScore}:${s.enemyScore}`, tank: tankName.value })
+      addBattleResult(s.result, s.kills, { score: `${s.allyScore}:${s.enemyScore}`, tank: tankName.value, damage: s.damageDealt })
     }
   }
 }
@@ -271,6 +271,7 @@ function toHangar() {
     addBattleResult('defeat', state.value.kills, {
       score: `${state.value.allyScore}:${state.value.enemyScore}`,
       tank: tankName.value,
+      damage: state.value.damageDealt,
     })
   }
   emit('exit', reward.value)
@@ -370,17 +371,17 @@ onBeforeUnmount(() => {
           <div class="hp-fill" :style="{ width: hpFrac * 100 + '%', background: hpColor }"></div>
           <span class="pz-display hp-text">{{ tankName }} · {{ state.playerHp }} HP</span>
         </div>
+
+        <!-- индикаторы модулей: краснеют с отсчётом починки при крите -->
+        <div v-show="phase === 'fighting'" class="modrow">
+          <div v-for="m in MOD_HUD" :key="m.id" class="modchip" :class="{ down: state.crippled[m.id] > 0 }">
+            <PzIcon :name="m.icon" :size="14" />
+            <span v-if="state.crippled[m.id] > 0" class="mt">{{ state.crippled[m.id] }}</span>
+          </div>
+        </div>
       </div>
 
       <canvas class="minimap" ref="minimap" width="240" height="240"></canvas>
-    </div>
-
-    <!-- индикаторы модулей: краснеют с отсчётом починки при крите -->
-    <div v-show="phase === 'fighting'" class="modrow">
-      <div v-for="m in MOD_HUD" :key="m.id" class="modchip" :class="{ down: state.crippled[m.id] > 0 }">
-        <PzIcon :name="m.icon" :size="14" />
-        <span v-if="state.crippled[m.id] > 0" class="mt">{{ state.crippled[m.id] }}</span>
-      </div>
     </div>
 
     <!-- захват базы: отсчёт 0-100 -->
@@ -669,13 +670,10 @@ onBeforeUnmount(() => {
 
 /* индикаторы критов */
 .modrow {
-  position: absolute;
-  top: calc(var(--safe-top) + 76px);
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   gap: 6px;
-  z-index: 3;
+  justify-content: center;
+  margin-top: 1px;
   pointer-events: none;
 }
 .modchip {
