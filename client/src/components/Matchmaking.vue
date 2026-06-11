@@ -32,6 +32,7 @@ const tierRange = computed(() => {
   const t = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
   return `${Math.max(1, t - 1)}–${Math.min(MAX_TIER, t + 1)}`
 })
+const modeLabel = computed(() => (profile.battleMode === 'annihilation' ? 'НА УНИЧТОЖЕНИЕ' : 'ЗАХВАТ ТОЧЕК'))
 const slots = computed(() => [...Array(TEAM)].map((_, i) => (i === 0 ? { name: profile.name || 'ВЫ', kind: 'you' } : allies.value[i - 1] || null)))
 const liveTotal = computed(() => 1 + allies.value.filter((a) => a.kind !== 'bot').length)
 const botTotal = computed(() => allies.value.filter((a) => a.kind === 'bot').length)
@@ -82,6 +83,7 @@ onMounted(async () => {
       skin: profile.skin,
       battles: profile.stats.battles,
       party: party.token, // взвод: одинаковый токен → одна комната на сервере
+      mode: profile.battleMode, // режим боя → сервер ищет комнату того же режима
       stats: JSON.parse(JSON.stringify(loadoutStats(profile.selectedTank))),
       onLobby: (msg) => {
         // живые игроки комнаты (кроме нас) + таймер добора ботов
@@ -102,7 +104,7 @@ onMounted(async () => {
           if (gone) return
           if (client && client.stateN >= 1 && client.ws.readyState === 1) {
             gone = true
-            emit('battle', { client, mapId: msg.mapId, side: msg.youTeam, youUnit: msg.youUnit, tickHz: msg.tickHz })
+            emit('battle', { client, mapId: msg.mapId, side: msg.youTeam, youUnit: msg.youUnit, tickHz: msg.tickHz, mode: msg.mode })
           } else if (Date.now() >= deadline) {
             // сервер так и не прислал мир — честный офлайн с ботами (один бой, без отката)
             gone = true
@@ -156,6 +158,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
     </div>
     <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">
       {{ tankName }} · бой 7×7 · уровни {{ tierRange }}
+      <span class="pz-display" style="color: var(--amber); font-size: 10.5px; margin-left: 4px">· {{ modeLabel }}</span>
     </div>
     <!-- жребий офлайна; в онлайне карту и сторону объявит сервер -->
     <div v-if="online === false" style="font-size: 11.5px; font-weight: 500; padding: 2px 14px 0; display: flex; align-items: center; gap: 6px">

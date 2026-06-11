@@ -33,6 +33,12 @@ const ratingDelta = computed(() => RATING_DELTA[props.state.result] ?? RATING_DE
 const stamp = computed(() =>
   props.state.result === 'victory' ? 'ПОБЕДА' : props.state.result === 'defeat' ? 'ПОРАЖЕНИЕ' : 'НИЧЬЯ',
 )
+// строка режима+счёта: захват — «счёт A:B»; уничтожение — «уничтожение · живых A:B»
+const modeScore = computed(() =>
+  props.state.mode === 'annihilation'
+    ? `на уничтожение · живых ${props.state.alliesAlive}:${props.state.enemiesAlive}`
+    : `счёт ${props.state.allyScore}:${props.state.enemyScore}`,
+)
 const rows = computed(() => [
   ['Уничтожено машин', props.state.kills],
   ['Подбит раз', props.state.deaths],
@@ -64,7 +70,7 @@ const medals = computed(() =>
       <div class="head">
         <div class="pz-display" style="font-size: 13px; letter-spacing: 0.3em; opacity: 0.65">БОЕВОЕ ДОНЕСЕНИЕ</div>
         <div style="font-size: 11px; margin-top: 3px; opacity: 0.55; font-weight: 500">
-          экипаж · {{ tankName }} · бой 7×7 · счёт {{ state.allyScore }}:{{ state.enemyScore }}
+          экипаж · {{ tankName }} · бой 7×7 · {{ modeScore }}
         </div>
       </div>
 

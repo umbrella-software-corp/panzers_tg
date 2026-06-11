@@ -229,7 +229,9 @@ const ID_RE = /^[a-z0-9_]{1,16}$/
 
 let nextId = 1
 const rooms = new Map()
-let waitingRoom = null
+// ждущие комнаты — свои на каждый режим: игроки с разными режимами (захват/
+// уничтожение) НЕ попадают в одну комнату
+const waitingRooms = { capture: null, annihilation: null }
 // комнаты взводов по токену: игроки с одним party-токеном (= id командира) попадают
 // в ОДНУ комнату → друзья гарантированно в одном бою (одна команда живых)
 const partyRooms = new Map()
@@ -238,6 +240,7 @@ function newRoom() {
   const room = {
     id: `r${nextId++}`,
     humans: [], // { id, name, team, ws }
+    mode: 'capture', // 'capture' | 'annihilation' — задаётся первым вошедшим
     sim: null,
     timer: null,
     waitTimer: null,
@@ -250,21 +253,27 @@ function newRoom() {
   return room
 }
 
-function getJoinRoom(party) {
-  // взвод: все с одинаковым токеном — в одну комнату (своя комната на токен)
+function getJoinRoom(party, mode) {
+  // взвод: все с одинаковым токеном — в одну комнату (своя комната на токен).
+  // Режим взвода — у его первой комнаты (командир задаёт; друзья играют в нём же).
   if (party) {
     const ex = partyRooms.get(party)
     if (ex && !ex.started && ex.humans.length < TEAM_SIZE) return ex
     const nr = newRoom()
     nr.party = party
+    nr.mode = mode
     partyRooms.set(party, nr)
     return nr
   }
   // комната = ОДНА команда живых игроков (как обещает UI «ВАША КОМАНДА · X/7»);
   // враг — боты. Поэтому добираем людей до TEAM_SIZE, а не до TEAM_SIZE*2.
-  if (waitingRoom && !waitingRoom.started && waitingRoom.humans.length < TEAM_SIZE) return waitingRoom
-  waitingRoom = newRoom()
-  return waitingRoom
+  // Свой пул ожидания на каждый режим — чужие режимы не сводятся вместе.
+  const wr = waitingRooms[mode]
+  if (wr && !wr.started && wr.humans.length < TEAM_SIZE) return wr
+  const nr = newRoom()
+  nr.mode = mode
+  waitingRooms[mode] = nr
+  return nr
 }
 
 function send(ws, msg) {
@@ -289,7 +298,7 @@ function startRoom(room) {
   if (room.started) return
   room.started = true
   clearTimeout(room.waitTimer)
-  if (waitingRoom === room) waitingRoom = null
+  if (waitingRooms[room.mode] === room) waitingRooms[room.mode] = null
   if (room.party && partyRooms.get(room.party) === room) partyRooms.delete(room.party) // токен свободен для нового взвода
 
   // ВСЕ живые игроки комнаты — в ОДНУ команду (юг, team 0), как обещает экран
@@ -299,6 +308,7 @@ function startRoom(room) {
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
     mapId: map.id,
+    mode: room.mode,
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
   })
 
@@ -311,6 +321,7 @@ function startRoom(room) {
       teamSize: TEAM_SIZE,
       map: MAP_SIZE,
       mapId: map.id,
+      mode: room.mode,
       humans: room.humans.length,
       tickHz: TICK_HZ,
     })
@@ -368,7 +379,7 @@ function endRoom(room) {
   clearInterval(room.timer)
   clearTimeout(room.waitTimer)
   rooms.delete(room.id)
-  if (waitingRoom === room) waitingRoom = null
+  if (waitingRooms[room.mode] === room) waitingRooms[room.mode] = null
   if (room.party && partyRooms.get(room.party) === room) partyRooms.delete(room.party)
   // сокеты не рвём — клиент сам уходит после match-end
 }
@@ -401,15 +412,19 @@ wss.on('connection', (ws, req) => {
   let tokens = MSG_BURST
   let lastRefill = Date.now()
 
-  // токен взвода из query (?party=<id командира>) — группирует друзей в одну комнату
+  // токен взвода из query (?party=<id командира>) — группирует друзей в одну
+  // комнату; режим (?mode=annihilation) — какой бой искать (захват по умолчанию)
   let party = null
+  let mode = 'capture'
   try {
-    party = (new URL(req.url, 'http://x').searchParams.get('party') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
+    const q = new URL(req.url, 'http://x').searchParams
+    party = (q.get('party') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
+    mode = q.get('mode') === 'annihilation' ? 'annihilation' : 'capture'
   } catch {
     party = null
   }
   const id = `p${nextId++}`
-  const room = getJoinRoom(party)
+  const room = getJoinRoom(party, mode)
   const human = { id, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0 }
   room.humans.push(human)
   ws.playerId = id

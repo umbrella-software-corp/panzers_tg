@@ -23,11 +23,12 @@ const TEAM_PALETTE = {
  * с лерпом между двумя последними снапшотами.
  */
 export class NetGame {
-  constructor({ client, mapId, side = 0, youUnit = null, tickHz = 20 }) {
+  constructor({ client, mapId, side = 0, youUnit = null, tickHz = 20, mode = 'capture' }) {
     this.net = true
     this.app = new Application()
     this.client = client
     this.map = MAP_BY_ID[mapId] || MAPS[0]
+    this.mode = mode === 'annihilation' ? 'annihilation' : 'capture'
     this.side = side === 1 ? 1 : 0
     this.youUnit = youUnit
     this.tickDt = 1 / (tickHz || 20)
@@ -1070,6 +1071,7 @@ export class NetGame {
       matchOver: this.matchOver,
       result: this.result,
       scoreLimit: SCORE_LIMIT,
+      mode: this.cur ? this.cur.mode || this.mode : this.mode, // сервер авторитетен по режиму
       teamRed: this.side === 1,
       mapName: this.map.name,
       crippled: you.crippled || { gun: 0, turret: 0, engine: 0, tracks: 0, radio: 0 },

@@ -17,7 +17,8 @@ const props = defineProps({
   loadout: { type: Object, default: null },
   mapId: { type: String, default: '' },
   side: { type: Number, default: 0 }, // 0 — юг (синие), 1 — север (красные)
-  net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz }
+  mode: { type: String, default: 'capture' }, // 'capture' | 'annihilation' — для офлайн-боя
+  net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz, mode }
   instant: { type: Boolean, default: false }, // авто-откат онлайн→офлайн: сразу в бой, без отсчёта
 })
 const emit = defineEmits(['exit', 'rematch', 'netfail'])
@@ -25,7 +26,7 @@ const emit = defineEmits(['exit', 'rematch', 'netfail'])
 const stage = ref(null)
 const minimap = ref(null)
 const isNet = !!props.net
-const game = isNet ? new NetGame(props.net) : new Game({ mapId: props.mapId, side: props.side })
+const game = isNet ? new NetGame(props.net) : new Game({ mapId: props.mapId, side: props.side, mode: props.mode })
 
 // цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
 const mySide = isNet ? props.net.side : props.side
@@ -57,6 +58,7 @@ const state = shallowRef({
   matchOver: false,
   result: null,
   scoreLimit: 20,
+  mode: 'capture',
   crippled: { gun: 0, turret: 0, engine: 0, tracks: 0, radio: 0 },
 })
 
@@ -70,6 +72,14 @@ const MOD_HUD = [
 ]
 
 const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name || '')
+// режим «на уничтожение»: вместо очков захвата — живые бойцы команд
+const annihilation = computed(() => state.value.mode === 'annihilation')
+// счёт для донесения: захват — очки, уничтожение — оставшиеся в живых
+const displayScore = computed(() =>
+  annihilation.value
+    ? `${state.value.alliesAlive}:${state.value.enemiesAlive}`
+    : `${state.value.allyScore}:${state.value.enemyScore}`,
+)
 const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
 
@@ -158,7 +168,7 @@ game.onState = (s) => {
     phase.value = 'result'
     if (!statsCounted) {
       statsCounted = true
-      addBattleResult(s.result, s.kills, { score: `${s.allyScore}:${s.enemyScore}`, tank: tankName.value, damage: s.damageDealt })
+      addBattleResult(s.result, s.kills, { score: displayScore.value, tank: tankName.value, damage: s.damageDealt })
     }
   }
 }
@@ -387,7 +397,7 @@ onBeforeUnmount(() => {
              по центру независимо от ширины счёта (5 vs 11) -->
         <div class="scoreplate">
           <div class="side left">
-            <span class="pz-pixel num ally">{{ state.allyScore }}</span>
+            <span v-if="!annihilation" class="pz-pixel num ally">{{ state.allyScore }}</span>
             <span class="dmnds">
               <i v-for="i in 7" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
             </span>
@@ -397,11 +407,13 @@ onBeforeUnmount(() => {
             <span class="dmnds">
               <i v-for="i in 7" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
             </span>
-            <span class="pz-pixel num enemy">{{ state.enemyScore }}</span>
+            <span v-if="!annihilation" class="pz-pixel num enemy">{{ state.enemyScore }}</span>
           </div>
         </div>
+        <!-- режим «на уничтожение»: метка вместо точек захвата -->
+        <div v-if="annihilation" class="modetag pz-display">НА УНИЧТОЖЕНИЕ</div>
         <!-- точки захвата: цвет владельца, пульс при перехвате -->
-        <div v-if="state.caps && state.caps.length" class="caps">
+        <div v-else-if="state.caps && state.caps.length" class="caps">
           <span
             v-for="c in state.caps"
             :key="c.id"
@@ -503,7 +515,7 @@ onBeforeUnmount(() => {
           {{ mapName }} · вы за <b :style="{ color: teamCol }">{{ mySide === 1 ? 'красных' : 'синих' }}</b>
           <template v-if="isNet"> · онлайн</template>
         </div>
-        <div class="cd-sub">до {{ state.scoreLimit }} очков · {{ fmtTime(state.matchTime) }}</div>
+        <div class="cd-sub">{{ annihilation ? 'бой до последнего танка' : 'до ' + state.scoreLimit + ' очков' }} · {{ fmtTime(state.matchTime) }}</div>
       </div>
     </transition>
 
@@ -641,6 +653,15 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 8px;
   margin-top: 4px;
+}
+.modetag {
+  text-align: center;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--amber);
+  opacity: 0.92;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 .cap {
   position: relative;

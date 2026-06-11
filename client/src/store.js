@@ -19,6 +19,11 @@ export function clearParty() {
   party.token = null
   party.leader = false
 }
+// режим боя (персистится в профиле): 'capture' — захват точек, 'annihilation' —
+// бой до последнего танка. Меняется в ангаре, едет в матчмейкинг и движок.
+export function setBattleMode(mode) {
+  profile.battleMode = mode === 'annihilation' ? 'annihilation' : 'capture'
+}
 export async function loadConfig() {
   try {
     const c = await apiConfig()
@@ -52,6 +57,7 @@ import {
   MEDAL_BY_ID,
   RANKS,
   rankByBattles,
+  CAMOS,
   CAMO_BY_ID,
 } from './game/meta.js'
 
@@ -108,6 +114,7 @@ if (!Array.isArray(profile.skins)) profile.skins = ['std'] // купленные
 if (!profile.tasks || typeof profile.tasks !== 'object') profile.tasks = { date: '', progress: {}, claimed: [] } // задачи дня
 if (typeof profile.skin !== 'string') profile.skin = 'std'
 if (typeof profile.premiumUntil !== 'number') profile.premiumUntil = 0 // премиум активен, пока > Date.now()
+if (profile.battleMode !== 'annihilation') profile.battleMode = 'capture' // режим боя: захват точек / на уничтожение
 
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()
@@ -348,6 +355,21 @@ export function grantRandomSkin() {
   return s
 }
 
+// дроп случайного ЗАПЕРТОГО камуфляжа на одном из купленных танков (оф-ящик).
+// Всё открыто — возвращаем null (вызывающий компенсирует жетонами).
+export function grantRandomCamo() {
+  const pool = []
+  for (const tid of profile.owned) {
+    for (const c of CAMOS) {
+      if (c.id && !camoUnlocked(tid, c.id)) pool.push({ tankId: tid, camoId: c.id })
+    }
+  }
+  if (!pool.length) return null
+  const pick = pool[Math.floor(Math.random() * pool.length)]
+  profile.camoOwned.push(`${pick.tankId}_${pick.camoId}`)
+  return { ...pick, name: (CAMO_BY_ID[pick.camoId] || {}).name || pick.camoId, tankName: (TANK_BY_ID[pick.tankId] || {}).name || pick.tankId }
+}
+
 // имя из Telegram: подставляем ник профиля, пока игрок не сменил позывной
 // платно (за звёзды). Кастомное имя приоритетнее ника TG.
 export function applyTgName() {
@@ -509,11 +531,20 @@ export function claimTask(id) {
 // referrals/referralIds/referredBy ведёт СЕРВЕР (защищены от затирания при сейве
 // профиля), клиент их только читает. Локального fake-addReferral больше нет.
 
-// забрать награду рубежа рефералов (i — индекс REF_MILESTONES)
+// забрать награду рубежа рефералов (i — индекс REF_MILESTONES). Возвращает что
+// выпало { credits, tokens, camo } для тоста, либо false если забрать нельзя.
 export function claimRefMilestone(i) {
   const m = REF_MILESTONES[i]
   if (!m || profile.claimedRef.includes(i) || profile.referrals.length < m.need) return false
   profile.claimedRef.push(i)
-  addRewards(m.credits, m.tokens)
-  return true
+  let credits = m.credits
+  let tokens = m.tokens
+  let camo = null
+  // «офицерский ящик» — настоящий дроп камуфляжа; всё открыто → компенсируем жетонами
+  if (m.crate) {
+    camo = grantRandomCamo()
+    if (!camo) tokens += 15
+  }
+  addRewards(credits, tokens)
+  return { credits, tokens, camo }
 }

@@ -32,12 +32,16 @@ export class BattleSim {
    * humans: [{ id, team: 0|1, name, stats? }] — stats в deg-форме (лоадаут
    * клиента) или null → DEFAULT_CLASS. Обе команды добираются ботами до teamSize.
    */
-  constructor({ teamSize = 7, humans = [], mapId = null } = {}) {
+  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture' } = {}) {
     this.teamSize = teamSize
     this.map = MAP_BY_ID[mapId] || MAPS[0]
     this.mapId = this.map.id
+    // режим боя: 'capture' — захват точек до лимита очков; 'annihilation' —
+    // бой до последнего танка (точки выключены, победа по вайпу/живым на таймауте)
+    this.mode = mode === 'annihilation' ? 'annihilation' : 'capture'
     this.t = 0
-    this.matchTime = MATCH_TIME
+    // аннигиляция — короче и злее (дезматч не тянем 4 минуты; таймаут решает по живым)
+    this.matchTime = this.mode === 'annihilation' ? 150 : MATCH_TIME
     this.matchOver = false
     this.winner = null // 0 | 1 | null (ничья)
     this.score = [0, 0]
@@ -247,7 +251,7 @@ export class BattleSim {
       else this._stepBot(u, dt)
     }
     this._separateUnits() // танк-в-танк: не дать машинам набиться в одну точку
-    this._stepCaptures(dt)
+    if (this.mode === 'capture') this._stepCaptures(dt) // аннигиляция — без точек
     this._stepSpotting()
     this._checkEnd()
   }
@@ -335,10 +339,19 @@ export class BattleSim {
       }
     } else {
       // нет цели — к точке захвата. Боты РАСПРЕДЕЛЯЮТСЯ по точкам (сорт по
-      // дистанции, выбор по индексу id), а не ломятся все на ближнюю — кучкуются меньше
+      // дистанции, выбор по индексу id), а не ломятся все на ближнюю — кучкуются меньше.
       const open = this.caps.filter((cap) => cap.owner !== b.team)
       open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
-      const goal = open.length ? open[b.id % open.length] : null
+      let goal = open.length ? open[b.id % open.length] : null
+      // аннигиляция (точек нет) — охота на живых врагов; РАСПРЕДЕЛЯЕМ по разным
+      // целям из ближайших (выбор по id), а не все на одного — иначе кучкуются
+      if (!goal && this.mode === 'annihilation') {
+        const enemies = this.units.filter((e) => e.alive && e.team !== b.team)
+        if (enemies.length) {
+          enemies.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
+          goal = enemies[b.id % Math.min(enemies.length, 3)]
+        }
+      }
       const c = MAP_SIZE / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
@@ -443,9 +456,18 @@ export class BattleSim {
   _checkEnd() {
     const a0 = this.aliveCount(0)
     const a1 = this.aliveCount(1)
+    // вайп команды решает бой в любом режиме (взаимный вайп — по очкам/ничья)
     if (a0 === 0 || a1 === 0) {
       this.matchOver = true
       this.winner = a0 === a1 ? (this.score[0] === this.score[1] ? null : this.score[0] > this.score[1] ? 0 : 1) : a0 > 0 ? 0 : 1
+      return
+    }
+    if (this.mode === 'annihilation') {
+      // бой до последнего: лимита очков нет, до таймаута никто не выигрывает;
+      // вышло время — победа у команды с бо́льшим числом живых (равно — ничья)
+      if (this.matchTime > 0) return
+      this.matchOver = true
+      this.winner = a0 === a1 ? null : a0 > a1 ? 0 : 1
       return
     }
     const limit = this.score[0] >= SCORE_LIMIT || this.score[1] >= SCORE_LIMIT
@@ -554,12 +576,14 @@ export class BattleSim {
     return {
       type: 'state',
       t: +this.t.toFixed(3),
+      mode: this.mode,
       matchTime: Math.ceil(this.matchTime),
       matchOver: this.matchOver,
       winner: this.winner,
       score: this.score,
       alive: [this.aliveCount(0), this.aliveCount(1)],
-      caps: this.caps.map((c) => ({ id: c.id, owner: c.owner, capper: c.capper, p: +c.progress.toFixed(2) })),
+      // аннигиляция — точек нет, шлём пустой список (HUD/рендер скрывают захват)
+      caps: this.mode === 'annihilation' ? [] : this.caps.map((c) => ({ id: c.id, owner: c.owner, capper: c.capper, p: +c.progress.toFixed(2) })),
       units: this.units
         .filter((u) => !u.alive || u.team === team || seen.has(u.id))
         .map((u) => ({

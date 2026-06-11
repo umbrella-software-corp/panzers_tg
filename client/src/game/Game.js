@@ -99,6 +99,8 @@ export class Game {
 
     // карта боя и жребий стороны: 0 — юг (синие), 1 — север (красные)
     this.map = MAP_BY_ID[opts.mapId] || MAPS[0]
+    // режим боя: 'capture' — захват точек до лимита; 'annihilation' — до последнего танка
+    this.mode = opts.mode === 'annihilation' ? 'annihilation' : 'capture'
     this.side = opts.side === 1 ? 1 : 0
     this.ySign = this.side === 0 ? 1 : -1 // множитель «вниз» для нашей половины
     this.colors = this.side === 0
@@ -178,8 +180,8 @@ export class Game {
     this.bonusXp = 0 // доп. опыт за засвет/захват (плюсуется к награде боя)
     this.spotScored = new Set() // id врагов, за чей засвет уже дали опыт (без спама)
 
-    // матч (Фаза 4)
-    this.matchTime = MATCH_TIME
+    // матч (Фаза 4). Аннигиляция — короче (дезматч не тянем 4 минуты)
+    this.matchTime = this.mode === 'annihilation' ? 150 : MATCH_TIME
     this.matchOver = false
     this.result = null // 'victory' | 'defeat' | 'draw'
     this.paused = false // стартовый отсчёт держит бой на паузе
@@ -866,6 +868,13 @@ export class Game {
             : 'draw'
       return
     }
+    if (this.mode === 'annihilation') {
+      // бой до последнего: лимита очков нет; вышло время — больше живых побеждает
+      if (this.matchTime > 0) return
+      this.matchOver = true
+      this.result = alliesAlive > enemiesAlive ? 'victory' : alliesAlive < enemiesAlive ? 'defeat' : 'draw'
+      return
+    }
     const limitHit = this.score.ally >= SCORE_LIMIT || this.score.enemy >= SCORE_LIMIT
     if (!limitHit && this.matchTime > 0) return
     this.matchOver = true
@@ -895,8 +904,11 @@ export class Game {
     for (const b of this.bots) this._updateBot(b, dt)
     this._separateUnits() // танк-в-танк: машины не набиваются в одну точку
     this._ramDamage() // таран: игрок на разгоне врезается во врага
-    this._updateCaptures(dt)
-    this._updateBases(dt)
+    // захват точек только в режиме захвата. Захват БАЗЫ выключен в боях с ботами
+    // (фидбек: имба — мгновенная победа/поражение зергом базы; «только с юзерами»).
+    // Офлайн всегда против ботов, онлайн-sim захвата базы и так не имеет → _updateBases
+    // оставлен для будущего человек-vs-человек PvP, но здесь не вызывается.
+    if (this.mode === 'capture') this._updateCaptures(dt)
 
     // засвет врагов для ОТРИСОВКИ: КОМАНДНЫЙ туман войны — видно врага, если его
     // светит игрок ИЛИ любой живой союзник (как в Блице). Мёртв — видно всех.
@@ -1253,7 +1265,17 @@ export class Game {
     if (ownBase) return ownBase
     const open = this.caps.filter((cap) => cap.owner !== b.team)
     open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
-    return open.length ? open[b.id % open.length] : null
+    if (open.length) return open[b.id % open.length]
+    // нет точек (аннигиляция) — охота на живых врагов (навигация всеведущая, огонь
+    // по-прежнему по засвету). РАСПРЕДЕЛЯЕМ по разным целям из ближайших (выбор по
+    // id), а не все на одного — иначе боты сбиваются в кучу («снова тупые»)
+    if (this.mode === 'annihilation') {
+      const enemies = this._allUnits().filter((u) => u.team !== b.team)
+      if (!enemies.length) return null
+      enemies.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
+      return enemies[b.id % Math.min(enemies.length, 3)]
+    }
+    return null
   }
 
   // бот получил урон от (возможно невидимого) стрелка: запоминаем источник и на
@@ -1381,7 +1403,8 @@ export class Game {
       ourBase: Math.round((this.bases.find((b) => b.team === TEAM.ALLY) || {}).progress || 0),
       enemyBase: Math.round((this.bases.find((b) => b.team === TEAM.ENEMY) || {}).progress || 0),
       // точки захвата для HUD: own/cap — 'ally'|'enemy'|null, p — прогресс 0..1
-      caps: this.caps.map((c) => ({
+      // (аннигиляция — точек нет, пустой список → HUD/рендер скрывают захват)
+      caps: this.mode === 'annihilation' ? [] : this.caps.map((c) => ({
         id: c.id,
         own: c.owner === null ? null : c.owner === TEAM.ALLY ? 'ally' : 'enemy',
         cap: c.capper === null ? null : c.capper === TEAM.ALLY ? 'ally' : 'enemy',
@@ -1398,6 +1421,7 @@ export class Game {
       result: this.result,
       teamRed: this.side === 1, // мы за красных (север); иначе — за синих (юг)
       mapName: this.map.name,
+      mode: this.mode,
       scoreLimit: SCORE_LIMIT,
       crippled: {
         gun: Math.ceil(this.crippled.gun),
@@ -1443,8 +1467,8 @@ export class Game {
     const half = this._sectorHalfEff() // разброс: стоя — уже, на ходу — шире
     const L = this._vision() // длина прицела = дальность обнаружения (совпадает с туманом)
 
-    // точки захвата (под всем)
-    for (const cap of this.caps) {
+    // точки захвата (под всем) — в аннигиляции точек нет, круги не рисуем
+    for (const cap of this.mode === 'annihilation' ? [] : this.caps) {
       const own = cap.owner === TEAM.ALLY ? this.colors.ally.hp : cap.owner === TEAM.ENEMY ? this.colors.enemy.hp : 0x7b8694
       g.circle(cap.x, cap.y, cap.r).fill({ color: own, alpha: 0.1 })
       g.circle(cap.x, cap.y, cap.r).stroke({ width: 3, color: own, alpha: 0.55 })
@@ -1726,11 +1750,11 @@ export class Game {
       ctx.arc(b.x * k, b.y * k, b.r * k, 0, Math.PI * 2)
       ctx.stroke()
     }
-    // точки захвата с буквами
+    // точки захвата с буквами (в аннигиляции точек нет)
     ctx.font = `bold ${Math.round(S * 0.075)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    for (const cap of this.caps) {
+    for (const cap of this.mode === 'annihilation' ? [] : this.caps) {
       const col = cap.owner === TEAM.ALLY ? this.colors.ally.css : cap.owner === TEAM.ENEMY ? this.colors.enemy.css : '#9aa3b0'
       ctx.fillStyle = col
       ctx.beginPath()

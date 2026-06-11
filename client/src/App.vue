@@ -134,7 +134,7 @@ function rematch(reward) {
   <Shop v-else-if="screen === 'shop'" @go="go" />
   <Rating v-else-if="screen === 'rating'" @go="go" />
   <Matchmaking v-else-if="screen === 'matchmaking'" :map-id="draw.mapId" :side="draw.side" @battle="deploy" @cancel="go('hangar')" />
-  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :net="netMatch" :instant="instantDeploy" @exit="exitBattle" @rematch="rematch" @netfail="netFail" />
+  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :instant="instantDeploy" @exit="exitBattle" @rematch="rematch" @netfail="netFail" />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" />
 </template>

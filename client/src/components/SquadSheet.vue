@@ -53,7 +53,11 @@ function inviteFriend() {
 }
 
 function claim(i) {
-  if (claimRefMilestone(i)) showToast(`${REF_MILESTONES[i].label} — получено!`)
+  const r = claimRefMilestone(i)
+  if (!r) return
+  // оф-ящик с дропом камуфляжа — показываем что именно выпало
+  if (r.camo) showToast(`🎁 Камуфляж «${r.camo.name}» на ${r.camo.tankName} +${r.credits} кр`)
+  else showToast(`${REF_MILESTONES[i].label} — получено!`)
 }
 
 const needWord = (n) => (n === 1 ? 'друг' : n < 5 ? 'друга' : 'друзей')

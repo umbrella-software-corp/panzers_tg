@@ -123,7 +123,8 @@ export const crewPerkCost = (curLevel) => CREW_PERK_COSTS[curLevel] ?? Infinity
 // ---------- рефералы (взвод/друзья — через реальные Telegram deep-link'и, без фейка) ----------
 export const REF_MILESTONES = [
   { need: 1, label: '500 кредитов', credits: 500, tokens: 0 },
-  { need: 3, label: 'Офицерский ящик', credits: 1800, tokens: 0 },
+  // оф-ящик: реальный дроп камуфляжа + кредиты+жетоны (crate:true в claimRefMilestone)
+  { need: 3, label: 'Офицерский ящик', credits: 1000, tokens: 5, crate: true },
   { need: 5, label: '25 жетонов', credits: 0, tokens: 25 },
 ]
 

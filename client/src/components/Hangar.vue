@@ -1,8 +1,8 @@
 <script setup>
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
-import { ref, computed } from 'vue'
-import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel } from '../store.js'
+import { ref, computed, watch } from 'vue'
+import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode } from '../store.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
@@ -17,6 +17,13 @@ import TasksSheet from './TasksSheet.vue'
 const emit = defineEmits(['play', 'go'])
 const squadOpen = ref(false)
 const tasksOpen = ref(false)
+
+// режим боя: захват точек / на уничтожение (персистится в профиле)
+function pickMode(m) {
+  if (profile.battleMode === m) return
+  setBattleMode(m)
+  haptic('select')
+}
 
 const tank = computed(() => TANK_BY_ID[profile.selectedTank] || tanksOfNation(profile.nation)[0])
 
@@ -42,17 +49,33 @@ const fmt = (n) => n.toLocaleString('ru-RU')
 const inParty = computed(() => !!party.token) // взвод собран на этот сеанс (по deep-link)
 // камуфляж на КАЖДЫЙ танк: разблокировка за жетоны, потом надевается бесплатно
 const selCamo = computed(() => tankCamo(tank.value.id))
+// предпросмотр запертого камо: показываем на БОЛЬШОМ танке, не покупая.
+// Большой танк рисует previewCamo (если есть) поверх надетого.
+const previewCamo = ref(null)
+const dispCamo = computed(() => previewCamo.value || selCamo.value)
+const previewDef = computed(() => (previewCamo.value ? CAMO_BY_ID[previewCamo.value] : null))
 function pickCamo(id) {
   const tid = tank.value.id
   if (camoUnlocked(tid, id)) {
     setCamo(tid, id)
+    previewCamo.value = null
     haptic('select')
-  } else if (buyCamo(tid, id)) {
-    haptic('success') // куплено и сразу надето
+  } else {
+    previewCamo.value = id // запертый — только примеряем на танк, покупка отдельной кнопкой
+    haptic('select')
+  }
+}
+function buyPreview() {
+  const tid = tank.value.id
+  if (previewCamo.value && buyCamo(tid, previewCamo.value)) {
+    previewCamo.value = null // куплен и надет
+    haptic('success')
   } else {
     haptic('error') // не хватает жетонов
   }
 }
+// смена танка — сбрасываем примерку (камуфляжи у каждого танка свои)
+watch(() => tank.value.id, () => (previewCamo.value = null))
 </script>
 
 <template>
@@ -82,7 +105,7 @@ function pickCamo(id) {
       <div class="tank-wrap">
         <div class="tank-shadow"></div>
         <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankImg :tank-id="tank.id" :size="300" :camo="locked ? '' : selCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
+          <TankImg :tank-id="tank.id" :size="300" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
         </div>
         <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
           <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
@@ -139,7 +162,7 @@ function pickCamo(id) {
         v-for="c in CAMOS"
         :key="c.id || 'std'"
         class="camo-cell"
-        :class="{ on: selCamo === c.id, locked: !camoUnlocked(tank.id, c.id) }"
+        :class="{ on: dispCamo === c.id, locked: !camoUnlocked(tank.id, c.id) }"
         :disabled="locked"
         :title="c.name"
         @click="pickCamo(c.id)"
@@ -149,6 +172,13 @@ function pickCamo(id) {
           <PzIcon name="token" :size="8" /> {{ c.cost }}
         </span>
         <span class="camo-lbl">{{ c.short }}</span>
+      </button>
+    </div>
+    <!-- примерка запертого камо: купить за жетоны (танк уже показан в нём) -->
+    <div v-if="previewCamo && previewDef" class="camo-buy">
+      <span class="camo-buy-name pz-display">{{ previewDef.name }}</span>
+      <button class="pz-cta camo-buy-btn" @click="buyPreview">
+        КУПИТЬ <PzIcon name="token" :size="11" /> {{ previewDef.cost }}
       </button>
     </div>
 
@@ -181,6 +211,18 @@ function pickCamo(id) {
         <span style="height: 14px; display: flex; align-items: center" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">
           <PzIcon :name="isOwned(t.id) ? 'star' : 'lock'" :size="11" :color="t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)'" />
         </span>
+      </button>
+    </div>
+
+    <!-- режим боя -->
+    <div class="modepick" style="padding: 6px 14px 0; flex-shrink: 0; display: flex; gap: 6px">
+      <button class="modeopt" :class="{ on: profile.battleMode === 'capture' }" @click="pickMode('capture')">
+        <span class="pz-display mlabel">ЗАХВАТ</span>
+        <span class="msub">точки · быстрая катка</span>
+      </button>
+      <button class="modeopt" :class="{ on: profile.battleMode === 'annihilation' }" @click="pickMode('annihilation')">
+        <span class="pz-display mlabel">НА УНИЧТОЖЕНИЕ</span>
+        <span class="msub">бой до последнего</span>
       </button>
     </div>
 
@@ -296,6 +338,31 @@ function pickCamo(id) {
   gap: 7px;
   padding: 0 14px 4px;
   overflow-x: auto; /* много скинов — горизонтальный скролл, ряд не ломается */
+  flex-shrink: 0;
+}
+.camo-buy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 14px 4px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--amber);
+  border-radius: 9px;
+  background: rgba(242, 165, 12, 0.08);
+  flex-shrink: 0;
+  animation: pz-slide-up 0.2s ease;
+}
+.camo-buy-name {
+  font-size: 13px;
+  color: var(--amber);
+}
+.camo-buy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 .camo-cell {
@@ -459,6 +526,40 @@ function pickCamo(id) {
 .squad-btn .dots .slot.you {
   border: 1.5px solid var(--amber);
   background: rgba(242, 165, 12, 0.17);
+}
+.modeopt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.modeopt.on {
+  border-color: var(--amber);
+  background: rgba(242, 165, 12, 0.08);
+  color: var(--ink);
+}
+.modeopt .mlabel {
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.modeopt.on .mlabel {
+  color: var(--amber);
+}
+.modeopt .msub {
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  font-weight: 500;
+  white-space: nowrap;
 }
 .squad-btn .dots .slot.filled {
   border: 1.5px solid var(--blue);
