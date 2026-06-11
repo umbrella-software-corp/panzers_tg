@@ -659,6 +659,36 @@ export class Game {
     }
   }
 
+  // танк-в-танк: после движения всех машин разводим перекрытия (игрок + боты),
+  // чтобы не набивались в одну точку. Пара расталкивается симметрично.
+  _separateUnits() {
+    const minD = this.tankRadius * 1.7
+    const all = []
+    if (this.hp > 0) all.push(this.tank)
+    for (const b of this.bots) if (b.alive) all.push(b)
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        const a = all[i]
+        const b = all[j]
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let d = Math.hypot(dx, dy)
+        if (d >= minD) continue
+        if (d < 0.001) {
+          dx = 1
+          dy = 0
+          d = 1
+        }
+        const push = (minD - d) / 2
+        a.x -= (dx / d) * push
+        a.y -= (dy / d) * push
+        b.x += (dx / d) * push
+        b.y += (dy / d) * push
+      }
+    }
+    for (const u of all) this._resolveCollisions(u, this.tankRadius)
+  }
+
   _resolveCollisions(pos, radius) {
     for (const o of this.obstacles) {
       if (o.kind === 'bush') continue // лес проходим; block/hill/water — нет
@@ -807,6 +837,7 @@ export class Game {
 
     this._moveTank(dt)
     for (const b of this.bots) this._updateBot(b, dt)
+    this._separateUnits() // танк-в-танк: машины не набиваются в одну точку
     this._updateCaptures(dt)
     this._updateBases(dt)
 
@@ -1032,7 +1063,8 @@ export class Game {
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
-      if (bestD > ai.idealRange * 1.15) move = 1
+      if (b.hp < b.maxHp * 0.3) move = -1 // мало хп — отступаем, продолжая отстреливаться
+      else if (bestD > ai.idealRange * 1.15) move = 1
       else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
       wantMove = move !== 0
 
@@ -1063,17 +1095,11 @@ export class Game {
         this._spawnShell(b.x, b.y, target.x, target.y, col, hit && pierced ? 'hit' : 'dust')
       }
     } else {
-      // никого не видит — играет от целей: едет к ближайшей не своей точке
-      let goal = null
-      let gBest = Infinity
-      for (const cap of this.caps) {
-        if (cap.owner === b.team) continue
-        const d = Math.hypot(cap.x - b.x, cap.y - b.y)
-        if (d < gBest) {
-          gBest = d
-          goal = cap
-        }
-      }
+      // никого не видит — едет к точке. РАСПРЕДЕЛЯЕМ ботов по точкам (сорт по
+      // дистанции, выбор по id), а не все на ближнюю — меньше кучкования
+      const open = this.caps.filter((cap) => cap.owner !== b.team)
+      open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
+      const goal = open.length ? open[b.id % open.length] : null
       const c = MAP_SIZE / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5

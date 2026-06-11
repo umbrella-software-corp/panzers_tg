@@ -244,6 +244,7 @@ export class BattleSim {
       if (u.human) this._stepHuman(u, dt)
       else this._stepBot(u, dt)
     }
+    this._separateUnits() // танк-в-танк: не дать машинам набиться в одну точку
     this._stepCaptures(dt)
     this._stepSpotting()
     this._checkEnd()
@@ -297,7 +298,8 @@ export class BattleSim {
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
-      if (bestD > ai.idealRange * 1.15) move = 1
+      if (b.hp < b.maxHp * 0.3) move = -1 // мало хп — отступаем, продолжая отстреливаться
+      else if (bestD > ai.idealRange * 1.15) move = 1
       else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
       wantMove = move !== 0
 
@@ -330,16 +332,11 @@ export class BattleSim {
         })
       }
     } else {
-      let goal = null
-      let gBest = Infinity
-      for (const cap of this.caps) {
-        if (cap.owner === b.team) continue
-        const d = Math.hypot(cap.x - b.x, cap.y - b.y)
-        if (d < gBest) {
-          gBest = d
-          goal = cap
-        }
-      }
+      // нет цели — к точке захвата. Боты РАСПРЕДЕЛЯЮТСЯ по точкам (сорт по
+      // дистанции, выбор по индексу id), а не ломятся все на ближнюю — кучкуются меньше
+      const open = this.caps.filter((cap) => cap.owner !== b.team)
+      open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
+      const goal = open.length ? open[b.id % open.length] : null
       const c = MAP_SIZE / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
@@ -474,6 +471,35 @@ export class BattleSim {
       if (segHitsRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true
     }
     return false
+  }
+
+  // танк-в-танк: после движения всех машин разводим перекрытия, иначе боты
+  // набиваются в одну точку. Пара расталкивается симметрично от центра к центру.
+  _separateUnits() {
+    const minD = TANK_RADIUS * 1.7 // центр-к-центру; ближе — расталкиваем
+    const alive = this.units.filter((u) => u.alive)
+    for (let i = 0; i < alive.length; i++) {
+      for (let j = i + 1; j < alive.length; j++) {
+        const a = alive[i]
+        const b = alive[j]
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let d = Math.hypot(dx, dy)
+        if (d >= minD) continue
+        if (d < 0.001) {
+          dx = a.id - b.id || 1 // точное совпадение — детерминированный сдвиг
+          dy = 0
+          d = Math.abs(dx) || 1
+        }
+        const push = (minD - d) / 2
+        a.x -= (dx / d) * push
+        a.y -= (dy / d) * push
+        b.x += (dx / d) * push
+        b.y += (dy / d) * push
+      }
+    }
+    // могли въехать в стену/препятствие при расталкивании — поправляем
+    for (const u of alive) this._collide(u, u.human ? TANK_RADIUS : ENEMY_AI.radius)
   }
 
   _collide(pos, radius) {
