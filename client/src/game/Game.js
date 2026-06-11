@@ -692,6 +692,28 @@ export class Game {
     for (const u of all) this._resolveCollisions(u, this.tankRadius)
   }
 
+  // ТАРАН: игрок на разгоне врезается во врага — урон по скорости и «массе»
+  // класса; сам таранщик получает треть. Не чаще раза в 0.5с на одну цель.
+  _ramDamage() {
+    if (this.hp <= 0) return
+    const spd = Math.abs(this.speed)
+    if (spd < this.cls.maxSpeed * 0.4) return // нужен разгон
+    const reach = this.tankRadius * 2.1
+    const massK = { light: 0.8, medium: 1.1, heavy: 1.5 }[this.cls.id] || 1
+    for (const b of this.bots) {
+      if (!b.alive || b.team === TEAM.ALLY) continue
+      if (Math.hypot(b.x - this.tank.x, b.y - this.tank.y) > reach) continue
+      if (b._ramAt && this.t - b._ramAt < 0.5) continue
+      b._ramAt = this.t
+      const dmg = Math.round((spd / this.cls.maxSpeed) * 16 * massK)
+      if (dmg <= 0) continue
+      this._damageUnit(b, dmg, TEAM.ALLY) // урон врагу
+      this.booms.push({ x: (this.tank.x + b.x) / 2, y: (this.tank.y + b.y) / 2, age: 0, big: false })
+      this.onShot && this.onShot({ type: 'ram' })
+      if (this.hp > 0) this._damageUnit({ isPlayer: true }, Math.round(dmg * 0.35), TEAM.ENEMY) // отдача (через смерть-логику)
+    }
+  }
+
   _resolveCollisions(pos, radius) {
     for (const o of this.obstacles) {
       if (o.kind === 'bush') continue // лес проходим; block/hill/water — нет
@@ -841,17 +863,18 @@ export class Game {
     this._moveTank(dt)
     for (const b of this.bots) this._updateBot(b, dt)
     this._separateUnits() // танк-в-танк: машины не набиваются в одну точку
+    this._ramDamage() // таран: игрок на разгоне врезается во врага
     this._updateCaptures(dt)
     this._updateBases(dt)
 
-    // засвет врагов для ОТРИСОВКИ — только личный обзор игрока (туман войны);
-    // союзники не «светят» врагов на экран. Мёртв — режим наблюдения, видно всех.
+    // засвет врагов для ОТРИСОВКИ: КОМАНДНЫЙ туман войны — видно врага, если его
+    // светит игрок ИЛИ любой живой союзник (как в Блице). Мёртв — видно всех.
     for (const b of this.bots) {
       if (b.team !== TEAM.ENEMY) continue
-      const wasVisible = this.hp > 0 && this._spottedByPlayer(b)
-      b.spotted = b.alive && (this.hp <= 0 || wasVisible)
-      // опыт за РАЗВЕДКУ: первый личный засвет каждого живого врага (без спама)
-      if (wasVisible && b.alive && !this.spotScored.has(b.id)) {
+      const byMe = this.hp > 0 && this._spottedByPlayer(b)
+      b.spotted = b.alive && (this.hp <= 0 || byMe || this._spottedByAllies(b))
+      // опыт за РАЗВЕДКУ: первый ЛИЧНЫЙ засвет каждого живого врага (без спама)
+      if (byMe && b.alive && !this.spotScored.has(b.id)) {
         this.spotScored.add(b.id)
         this._awardXp(12, 'ЗАСВЕТ')
       }
@@ -994,6 +1017,17 @@ export class Game {
     const d = Math.hypot(enemy.x - this.tank.x, enemy.y - this.tank.y)
     if (d <= PROX_SPOT) return true
     return d <= this._vision() && !this._visionBlocked(this.tank.x, this.tank.y, enemy.x, enemy.y)
+  }
+
+  // командный засвет: враг виден, если его светит ЛЮБОЙ живой союзник
+  _spottedByAllies(enemy) {
+    for (const a of this.bots) {
+      if (a.team !== TEAM.ALLY || !a.alive) continue
+      const d = Math.hypot(enemy.x - a.x, enemy.y - a.y)
+      if (d <= PROX_SPOT) return true
+      if (d <= ALLY_VISION && !this._visionBlocked(a.x, a.y, enemy.x, enemy.y)) return true
+    }
+    return false
   }
 
   // доп. опыт за действие (засвет/захват) + всплывающая подпись в HUD

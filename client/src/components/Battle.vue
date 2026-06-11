@@ -210,6 +210,11 @@ game.onSaved = (kind) => {
   showToast('hit', kind === 'ricochet' ? 'РИКОШЕТ ОТ БРОНИ' : 'БРОНЯ НЕ ПРОБИТА')
 }
 game.onShot = (r) => {
+  if (r.type === 'ram') {
+    haptic('rigid') // таран — жёсткий толчок
+    showToast('hit', 'ТАРАН!')
+    return
+  }
   if (r.type === 'blocked') {
     if (r.reason === 'gun') showToast('miss', 'ПУШКА ЗАКЛИНИЛА')
     return
