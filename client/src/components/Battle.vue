@@ -18,7 +18,7 @@ const props = defineProps({
   side: { type: Number, default: 0 }, // 0 — юг (синие), 1 — север (красные)
   net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz }
 })
-const emit = defineEmits(['exit', 'rematch'])
+const emit = defineEmits(['exit', 'rematch', 'netfail'])
 
 const stage = ref(null)
 const minimap = ref(null)
@@ -113,8 +113,19 @@ const shaking = ref(false)
 let shakeTimer = null
 let prevHp = Infinity
 
+// сторож онлайн-старта: если за 8с не пришёл ни один снапшот сервера —
+// откатываемся в бой с ботами, чтобы не висеть вечно на 0:00 (фриз у части
+// WebKit-клиентов). Снимается, как только пришли первые данные мира.
+let netWatchdog = null
+function clearNetWatchdog() {
+  clearTimeout(netWatchdog)
+  netWatchdog = null
+}
+
 let statsCounted = false // статистика матча банкается один раз
 game.onState = (s) => {
+  // первые данные мира пришли — снимаем сторож (онлайн поехал)
+  if (isNet && netWatchdog && game.cur) clearNetWatchdog()
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
   if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
   if (s.playerHp < prevHp && s.playerHp > 0) {
@@ -300,12 +311,24 @@ onMounted(async () => {
   await game.mount(stage.value)
   game.setMinimap(minimap.value)
   startCountdown()
+  // онлайн: ждём снапшоты не дольше 8с, иначе откат в офлайн-бой с ботами
+  if (isNet) {
+    netWatchdog = setTimeout(() => {
+      netWatchdog = null
+      if (!game.cur) {
+        console.warn('[battle] онлайн-бой без снапшотов 8с — откат в офлайн с ботами')
+        emit('netfail')
+      }
+    }, 8000)
+  }
 })
-if (import.meta.env.DEV) window.__game = game
+// диагностика прода: состояние боя доступно из консоли (window.__pz)
+window.__pz = game
 onBeforeUnmount(() => {
   clearTimeout(toastTimer)
   clearInterval(countTimer)
   clearTimeout(shakeTimer)
+  clearNetWatchdog()
   game.destroy()
 })
 </script>

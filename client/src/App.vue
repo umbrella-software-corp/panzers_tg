@@ -40,6 +40,11 @@ function deploy(net) {
   battleKey.value++ // каждый матч — свежий бой
   screen.value = 'battle'
 }
+// онлайн-бой не получил снапшоты (фриз) — пересобираем тот же бой офлайн с ботами
+function netFail() {
+  netMatch.value = null
+  battleKey.value++ // смена ключа пересоздаёт Battle уже в офлайн-режиме
+}
 // награда боя + прогресс задач дня
 function bankBattle(reward) {
   if (!reward) return
@@ -78,7 +83,7 @@ function rematch(reward) {
   <Shop v-else-if="screen === 'shop'" @go="go" />
   <Rating v-else-if="screen === 'rating'" @go="go" />
   <Matchmaking v-else-if="screen === 'matchmaking'" :map-id="draw.mapId" :side="draw.side" @battle="deploy" @cancel="go('hangar')" />
-  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :net="netMatch" @exit="exitBattle" @rematch="rematch" />
+  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :net="netMatch" @exit="exitBattle" @rematch="rematch" @netfail="netFail" />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" />
 </template>

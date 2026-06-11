@@ -50,7 +50,13 @@ export function connectMatch({ name, tankId, tint, skin, stats, onLobby, onStart
       },
     }
 
-    ws.onopen = () => client.send({ type: 'join', name, tankId, tint, skin, stats })
+    // диагностика онлайн-старта: следим, где встаёт поток (фриз на 0:00 у части
+    // клиентов). Логи лёгкие — только вехи + первый снапшот, не 20Гц.
+    const log = (...a) => console.log('[net]', ...a)
+    ws.onopen = () => {
+      log('ws открыт →', WS_URL)
+      client.send({ type: 'join', name, tankId, tint, skin, stats })
+    }
     ws.onmessage = (e) => {
       let msg
       try {
@@ -58,9 +64,14 @@ export function connectMatch({ name, tankId, tint, skin, stats, onLobby, onStart
       } catch {
         return
       }
+      if (msg.type === 'state') {
+        client.stateN = (client.stateN || 0) + 1
+        if (client.stateN === 1) log('первый снапшот state получен (t=' + msg.t + ', подписчик ' + (client.onMessage ? 'есть' : 'ещё нет') + ')')
+      }
       if (msg.type === 'init') {
         client.youId = msg.id
         client.waitMs = msg.waitMs
+        log('init получен, id=' + msg.id + ', waitMs=' + msg.waitMs)
         if (!settled) {
           settled = true
           clearTimeout(timer)
@@ -70,19 +81,22 @@ export function connectMatch({ name, tankId, tint, skin, stats, onLobby, onStart
         onLobby && onLobby(msg)
       } else if (msg.type === 'match-start') {
         client.started = true
+        log('match-start получен (youUnit=' + msg.youUnit + ', map=' + msg.mapId + ')')
         onStart && onStart(msg)
       } else if (client.onMessage) {
         client.onMessage(msg)
       }
     }
     ws.onerror = () => {
+      log('ws ОШИБКА (settled=' + settled + ', снапшотов=' + (client.stateN || 0) + ')')
       if (!settled) {
         settled = true
         clearTimeout(timer)
         reject(new Error('ws error'))
       }
     }
-    ws.onclose = () => {
+    ws.onclose = (e) => {
+      log('ws ЗАКРЫТ code=' + e.code + ' clean=' + e.wasClean + ' (снапшотов было ' + (client.stateN || 0) + ', started=' + client.started + ')')
       if (!settled) {
         settled = true
         clearTimeout(timer)
