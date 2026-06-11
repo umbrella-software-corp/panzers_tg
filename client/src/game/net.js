@@ -66,6 +66,7 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, onLobby
       }
       if (msg.type === 'state') {
         client.stateN = (client.stateN || 0) + 1
+        client.lastState = msg // буфер: NetGame подпишется позже и сразу проиграет его
         if (client.stateN === 1) log('первый снапшот state получен (t=' + msg.t + ', подписчик ' + (client.onMessage ? 'есть' : 'ещё нет') + ')')
       }
       if (msg.type === 'init') {

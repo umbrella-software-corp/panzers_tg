@@ -86,6 +86,9 @@ export class NetGame {
     this._wantedTex = new Set()
 
     client.onMessage = (msg) => this._onMessage(msg)
+    // снапшоты, пришедшие ДО подписки (гонка матчмейкинг→бой), не теряем —
+    // сразу проигрываем последний буферизованный (мир появляется мгновенно)
+    if (client.lastState) this._onMessage(client.lastState)
   }
 
   // совместимость с Battle: пул ботов набирает сервер

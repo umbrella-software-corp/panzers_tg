@@ -72,12 +72,12 @@ const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name ||
 const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
 
-// фаза боя: connecting (онлайн ждёт сервер) | countdown (отсчёт) | fighting | result
-// офлайн стартует сразу с отсчёта; онлайн — после первого снапшота (ОДИН отсчёт,
-// а не «3-2-1 → ждём → опять 3-2-1»)
-const phase = ref(isNet ? 'connecting' : 'countdown')
+// фаза боя: countdown (отсчёт) | fighting | result. Отсчёт стартует СРАЗУ и для
+// онлайна — НЕ ждём снапшот (иначе при потере первого пакета застреваем). Двойной
+// «3-2-1» больше не возникает, т.к. авто-отката в офлайн нет (см. netStuck).
+const phase = ref('countdown')
 const count = ref(3)
-const netStuck = ref(false) // онлайн-связь так и не пришла — показываем выбор, НЕ ботим молча
+const netStuck = ref(false) // онлайн-данные так и не пришли — показываем выбор, НЕ ботим молча
 let countTimer = null
 
 // пауза по кнопке (поверх фазы fighting)
@@ -140,11 +140,8 @@ function clearNetWatchdog() {
 
 let statsCounted = false // статистика матча банкается один раз
 game.onState = (s) => {
-  // первые данные мира пришли — снимаем сторож и запускаем ЕДИНСТВЕННЫЙ отсчёт
-  if (isNet && game.cur && phase.value === 'connecting') {
-    clearNetWatchdog()
-    startCountdown()
-  }
+  // пришли данные мира — снимаем сторож «нет связи»
+  if (isNet && game.cur) clearNetWatchdog()
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
   if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
   if (s.playerHp < prevHp && s.playerHp > 0) {
@@ -333,20 +330,17 @@ onMounted(async () => {
   else game.setClass(DEFAULT_CLASS)
   await game.mount(stage.value)
   game.setMinimap(minimap.value)
+  startCountdown() // отсчёт сразу — и в онлайне (NetGame рисует мир по мере прихода снапшотов)
   if (isNet) {
-    // онлайн: НЕ запускаем отсчёт сразу — ждём первый снапшот сервера (см. onState),
-    // тогда будет единственный отсчёт. Реальный матч с друзьями НЕ подменяем
-    // ботами молча: если связь так и не пришла за 10с — показываем ВЫБОР игроку.
-    game.setPaused(true)
+    // реальный матч НЕ подменяем ботами молча: если за 12с не пришло НИ ОДНОГО
+    // снапшота — показываем ВЫБОР (играть с ботами / в ангар)
     netWatchdog = setTimeout(() => {
       netWatchdog = null
       if (!game.cur) {
-        console.warn('[battle] онлайн-бой без снапшотов 10с — предлагаем выбор (не ботим молча)')
+        console.warn('[battle] онлайн-бой: 12с без снапшотов — предлагаю выбор')
         netStuck.value = true
       }
-    }, 10000)
-  } else {
-    startCountdown()
+    }, 12000)
   }
 })
 // диагностика прода: состояние боя доступно из консоли (window.__pz)
@@ -483,22 +477,15 @@ onBeforeUnmount(() => {
       <span class="pz-display flabel">{{ state.ready ? 'ОГОНЬ' : state.reloadLeft.toFixed(1) + 'с' }}</span>
     </button>
 
-    <!-- онлайн: ждём данные сервера, чтобы отсчёт был один (и не подменить
-         реальный матч с друзьями ботами молча) -->
+    <!-- онлайн: нет данных боя — НЕ ботим молча, даём выбор (поверх всего) -->
     <transition name="fade">
-      <div v-if="phase === 'connecting'" class="overlay countdown">
-        <template v-if="!netStuck">
-          <div class="cd-num pz-display" style="font-size: 28px; letter-spacing: 0.2em">СВЯЗЬ…</div>
-          <div class="cd-sub">собираем команду на сервере</div>
-        </template>
-        <template v-else>
-          <div class="cd-num pz-display" style="font-size: 22px; letter-spacing: 0.12em">НЕТ СВЯЗИ С БОЕМ</div>
-          <div class="cd-sub" style="margin-bottom: 16px">сервер не ответил — выберите</div>
-          <div style="display: flex; flex-direction: column; gap: 10px; width: 240px">
-            <button class="pz-cta pz-cta--hazard" @click="emit('netfail')">Играть с ботами</button>
-            <button class="pz-btn2" @click="toHangar">← В ангар</button>
-          </div>
-        </template>
+      <div v-if="netStuck" class="overlay countdown" style="z-index: 20">
+        <div class="cd-num pz-display" style="font-size: 22px; letter-spacing: 0.12em">НЕТ СВЯЗИ С БОЕМ</div>
+        <div class="cd-sub" style="margin-bottom: 16px">сервер не ответил — выберите</div>
+        <div style="display: flex; flex-direction: column; gap: 10px; width: 240px">
+          <button class="pz-cta pz-cta--hazard" @click="emit('netfail')">Играть с ботами</button>
+          <button class="pz-btn2" @click="toHangar">← В ангар</button>
+        </div>
       </div>
     </transition>
 
