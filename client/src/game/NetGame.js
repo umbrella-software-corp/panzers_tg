@@ -81,6 +81,7 @@ export class NetGame {
     this.onShot = () => {}
     this.onCrit = () => {}
     this.onKill = () => {}
+    this.onStall = null // связь встала посреди боя → Battle откатит в офлайн
     this.onSaved = () => {} // в PvP брони/рикошетов нет
     this._gridDrawn = false
     this._wantedTex = new Set()
@@ -435,6 +436,14 @@ export class NetGame {
 
   _update(dt) {
     dt = Math.min(dt, 0.05)
+    // связь встала посреди боя (снапшоты были, но не идут >5с) — откат в офлайн
+    // с ботами, чтобы не залипнуть на замёрзшем кадре
+    if (this.recvAt && !this.matchOver && this.onStall && performance.now() - this.recvAt > 5000) {
+      const cb = this.onStall
+      this.onStall = null
+      cb()
+      return
+    }
     this._panSpectator(dt)
     for (const s of this.shells) {
       s.t += dt
