@@ -7,6 +7,7 @@ import { computed, ref, onMounted } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig } from '../store.js'
 import { RATING_RIVALS, RENAME_COST_STARS } from '../game/meta.js'
 import { apiRename, apiLeaderboard } from '../api.js'
+import { haptic } from '../tg.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 
@@ -115,7 +116,7 @@ const fmtTime = (t) => {
 
     <!-- вкладки -->
     <div style="display: flex; gap: 6px; padding: 0 14px 8px">
-      <button v-for="(t, i) in TABS" :key="t" class="pz-display tabbtn" :class="{ on: tab === i }" @click="tab = i">{{ t }}</button>
+      <button v-for="(t, i) in TABS" :key="t" class="pz-display tabbtn" :class="{ on: tab === i }" @click="haptic('select'); tab = i">{{ t }}</button>
     </div>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">

@@ -9,6 +9,7 @@ import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, spendGoldAmmo, addBattleResult } from '../store.js'
 import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT, SKIN_BY_ID } from '../game/meta.js'
+import { haptic } from '../tg.js'
 import Results from './Results.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -101,6 +102,7 @@ function showToast(kind, text) {
 // килл-фид: последние 3 фрага игрока, тают через 4.5с
 const feed = ref([])
 game.onKill = (name) => {
+  haptic('success') // фраг — ощутимая отдача
   const key = Date.now() + Math.random()
   feed.value = [{ key, text: name }, ...feed.value].slice(0, 3)
   setTimeout(() => {
@@ -129,6 +131,7 @@ game.onState = (s) => {
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
   if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
   if (s.playerHp < prevHp && s.playerHp > 0) {
+    haptic('rigid') // получил урон — резкий толчок
     shaking.value = true
     clearTimeout(shakeTimer)
     shakeTimer = setTimeout(() => (shaking.value = false), 320)
@@ -205,6 +208,7 @@ game.onShot = (r) => {
     }
   }
   if (r.type === 'hit') {
+    haptic('medium') // пробитие — отдача попадания
     showToast('hit', 'ПРОБИТИЕ')
   } else if (r.type === 'ricochet') {
     showToast('miss', 'РИКОШЕТ')
@@ -261,6 +265,7 @@ function joyEnd(e) {
 }
 
 function onFire() {
+  haptic('light') // тап по «огонь» — лёгкая отдача выстрела
   game.fire()
 }
 
@@ -345,17 +350,22 @@ onBeforeUnmount(() => {
       </button>
 
       <div class="mid-col">
-        <!-- счёт: очки + ромбики живых -->
+        <!-- счёт: очки + ромбики живых. Боковые группы flex:1 → таймер строго
+             по центру независимо от ширины счёта (5 vs 11) -->
         <div class="scoreplate">
-          <span class="pz-pixel num ally">{{ state.allyScore }}</span>
-          <span class="dmnds">
-            <i v-for="i in 7" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
-          </span>
+          <div class="side left">
+            <span class="pz-pixel num ally">{{ state.allyScore }}</span>
+            <span class="dmnds">
+              <i v-for="i in 7" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
+            </span>
+          </div>
           <span class="pz-display timer" :class="{ low: state.matchTime <= 60 }">⏱ {{ fmtTime(state.matchTime) }}</span>
-          <span class="dmnds">
-            <i v-for="i in 7" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
-          </span>
-          <span class="pz-pixel num enemy">{{ state.enemyScore }}</span>
+          <div class="side right">
+            <span class="dmnds">
+              <i v-for="i in 7" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
+            </span>
+            <span class="pz-pixel num enemy">{{ state.enemyScore }}</span>
+          </div>
         </div>
         <!-- точки захвата: цвет владельца, пульс при перехвате -->
         <div v-if="state.caps && state.caps.length" class="caps">
@@ -544,12 +554,27 @@ onBeforeUnmount(() => {
 .scoreplate {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 5px 12px;
+}
+.scoreplate .side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.scoreplate .side.left {
+  justify-content: flex-end;
+}
+.scoreplate .side.right {
+  justify-content: flex-start;
+}
+.scoreplate .timer {
+  flex-shrink: 0;
 }
 .scoreplate .num {
   font-size: 13px;

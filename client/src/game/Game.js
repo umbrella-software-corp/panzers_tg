@@ -1086,7 +1086,10 @@ export class Game {
           const pen = this._penetration(shotA, tCls, tHull, false)
           pierced = pen.pen
           const dmg = Math.round(b.damage * pen.mult)
-          if (dmg > 0) this._damageUnit(target, dmg, b.team)
+          if (dmg > 0) {
+            this._damageUnit(target, dmg, b.team)
+            b.damageDealt = (b.damageDealt || 0) + dmg // для таблицы урона в донесении
+          }
           if (target.isPlayer && !pen.pen) {
             this.blocked++
             this.onSaved(pen.kind)
@@ -1164,6 +1167,15 @@ export class Game {
     this.onState(this._snapshot())
   }
 
+  // итоговая таблица: все бойцы обеих команд по урону (для донесения)
+  _scoreboard() {
+    const rows = [{ name: 'ВЫ', ally: true, damage: Math.round(this.damageDealt || 0), kills: this.kills || 0, you: true }]
+    for (const b of this.bots) {
+      rows.push({ name: b.name, ally: b.team === TEAM.ALLY, damage: Math.round(b.damageDealt || 0), kills: b.kills || 0, you: false })
+    }
+    return rows.sort((a, b) => b.damage - a.damage)
+  }
+
   _snapshot() {
     const reload01 = this.ready ? 1 : 1 - this.reloadRemaining / this.cls.reload
     return {
@@ -1198,6 +1210,7 @@ export class Game {
       damageLog: [...this.damageLog.values()]
         .map((e) => ({ ...e, dmg: Math.round(e.dmg) }))
         .sort((a, b) => b.dmg - a.dmg),
+      scoreboard: this.matchOver ? this._scoreboard() : null, // итоговая таблица урона обеих команд
       matchTime: Math.ceil(this.matchTime),
       matchOver: this.matchOver,
       result: this.result,

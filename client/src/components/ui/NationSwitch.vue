@@ -1,8 +1,13 @@
 <script setup>
 // Переключатель наций — прокручиваемые пилюли (порт NationSwitch).
 import { NATIONS } from '../../game/meta.js'
+import { haptic } from '../../tg.js'
 defineProps({ nation: { type: String, required: true } })
 const emit = defineEmits(['pick'])
+const pick = (id) => {
+  haptic('select')
+  emit('pick', id)
+}
 </script>
 
 <template>
@@ -35,7 +40,7 @@ const emit = defineEmits(['pick'])
         border: '1px solid ' + (nation === n.id ? 'transparent' : 'var(--line-strong)'),
         borderRadius: '999px',
       }"
-      @click="emit('pick', n.id)"
+      @click="pick(n.id)"
     >
       {{ n.label }}
     </button>

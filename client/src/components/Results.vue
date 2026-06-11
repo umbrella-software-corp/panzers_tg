@@ -15,7 +15,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['rematch', 'hangar'])
 
-const page = ref(0) // 0 — Сводка, 1 — По целям
+const page = ref(0) // 0 — Сводка, 1 — По бойцам (таблица урона обеих команд)
+// итоговая таблица урона: все бойцы, отсортированы по урону (сверху — топ)
+const scoreboard = computed(() => props.state.scoreboard || [])
 const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name || '')
 const log = computed(() => props.state.damageLog || [])
 const totalDmg = computed(() => log.value.reduce((a, x) => a + x.dmg, 0))
@@ -54,7 +56,7 @@ const rows = computed(() => [
 
       <!-- листы донесения (как скреплённые страницы) -->
       <div style="display: flex; gap: 6px; justify-content: center; margin-top: 10px">
-        <button v-for="(label, i) in ['Сводка', 'По целям']" :key="label" class="pz-display sheet-tab" :class="{ on: page === i }" @click="page = i">
+        <button v-for="(label, i) in ['Сводка', 'По бойцам']" :key="label" class="pz-display sheet-tab" :class="{ on: page === i }" @click="page = i">
           {{ label }} <span style="opacity: 0.55">· л.{{ i + 1 }}</span>
         </button>
       </div>
@@ -102,30 +104,23 @@ const rows = computed(() => [
       </template>
 
       <template v-else>
-        <!-- лист 2: по целям -->
-        <div style="padding: 14px 2px 4px">
-          <div v-if="!log.length" style="text-align: center; font-size: 13px; opacity: 0.6; padding: 24px 0; font-weight: 500">
-            Попаданий не зафиксировано
+        <!-- лист 2: по бойцам — урон обеих команд, сверху больше всего -->
+        <div style="padding: 12px 2px 4px">
+          <div v-if="!scoreboard.length" style="text-align: center; font-size: 13px; opacity: 0.6; padding: 24px 0; font-weight: 500">
+            Данные подсчитываются…
           </div>
-          <template v-else>
-            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 6px 14px; font-size: 13.5px; font-weight: 500; align-items: baseline">
-              <span class="pz-display" style="font-size: 10px; letter-spacing: 0.18em; opacity: 0.55">ЦЕЛЬ</span>
-              <span class="pz-display" style="font-size: 10px; letter-spacing: 0.18em; opacity: 0.55">УРОН</span>
-              <span class="pz-display" style="font-size: 10px; letter-spacing: 0.18em; opacity: 0.55">ИТОГ</span>
-              <template v-for="(x, i) in log" :key="i">
-                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">
-                  {{ x.name }} <span style="opacity: 0.55; font-size: 11.5px" v-if="tankOf(x.tankId)">· {{ tankOf(x.tankId) }}</span>
-                </span>
-                <span class="pz-display" style="font-size: 14px; text-align: right">{{ x.dmg }}</span>
-                <span :style="{ color: x.killed ? '#9a1f10' : 'rgba(33,29,18,.6)', fontWeight: 700, fontSize: '12.5px' }">{{ x.killed ? '✕ уничт.' : 'ранен' }}</span>
-              </template>
+          <div v-else class="pz-noscroll" style="display: flex; flex-direction: column; gap: 3px; max-height: 46vh; overflow-y: auto">
+            <div class="sb-row sb-head">
+              <span class="sb-place">#</span><span class="sb-dot" style="visibility: hidden"></span>
+              <span class="sb-name">БОЕЦ</span><span class="sb-dmg">УРОН</span>
             </div>
-            <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1.5px dashed rgba(33, 29, 18, 0.35); font-size: 14px; font-weight: 600">
-              <span>Всего урона</span>
-              <span style="flex: 1; border-bottom: 1.5px dotted rgba(33, 29, 18, 0.4); transform: translateY(-3px)"></span>
-              <span class="pz-display" style="font-size: 17px">{{ totalDmg }}</span>
+            <div v-for="(r, i) in scoreboard" :key="i" class="sb-row" :class="{ me: r.you }">
+              <span class="sb-place">{{ i + 1 }}</span>
+              <span class="sb-dot" :style="{ background: r.ally ? '#2f6ea0' : '#9a1f10' }"></span>
+              <span class="sb-name">{{ r.you ? profile.name : r.name }}<span v-if="r.kills" style="opacity: 0.5; font-weight: 500"> · {{ r.kills }} фр.</span></span>
+              <span class="pz-display sb-dmg">{{ r.damage }}</span>
             </div>
-          </template>
+          </div>
         </div>
       </template>
     </div>
@@ -139,6 +134,52 @@ const rows = computed(() => [
 </template>
 
 <style scoped>
+/* таблица «По бойцам» — на крафт-бумаге донесения */
+.sb-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--paper-ink);
+}
+.sb-row.me {
+  background: rgba(154, 31, 16, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(154, 31, 16, 0.35);
+}
+.sb-head {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  opacity: 0.5;
+  position: sticky;
+  top: 0;
+}
+.sb-place {
+  width: 16px;
+  text-align: center;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+.sb-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+.sb-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-dmg {
+  min-width: 46px;
+  text-align: right;
+  font-size: 15px;
+}
 .wrap {
   position: absolute;
   inset: 0;

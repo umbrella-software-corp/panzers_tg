@@ -33,6 +33,20 @@ export function setBackButton(handler) {
   }
 }
 
+// тактильная отдача Telegram (вибрация на событиях). Безопасно вне Telegram.
+// kind: light|medium|heavy|rigid|soft (impact) | success|warning|error (notify) | select
+export function haptic(kind = 'light') {
+  try {
+    const h = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback
+    if (!h) return
+    if (kind === 'success' || kind === 'warning' || kind === 'error') h.notificationOccurred(kind)
+    else if (kind === 'select') h.selectionChanged()
+    else h.impactOccurred(kind)
+  } catch {
+    /* старый клиент без HapticFeedback */
+  }
+}
+
 export function initTelegram() {
   const tg = window.Telegram && window.Telegram.WebApp
   const root = document.documentElement

@@ -1001,6 +1001,14 @@ export class NetGame {
 
   // --- состояние для HUD (форма как у локального Game) ---
 
+  // итоговая таблица: все бойцы обеих команд по урону (из match-end сервера)
+  _scoreboard() {
+    if (!this.finalStats) return null
+    return this.finalStats
+      .map((u) => ({ name: u.name, ally: u.team === this.side, damage: u.damage || 0, kills: u.kills || 0, you: u.id === this.youUnit }))
+      .sort((a, b) => b.damage - a.damage)
+  }
+
   _emitState() {
     const you = this.you || {}
     const units = this.cur ? this.cur.units : []
@@ -1035,6 +1043,7 @@ export class NetGame {
       classId: this.cls.id,
       damageDealt: you.damageDealt || 0,
       damageLog: [...this.damageLog.values()].sort((a, b) => b.dmg - a.dmg),
+      scoreboard: this._scoreboard(),
       matchTime: this.cur ? this.cur.matchTime : 0,
       matchOver: this.matchOver,
       result: this.result,

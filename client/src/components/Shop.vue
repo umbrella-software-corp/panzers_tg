@@ -6,6 +6,7 @@ import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin, syncPro
 import { apiBuy } from '../api.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
+import { haptic } from '../tg.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PzIcon from './ui/PzIcon.vue'
@@ -52,6 +53,7 @@ function buyCrate(c) {
       addRewards(0, tokens)
     }
   }
+  haptic('success') // вскрытие ящика — приятная отдача
   reveal.value = { name: c.name, credits: c.gain, skin, tokens }
 }
 // паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
@@ -113,7 +115,7 @@ const fmt = (n) => n.toLocaleString('ru-RU')
               АКТИВЕН · ОСТАЛОСЬ {{ premiumDaysLeft() }} ДН.
             </div>
           </div>
-          <button class="pz-cta" style="padding: 11px 13px; font-size: 13px; white-space: nowrap" @click="buyPremium">99 ⭐</button>
+          <button class="pz-cta" style="padding: 11px 15px; font-size: 14px; white-space: nowrap; width: auto; flex-shrink: 0" @click="buyPremium">99 ⭐</button>
         </div>
       </section>
 
