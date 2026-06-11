@@ -86,8 +86,11 @@ export async function refundPayment(charge) {
   if (!rec) return { error: 'платёж не найден' }
   if (rec.refunded) return { error: 'уже возвращён' }
   if (!hasBot()) return { error: 'нет BOT_TOKEN (dev-режим)' }
-  const userId = Number(rec.uid)
-  if (!Number.isFinite(userId) || userId <= 0) return { error: 'не Telegram-оплата (гость)' }
+  // uid телеграм-юзера — «tg_<numeric>»; гость — «g_...». Для refundStarPayment
+  // нужен ЧИСЛОВОЙ user_id, поэтому вырезаем префикс.
+  const m = /^tg_(\d+)$/.exec(String(rec.uid))
+  if (!m) return { error: 'не Telegram-оплата (гость)' }
+  const userId = Number(m[1])
   const res = await api('refundStarPayment', { user_id: userId, telegram_payment_charge_id: charge })
   if (!res.ok) return { error: res.description || 'Telegram отклонил рефанд' }
   // откат начисленного товара (кламп ≥0)
