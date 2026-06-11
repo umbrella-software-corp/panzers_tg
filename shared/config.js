@@ -58,7 +58,9 @@ export const MAP_SIZE = 2400
 // Рельеф/стены/базы/точки переехали в shared/maps.js (9 карт);
 // карту боя выбирает сервер при старте комнаты.
 export const CAP_TIME = 6
-export const CAP_TICK = 8
+// очко начисляется КАЖДОЙ удержанной точке за тик (War Thunder style: больше
+// точек — быстрее счёт). Тик 10с держит длину матча при 2–3 точках разумной.
+export const CAP_TICK = 10
 
 export const SCORE_LIMIT = 25
 export const MATCH_TIME = 240

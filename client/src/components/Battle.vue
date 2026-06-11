@@ -404,9 +404,10 @@ onBeforeUnmount(() => {
       ВЫ УНИЧТОЖЕНЫ · НАБЛЮДЕНИЕ
     </div>
 
-    <!-- зона движения: джойстик появляется под пальцем -->
+    <!-- зона движения: джойстик появляется под пальцем. После гибели джойстик
+         водит камеру наблюдения по карте (огонь скрыт, движок панорамирует) -->
     <div
-      v-show="phase === 'fighting' && !paused && state.playerHp > 0"
+      v-show="phase === 'fighting' && !paused"
       class="movezone"
       @pointerdown="joyStart"
       @pointermove="joyMove"

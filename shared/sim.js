@@ -414,10 +414,9 @@ export class BattleSim {
     this.capTimer += dt
     if (this.capTimer >= CAP_TICK) {
       this.capTimer -= CAP_TICK
-      const owned = [0, 0]
-      for (const cap of this.caps) if (cap.owner !== null) owned[cap.owner]++
-      if (owned[0] > owned[1]) this.score[0]++
-      else if (owned[1] > owned[0]) this.score[1]++
+      // каждая удержанная точка тикает очко владельцу — чем больше точек, тем
+      // быстрее растёт счёт (War Thunder style), обе команды копят независимо
+      for (const cap of this.caps) if (cap.owner !== null) this.score[cap.owner]++
     }
   }
 

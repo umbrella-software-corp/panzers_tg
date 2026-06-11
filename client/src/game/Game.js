@@ -110,6 +110,7 @@ export class Game {
     this.hullAngle = (-Math.PI / 2) * this.ySign
     this.speed = 0
     this.joystick = { x: 0, y: 0, active: false }
+    this.specCam = null // после гибели — свободная камера наблюдения по карте
     this.keys = { fwd: false, back: false, left: false, right: false }
     this.tankRadius = 22
 
@@ -917,16 +918,15 @@ export class Game {
       }
     }
 
-    // доминирование: очко каждые CAP_TICK сек получает команда,
-    // удерживающая БОЛЬШЕ точек (равенство — никому). Так фраги (+1 сразу)
-    // весят наравне с захватом и матч не сгорает за минуту.
+    // War Thunder style: каждая удержанная точка тикает очко владельцу —
+    // больше точек = быстрее счёт. Обе команды копят независимо.
     this.capTimer += dt
     if (this.capTimer >= CAP_TICK) {
       this.capTimer -= CAP_TICK
-      const ally = this.caps.filter((c) => c.owner === TEAM.ALLY).length
-      const enemy = this.caps.filter((c) => c.owner === TEAM.ENEMY).length
-      if (ally > enemy) this.score.ally++
-      else if (enemy > ally) this.score.enemy++
+      for (const c of this.caps) {
+        if (c.owner === TEAM.ALLY) this.score.ally++
+        else if (c.owner === TEAM.ENEMY) this.score.enemy++
+      }
     }
   }
 
@@ -964,7 +964,17 @@ export class Game {
   }
 
   _moveTank(dt) {
-    if (this.hp <= 0) return // уничтожен — наблюдает
+    if (this.hp <= 0) {
+      // уничтожен — джойстик свободно водит камеру наблюдения по карте
+      if (!this.specCam) this.specCam = { x: this.tank.x, y: this.tank.y }
+      const j = this.joystick
+      if (j.active && !this.paused) {
+        const sp = 700 // px/сек
+        this.specCam.x = Math.max(0, Math.min(MAP_SIZE, this.specCam.x + j.x * sp * dt))
+        this.specCam.y = Math.max(0, Math.min(MAP_SIZE, this.specCam.y + j.y * sp * dt))
+      }
+      return
+    }
     const j = this.joystick
     let steer = 0
     let throttle = 0 // -1..1, минус — задний ход
@@ -1202,9 +1212,14 @@ export class Game {
 
     const camX = w / 2
     const camY = h * 0.66
-    this.world.pivot.set(this.tank.x, this.tank.y)
+    // жив — камера за танком (танк вверх); мёртв — свободная камера наблюдения
+    // (specCam), карта севером вверх без вращения
+    const dead = this.hp <= 0
+    const px = dead && this.specCam ? this.specCam.x : this.tank.x
+    const py = dead && this.specCam ? this.specCam.y : this.tank.y
+    this.world.pivot.set(px, py)
     this.world.position.set(camX, camY)
-    this.world.rotation = -Math.PI / 2 - this.hullAngle
+    this.world.rotation = dead ? 0 : -Math.PI / 2 - this.hullAngle
 
     const g = this.gfx
     g.clear()

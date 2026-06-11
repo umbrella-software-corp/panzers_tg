@@ -58,6 +58,7 @@ export class NetGame {
     this.keys = { fwd: false, back: false, left: false, right: false }
     this.paused = false
     this._lastSent = { throttle: 0, steer: 0, at: 0 }
+    this.specCam = null // после гибели — свободная камера наблюдения по карте
 
     // эффекты
     this.shells = []
@@ -412,8 +413,26 @@ export class NetGame {
 
   // --- цикл ---
 
+  // после гибели джойстик свободно водит камеру по карте (наблюдение).
+  // rotation в _draw тогда 0 (север вверху) — панорама совпадает с экраном.
+  _panSpectator(dt) {
+    const own = this.cur ? this.cur.units.find((u) => u.id === this.youUnit) : null
+    if (!own || own.alive) {
+      this.specCam = null
+      return
+    }
+    if (!this.specCam) this.specCam = { x: own.x, y: own.y }
+    const j = this.joystick
+    if (j.active && !this.paused) {
+      const sp = 700 // px/сек
+      this.specCam.x = Math.max(0, Math.min(MAP_SIZE, this.specCam.x + j.x * sp * dt))
+      this.specCam.y = Math.max(0, Math.min(MAP_SIZE, this.specCam.y + j.y * sp * dt))
+    }
+  }
+
   _update(dt) {
     dt = Math.min(dt, 0.05)
+    this._panSpectator(dt)
     for (const s of this.shells) {
       s.t += dt
       if (s.t >= s.dur) {
@@ -471,13 +490,18 @@ export class NetGame {
 
     const units = this._lerpUnits()
     const own = this._own(units)
+    const dead = !!(own && !own.alive)
     const ox = own ? own.x : MAP_SIZE / 2
     const oy = own ? own.y : MAP_SIZE / 2
     const ohull = own ? own.hull : (-Math.PI / 2) * (this.side === 0 ? 1 : -1)
 
-    this.world.pivot.set(ox, oy)
+    // жив — камера следует за танком (танк смотрит вверх); мёртв — свободная
+    // камера наблюдения (specCam), карта развёрнута севером вверх без вращения
+    const camX = dead && this.specCam ? this.specCam.x : ox
+    const camY = dead && this.specCam ? this.specCam.y : oy
+    this.world.pivot.set(camX, camY)
     this.world.position.set(w / 2, h * 0.66)
-    this.world.rotation = -Math.PI / 2 - ohull
+    this.world.rotation = dead ? 0 : -Math.PI / 2 - ohull
 
     const g = this.gfx
     g.clear()
