@@ -5,7 +5,7 @@ import http from 'http'
 import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
-import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, getSetting, setSetting } from './db.js'
+import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, startPaymentsLoop } from './payments.js'
 import { adminPage } from './admin.js'
 
@@ -96,6 +96,12 @@ async function handleApi(req, res) {
   }
   if (req.url === '/api/leaderboard' && req.method === 'GET') {
     return json(res, 200, { top: await leaderboard(20) })
+  }
+  if (req.url.startsWith('/api/player') && req.method === 'GET') {
+    const rank = +new URL(req.url, 'http://x').searchParams.get('rank')
+    if (!rank || rank < 1) return json(res, 400, { error: 'bad rank' })
+    const player = await playerByRank(rank)
+    return player ? json(res, 200, { player }) : json(res, 404, { error: 'not found' })
   }
   if (req.url === '/api/config' && req.method === 'GET') {
     return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)) })

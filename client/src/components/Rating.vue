@@ -6,10 +6,11 @@
 import { computed, ref, onMounted } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig } from '../store.js'
 import { RATING_RIVALS, RENAME_COST_STARS } from '../game/meta.js'
-import { apiRename, apiLeaderboard } from '../api.js'
+import { apiRename, apiLeaderboard, apiPlayer } from '../api.js'
 import { haptic } from '../tg.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
+import PlayerCard from './PlayerCard.vue'
 
 const emit = defineEmits(['go'])
 const tab = ref(0)
@@ -72,10 +73,17 @@ onMounted(async () => {
 })
 
 const board = computed(() => {
-  // живой топ с сервера
+  // живой топ с сервера — строки кликабельны (place → карточка игрока)
   if (liveTop.value) {
-    const rows = liveTop.value.map((p) => ({ name: p.name, rating: p.rating, you: p.name === profile.name }))
-    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.rating, you: true }) // я вне топа
+    const rows = liveTop.value.map((p) => ({
+      place: p.place,
+      name: p.name,
+      rating: p.rating,
+      winrate: p.battles ? Math.round((p.wins / p.battles) * 100) : 0,
+      you: p.name === profile.name,
+      live: true,
+    }))
+    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.rating, you: true, live: false }) // я вне топа
     return rows
   }
   // фоллбэк: детерминированные «соперники» вокруг моего рейтинга
@@ -84,12 +92,39 @@ const board = computed(() => {
     let h = 0
     for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 997
     const delta = ((h % 21) - 10) * 18 + (i - RATING_RIVALS.length / 2) * 9
-    return { name, rating: Math.max(120, Math.round(mine + delta)), you: false }
+    return { name, rating: Math.max(120, Math.round(mine + delta)), you: false, live: false }
   })
-  rows.push({ name: profile.name, rating: mine, you: true })
+  rows.push({ name: profile.name, rating: mine, you: true, live: false })
   rows.sort((a, b) => b.rating - a.rating)
   return rows
 })
+
+// карточка игрока: тап по живой строке таблицы → публичный профиль с сервера
+const viewing = ref(null)
+async function openPlayer(row) {
+  if (!row.live || !row.place) return
+  haptic('select')
+  try {
+    const r = await apiPlayer(row.place)
+    if (r && r.player) viewing.value = r.player
+  } catch {
+    /* офлайн — молча */
+  }
+}
+// моя карточка — из локального профиля (без запроса)
+function openMe() {
+  haptic('select')
+  viewing.value = {
+    name: profile.name,
+    place: myPlace.value,
+    rating: profile.stats.rating,
+    battles: profile.stats.battles,
+    wins: profile.stats.wins,
+    kills: profile.stats.kills,
+    tank: profile.selectedTank,
+    favoriteTank: null,
+  }
+}
 const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
 // турнир активен (вкладка ТУРНИРЫ + включён в админке)
 const tournamentLive = computed(() => tab.value === 3 && serverConfig.tournaments)
@@ -142,15 +177,15 @@ const fmtTime = (t) => {
         </div>
       </section>
 
-      <!-- моя карточка -->
+      <!-- моя карточка (тап — открыть карточку профиля) -->
       <section v-if="tab === 0">
         <div class="pz-stencil-h">МОЯ СТАТИСТИКА</div>
-        <div class="pz-plate pz-brackets me" style="--bk: var(--amber)">
+        <div class="pz-plate pz-brackets me" style="--bk: var(--amber); cursor: pointer" @click="openMe">
           <div style="display: flex; align-items: center; gap: 12px">
             <img src="/sprites/trophy.png" class="rank-badge" style="object-fit: cover" />
             <div style="flex: 1">
               <div class="pz-display" style="font-size: 22px">{{ profile.stats.rating }}</div>
-              <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500">боевой рейтинг · место {{ myPlace }}</div>
+              <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500">боевой рейтинг · место {{ myPlace }} · открыть профиль ▸</div>
             </div>
           </div>
           <div class="cells">
@@ -184,9 +219,10 @@ const fmtTime = (t) => {
       <section v-if="tab === 1">
         <div class="pz-stencil-h">ТАБЛИЦА ЛИДЕРОВ</div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
-          <div v-for="(r, i) in board" :key="r.name" class="row" :class="{ you: r.you }">
+          <div v-for="(r, i) in board" :key="r.name + '-' + i" class="row" :class="{ you: r.you, tappable: r.live }" @click="openPlayer(r)">
             <span class="pz-pixel place" :style="{ color: i < 3 ? 'var(--amber)' : 'var(--ink-faint)' }">{{ i + 1 }}</span>
-            <span style="flex: 1; font-size: 13px; font-weight: 600" :style="{ color: r.you ? 'var(--amber)' : 'var(--ink)' }">{{ r.name }}</span>
+            <span class="lb-name" :style="{ color: r.you ? 'var(--amber)' : 'var(--ink)' }">{{ r.name }}</span>
+            <span v-if="r.live" style="font-size: 10.5px; color: var(--ink-dim); font-weight: 600; margin-right: 6px">{{ r.winrate }}%</span>
             <span class="pz-display" style="font-size: 13.5px">{{ r.rating }}</span>
           </div>
         </div>
@@ -197,8 +233,24 @@ const fmtTime = (t) => {
     </div>
 
     <BottomNav screen="rating" @go="emit('go', $event)" />
+
+    <!-- карточка профиля игрока -->
+    <transition name="pz-fade">
+      <PlayerCard v-if="viewing" :player="viewing" @close="viewing = null" />
+    </transition>
   </div>
 </template>
+
+<style>
+.pz-fade-enter-active,
+.pz-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.pz-fade-enter-from,
+.pz-fade-leave-to {
+  opacity: 0;
+}
+</style>
 
 <style scoped>
 .tabbtn {
@@ -271,6 +323,21 @@ const fmtTime = (t) => {
 .row.you {
   background: rgba(242, 165, 12, 0.08);
   border-color: var(--amber);
+}
+.row.tappable {
+  cursor: pointer;
+}
+.row.tappable:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+.lb-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .place {
   font-size: 9px;

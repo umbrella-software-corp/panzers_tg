@@ -45,6 +45,32 @@ export async function leaderboard(limit = 20) {
     .map((p, i) => ({ place: i + 1, name: p.name, rating: p.rating, battles: p.battles, wins: p.wins }))
 }
 
+// публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):
+// стата + любимая техника (самая частая в истории боёв)
+export async function playerByRank(rank) {
+  const sorted = (await listProfiles()).filter((p) => p.name).sort((a, b) => b.rating - a.rating)
+  const row = sorted[rank - 1]
+  if (!row) return null
+  const p = (await loadProfile(row.uid)) || {}
+  const s = p.stats || {}
+  let favoriteTank = null
+  if (Array.isArray(p.history) && p.history.length) {
+    const c = {}
+    for (const h of p.history) if (h.tank) c[h.tank] = (c[h.tank] || 0) + 1
+    favoriteTank = Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || null
+  }
+  return {
+    place: rank,
+    name: p.name || row.name || 'Боец',
+    rating: s.rating ?? row.rating ?? 0,
+    battles: s.battles ?? row.battles ?? 0,
+    wins: s.wins ?? row.wins ?? 0,
+    kills: s.kills || 0,
+    tank: p.selectedTank || null, // id текущей машины (для спрайта)
+    favoriteTank, // имя самой частой машины в истории
+  }
+}
+
 const safe = (uid) => String(uid).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
 
 export async function loadProfile(uid) {

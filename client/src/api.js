@@ -34,3 +34,5 @@ export const apiRename = (name) => apiBuy('rename', { name })
 // живая таблица лидеров (топ по рейтингу) и серверный конфиг (флаг турниров)
 export const apiLeaderboard = () => call('/api/leaderboard')
 export const apiConfig = () => call('/api/config')
+// публичный профиль игрока по месту в таблице
+export const apiPlayer = (rank) => call('/api/player?rank=' + rank)
