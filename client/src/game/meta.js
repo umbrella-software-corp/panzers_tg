@@ -203,11 +203,12 @@ export const SKIN_BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]))
 // (наш танк top-down, перекрашенный flux-kontext, на той же магенте — кеится
 // в рантайме как обычный танк). id '' — заводская окраска (базовый спрайт).
 export const CAMOS = [
-  { id: '', name: 'Заводская', short: 'СТД' },
-  { id: 'woodland', name: 'Лес', short: 'ЛЕС' },
-  { id: 'desert', name: 'Пустыня', short: 'ПУСТ' },
-  { id: 'winter', name: 'Зима', short: 'ЗИМА' },
+  { id: '', name: 'Заводская', short: 'СТД', cost: 0 },
+  { id: 'woodland', name: 'Лес', short: 'ЛЕС', cost: 25 },
+  { id: 'desert', name: 'Пустыня', short: 'ПУСТ', cost: 25 },
+  { id: 'winter', name: 'Зима', short: 'ЗИМА', cost: 25 },
 ]
+export const CAMO_BY_ID = Object.fromEntries(CAMOS.map((c) => [c.id, c]))
 export const CAMO_IDS = CAMOS.map((c) => c.id).filter(Boolean)
 // смена позывного — за Telegram Stars (цена авторитетна на сервере, PRODUCTS.rename)
 export const RENAME_COST_STARS = 50

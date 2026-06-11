@@ -2,8 +2,9 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed } from 'vue'
-import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, tankCamo, tasksClaimable, tankModLevel } from '../store.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, MODULE_COMBAT } from '../game/meta.js'
+import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel } from '../store.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
+import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -39,10 +40,18 @@ const tanks = computed(() => tanksOfNation(profile.nation))
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
 const partyMul = computed(() => profile.party.length)
-// камуфляж выбирается на КАЖДЫЙ танк (бесплатная покраска перекрашенным спрайтом)
+// камуфляж на КАЖДЫЙ танк: разблокировка за жетоны, потом надевается бесплатно
 const selCamo = computed(() => tankCamo(tank.value.id))
 function pickCamo(id) {
-  setCamo(tank.value.id, id)
+  const tid = tank.value.id
+  if (camoUnlocked(tid, id)) {
+    setCamo(tid, id)
+    haptic('select')
+  } else if (buyCamo(tid, id)) {
+    haptic('success') // куплено и сразу надето
+  } else {
+    haptic('error') // не хватает жетонов
+  }
 }
 </script>
 
@@ -121,7 +130,7 @@ function pickCamo(id) {
     </div>
 
     <!-- камуфляж: 3 схемы + заводская, на КАЖДЫЙ танк. Превью — сам танк в этом
-         камо (перекрашенный спрайт), покраска бесплатная -->
+         камо; разблокировка за жетоны (заводская бесплатна) -->
     <div class="camo-head">
       <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">КАМУФЛЯЖ</span>
     </div>
@@ -130,12 +139,15 @@ function pickCamo(id) {
         v-for="c in CAMOS"
         :key="c.id || 'std'"
         class="camo-cell"
-        :class="{ on: selCamo === c.id }"
+        :class="{ on: selCamo === c.id, locked: !camoUnlocked(tank.id, c.id) }"
         :disabled="locked"
         :title="c.name"
         @click="pickCamo(c.id)"
       >
         <TankImg :tank-id="tank.id" :camo="c.id" :size="40" :rotate="180" />
+        <span v-if="!camoUnlocked(tank.id, c.id)" class="camo-price pz-pixel">
+          <PzIcon name="token" :size="8" /> {{ c.cost }}
+        </span>
         <span class="camo-lbl">{{ c.short }}</span>
       </button>
     </div>
@@ -287,6 +299,7 @@ function pickCamo(id) {
   flex-shrink: 0;
 }
 .camo-cell {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -298,6 +311,22 @@ function pickCamo(id) {
   background: rgba(0, 0, 0, 0.32);
   cursor: pointer;
   opacity: 0.9;
+}
+.camo-cell.locked :deep(canvas) {
+  filter: grayscale(0.7) brightness(0.6); /* не куплен — приглушаем превью */
+}
+.camo-price {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 7px;
+  color: #1d1604;
+  background: var(--amber);
+  padding: 1px 4px 1px 2px;
+  border-radius: 6px;
 }
 .camo-cell.on {
   border-color: var(--amber);

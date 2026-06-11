@@ -1191,6 +1191,16 @@ export class Game {
         this._killBot(unit)
       }
     }
+    // попадание по тому, кто захватывает ЧУЖУЮ базу — сбивает прогресс захвата
+    // (Романов фидбек: «когда тебя атакуют — минусовать время захвата»)
+    const ux = unit.isPlayer ? this.tank.x : unit.x
+    const uy = unit.isPlayer ? this.tank.y : unit.y
+    const uteam = unit.isPlayer ? TEAM.ALLY : unit.team
+    for (const base of this.bases) {
+      if (base.team !== uteam && base.progress > 0 && Math.hypot(ux - base.x, uy - base.y) <= base.r) {
+        base.progress = Math.max(0, base.progress - 20) // каждый удар −20% захвата
+      }
+    }
   }
 
   _emitState() {

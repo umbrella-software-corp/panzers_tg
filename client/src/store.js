@@ -40,6 +40,7 @@ import {
   MEDAL_BY_ID,
   RANKS,
   rankByBattles,
+  CAMO_BY_ID,
 } from './game/meta.js'
 
 const KEY = 'pz.state.v1'
@@ -80,7 +81,12 @@ if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } 
 if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {} // перки специалистов { memberId: 0..3 }
 if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {} // опыт по веткам наций
 if (!profile.medals || typeof profile.medals !== 'object') profile.medals = {} // { medalId: счётчик получений }
-if (!profile.camos || typeof profile.camos !== 'object') profile.camos = {} // { tankId: camoId } — камуфляж на танк
+if (!profile.camos || typeof profile.camos !== 'object') profile.camos = {} // { tankId: camoId } — надетый камуфляж
+if (!Array.isArray(profile.camoOwned)) {
+  profile.camoOwned = [] // купленные камо: ['tankId_camoId', ...]
+  // грандфазер: уже надетые камо (из бесплатной эпохи) — считаем купленными
+  for (const [tid, cid] of Object.entries(profile.camos)) if (cid) profile.camoOwned.push(`${tid}_${cid}`)
+}
 // звание: rankClaimed — индекс последнего выданного звания. Существующим игрокам
 // ставим текущее (без задним числом награды за все ступени сразу), новым — 0.
 if (typeof profile.rankClaimed !== 'number') profile.rankClaimed = rankByBattles((profile.stats || {}).battles || 0).index
@@ -298,12 +304,28 @@ export function setSkin(skinId) {
   if (profile.skins.includes(skinId)) profile.skin = skinId
 }
 
-// дроп случайного непринадлежащего камуфляжа (из ящиков); null — все собраны
-// ---------- камуфляж на танк (3 схемы, бесплатная покраска) ----------
+// ---------- камуфляж на танк (3 схемы, разблокировка за жетоны) ----------
 export const tankCamo = (tankId) => profile.camos[tankId] || ''
+// камо разблокирован для танка? Заводская (id '') — всегда бесплатно.
+export const camoUnlocked = (tankId, camoId) => !camoId || profile.camoOwned.includes(`${tankId}_${camoId}`)
 export function setCamo(tankId, camoId) {
+  if (camoId && !camoUnlocked(tankId, camoId)) return false // не куплен — не ставим
   if (camoId) profile.camos[tankId] = camoId
   else delete profile.camos[tankId]
+  return true
+}
+// купить камо для танка за жетоны и сразу надеть; false — не хватило/уже есть
+export function buyCamo(tankId, camoId) {
+  const def = CAMO_BY_ID[camoId]
+  if (!def || !camoId) return false
+  if (camoUnlocked(tankId, camoId)) {
+    setCamo(tankId, camoId)
+    return true
+  }
+  if (!spendTokens(def.cost)) return false
+  profile.camoOwned.push(`${tankId}_${camoId}`)
+  profile.camos[tankId] = camoId
+  return true
 }
 
 export function grantRandomSkin() {
