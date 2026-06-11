@@ -199,7 +199,9 @@ function newRoom() {
 }
 
 function getJoinRoom() {
-  if (waitingRoom && !waitingRoom.started && waitingRoom.humans.length < TEAM_SIZE * 2) return waitingRoom
+  // комната = ОДНА команда живых игроков (как обещает UI «ВАША КОМАНДА · X/7»);
+  // враг — боты. Поэтому добираем людей до TEAM_SIZE, а не до TEAM_SIZE*2.
+  if (waitingRoom && !waitingRoom.started && waitingRoom.humans.length < TEAM_SIZE) return waitingRoom
   waitingRoom = newRoom()
   return waitingRoom
 }
@@ -228,8 +230,9 @@ function startRoom(room) {
   clearTimeout(room.waitTimer)
   if (waitingRoom === room) waitingRoom = null
 
-  // команды: чередуем по порядку входа (0,1,0,1…); карта — жребий комнаты
-  room.humans.forEach((h, i) => (h.team = i % 2))
+  // ВСЕ живые игроки комнаты — в ОДНУ команду (юг, team 0), как обещает экран
+  // поиска «ВАША КОМАНДА»: друзья всегда вместе. Враг — боты (team 1, добор в sim)
+  room.humans.forEach((h) => (h.team = 0))
   const map = randomMap()
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
@@ -350,7 +353,7 @@ wss.on('connection', (ws, req) => {
     room.waitTimer = setTimeout(() => startRoom(room), WAIT_MS)
   }
   broadcastLobby(room)
-  if (room.humans.length >= TEAM_SIZE * 2) startRoom(room)
+  if (room.humans.length >= TEAM_SIZE) startRoom(room) // команда живых заполнена — старт
 
   ws.on('message', (raw) => {
     const now = Date.now()
