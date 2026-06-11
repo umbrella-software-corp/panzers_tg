@@ -5,7 +5,7 @@ import http from 'http'
 import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
-import { loadProfile, saveProfile, listProfiles, listPayments } from './db.js'
+import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, getSetting, setSetting } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, startPaymentsLoop } from './payments.js'
 import { adminPage } from './admin.js'
 
@@ -51,11 +51,17 @@ const readBody = (req) =>
 // ---------- админка: статистика, профили, покупки (x-admin-key) ----------
 async function handleAdmin(req, res) {
   if (!ADMIN_KEY || req.headers['x-admin-key'] !== ADMIN_KEY) return json(res, 401, { error: 'unauthorized' })
+  if (req.url === '/api/admin/tournaments' && req.method === 'POST') {
+    const { on } = await readBody(req)
+    await setSetting('tournamentsOn', !!on)
+    return json(res, 200, { tournaments: !!on })
+  }
   if (req.url === '/api/admin/stats' && req.method === 'GET') {
     const payments = await listPayments()
     return json(res, 200, {
       now: Date.now(),
       online: wss.clients.size,
+      tournaments: !!(await getSetting('tournamentsOn', false)),
       rooms: [...rooms.values()].map((r) => ({
         id: r.id,
         started: r.started,
@@ -87,6 +93,12 @@ async function handleApi(req, res) {
 
   if (req.url === '/api/profile' && req.method === 'GET') {
     return json(res, 200, { uid: user.uid, profile: await loadProfile(user.uid) })
+  }
+  if (req.url === '/api/leaderboard' && req.method === 'GET') {
+    return json(res, 200, { top: await leaderboard(20) })
+  }
+  if (req.url === '/api/config' && req.method === 'GET') {
+    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)) })
   }
   if (req.url === '/api/profile' && req.method === 'POST') {
     const body = await readBody(req)

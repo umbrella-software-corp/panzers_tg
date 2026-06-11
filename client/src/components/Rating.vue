@@ -3,10 +3,10 @@
 // Рейтинг (таблица лидеров) / Кланы и Турниры (СКОРО). Смена имени платная.
 // Соперники пока фейковые вокруг моего рейтинга (бэкенда нет) — но
 // стабильные между заходами, чтобы таблица не скакала.
-import { computed, ref } from 'vue'
-import { profile, setCustomName, syncProfile } from '../store.js'
+import { computed, ref, onMounted } from 'vue'
+import { profile, setCustomName, syncProfile, serverConfig } from '../store.js'
 import { RATING_RIVALS, RENAME_COST_STARS } from '../game/meta.js'
-import { apiRename } from '../api.js'
+import { apiRename, apiLeaderboard } from '../api.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 
@@ -59,11 +59,27 @@ const winrate = computed(() => {
   return s.battles ? Math.round((s.wins / s.battles) * 100) : 0
 })
 
-// детерминированные «соперники» вокруг моего рейтинга
+// живая таблица лидеров с сервера (топ по рейтингу); офлайн/пусто → фоллбэк
+const liveTop = ref(null)
+onMounted(async () => {
+  try {
+    const r = await apiLeaderboard()
+    if (r && Array.isArray(r.top) && r.top.length) liveTop.value = r.top
+  } catch {
+    /* офлайн — останется фейковый board */
+  }
+})
+
 const board = computed(() => {
+  // живой топ с сервера
+  if (liveTop.value) {
+    const rows = liveTop.value.map((p) => ({ name: p.name, rating: p.rating, you: p.name === profile.name }))
+    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.rating, you: true }) // я вне топа
+    return rows
+  }
+  // фоллбэк: детерминированные «соперники» вокруг моего рейтинга
   const mine = profile.stats.rating
   const rows = RATING_RIVALS.map((name, i) => {
-    // стабильный псевдослучайный сдвиг от имени
     let h = 0
     for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 997
     const delta = ((h % 21) - 10) * 18 + (i - RATING_RIVALS.length / 2) * 9
@@ -74,6 +90,8 @@ const board = computed(() => {
   return rows
 })
 const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
+// турнир активен (вкладка ТУРНИРЫ + включён в админке)
+const tournamentLive = computed(() => tab.value === 3 && serverConfig.tournaments)
 
 const RES = {
   victory: { label: 'ПОБЕДА', color: 'var(--green)' },
@@ -101,13 +119,15 @@ const fmtTime = (t) => {
     </div>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
-      <!-- ===== КЛАНЫ / ТУРНИРЫ: скоро ===== -->
+      <!-- ===== КЛАНЫ / ТУРНИРЫ ===== -->
       <section v-if="tab >= 2" style="flex: 1; display: flex; align-items: center; justify-content: center">
-        <div class="pz-plate pz-brackets" style="--bk: var(--amber); padding: 26px 30px; text-align: center">
+        <div class="pz-plate pz-brackets" :style="{ '--bk': tournamentLive ? 'var(--green)' : 'var(--amber)', padding: '26px 30px', textAlign: 'center' }">
           <div class="pz-display" style="font-size: 20px; letter-spacing: 0.14em">{{ TABS[tab] }}</div>
-          <div class="pz-pixel" style="font-size: 9px; color: var(--amber); margin-top: 10px">СКОРО</div>
+          <div class="pz-pixel" style="font-size: 9px; margin-top: 10px" :style="{ color: tournamentLive ? 'var(--green)' : 'var(--amber)' }">
+            {{ tournamentLive ? '● ИДЁТ СЕЙЧАС' : 'СКОРО' }}
+          </div>
           <div style="font-size: 11.5px; color: var(--ink-dim); margin-top: 8px; font-weight: 500">
-            {{ tab === 2 ? 'Собирай взвод — клан будет его продолжением' : 'Сетевые бои 7×7 уже на подходе' }}
+            {{ tab === 2 ? 'Собирай взвод — клан будет его продолжением' : tournamentLive ? 'Турнир в эфире — врывайся в бой и поднимай рейтинг!' : 'Сетевые бои 7×7 уже на подходе' }}
           </div>
         </div>
       </section>

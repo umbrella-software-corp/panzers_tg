@@ -31,3 +31,6 @@ export const apiSaveProfile = (profile) => call('/api/profile', { method: 'POST'
 export const apiBuy = (productId, extra = {}) => call('/api/invoice', { method: 'POST', body: JSON.stringify({ productId, ...extra }) })
 // смена позывного за звёзды: имя едет в payload инвойса, сервер ставит его после оплаты
 export const apiRename = (name) => apiBuy('rename', { name })
+// живая таблица лидеров (топ по рейтингу) и серверный конфиг (флаг турниров)
+export const apiLeaderboard = () => call('/api/leaderboard')
+export const apiConfig = () => call('/api/config')

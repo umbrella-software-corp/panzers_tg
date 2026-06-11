@@ -41,6 +41,7 @@ export const adminPage = () => `<!doctype html>
 <div id="app" hidden>
   <h1>PANZER <b>TG</b> · админка <span class="muted" style="font-size:12px">(обновление каждые 5с)</span></h1>
   <div class="cards" id="cards"></div>
+  <h2>Турниры</h2><div id="tournaments"></div>
   <h2>Комнаты боёв</h2><div id="rooms"></div>
   <h2>Покупки за звёзды</h2><div id="payments"></div>
   <h2>Игроки</h2><div id="profiles"></div>
@@ -75,6 +76,11 @@ async function refresh() {
     [s.payMode === 'stars' ? 'STARS' : 'DEV', 'режим оплаты'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>').join('')
 
+  $('tournaments').innerHTML = '<button style="width:auto;padding:9px 16px;background:'
+    + (s.tournaments ? 'var(--green)' : 'var(--line)') + ';color:' + (s.tournaments ? '#0d100a' : 'var(--ink)')
+    + '" onclick="toggleTournaments(' + (s.tournaments ? 'false' : 'true') + ')">'
+    + (s.tournaments ? 'Турниры ВКЛЮЧЕНЫ ✓ — выключить' : 'Турниры выключены — включить') + '</button>'
+
   $('rooms').innerHTML = table(
     ['Комната', 'Статус', 'Карта', 'Счёт', 'Люди'],
     s.rooms.map((r) => [
@@ -104,6 +110,16 @@ async function refresh() {
   )
   $('status').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU')
 }
+
+async function toggleTournaments(on) {
+  await fetch('/api/admin/tournaments', {
+    method: 'POST',
+    headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' },
+    body: JSON.stringify({ on }),
+  })
+  refresh()
+}
+window.toggleTournaments = toggleTournaments
 
 let timer = null
 async function boot() {

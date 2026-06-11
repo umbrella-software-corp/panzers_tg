@@ -2,8 +2,19 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch } from 'vue'
-import { apiLoadProfile, apiSaveProfile } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiConfig } from './api.js'
 import { tgUser } from './tg.js'
+
+// серверный конфиг (флаги админки: турниры вкл/выкл)
+export const serverConfig = reactive({ tournaments: false })
+export async function loadConfig() {
+  try {
+    const c = await apiConfig()
+    serverConfig.tournaments = !!c.tournaments
+  } catch {
+    /* офлайн — оставляем дефолт */
+  }
+}
 import {
   TANK_BY_ID,
   STARTERS,

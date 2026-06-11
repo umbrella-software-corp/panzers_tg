@@ -7,8 +7,43 @@ import { fileURLToPath } from 'url'
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data')
 const PROFILES = path.join(ROOT, 'profiles')
 const PAYMENTS = path.join(ROOT, 'payments.json')
+const SETTINGS = path.join(ROOT, 'settings.json')
 
 await fs.mkdir(PROFILES, { recursive: true })
+
+// настройки сервера (флаги админки: турниры вкл/выкл и т.п.)
+let settings = null
+async function loadSettings() {
+  if (settings) return settings
+  try {
+    settings = JSON.parse(await fs.readFile(SETTINGS, 'utf8'))
+  } catch {
+    settings = {}
+  }
+  return settings
+}
+export async function getSetting(key, def = null) {
+  const s = await loadSettings()
+  return key in s ? s[key] : def
+}
+export async function setSetting(key, value) {
+  const s = await loadSettings()
+  s[key] = value
+  const tmp = `${SETTINGS}.${process.pid}.tmp`
+  await fs.writeFile(tmp, JSON.stringify(s))
+  await fs.rename(tmp, SETTINGS)
+  return s
+}
+
+// топ игроков по боевому рейтингу для живой таблицы лидеров
+export async function leaderboard(limit = 20) {
+  const all = await listProfiles()
+  return all
+    .filter((p) => p.name)
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, limit)
+    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.rating, battles: p.battles, wins: p.wins }))
+}
 
 const safe = (uid) => String(uid).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
 
