@@ -18,6 +18,7 @@ const props = defineProps({
   mapId: { type: String, default: '' },
   side: { type: Number, default: 0 }, // 0 — юг (синие), 1 — север (красные)
   net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz }
+  instant: { type: Boolean, default: false }, // авто-откат онлайн→офлайн: сразу в бой, без отсчёта
 })
 const emit = defineEmits(['exit', 'rematch', 'netfail'])
 
@@ -73,11 +74,10 @@ const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
 
 // фаза боя: countdown (отсчёт) | fighting | result. Отсчёт стартует СРАЗУ и для
-// онлайна — НЕ ждём снапшот (иначе при потере первого пакета застреваем). Двойной
-// «3-2-1» больше не возникает, т.к. авто-отката в офлайн нет (см. netStuck).
-const phase = ref('countdown')
+// онлайна. Авто-откат онлайн→офлайн приходит как instant=true → сразу fighting
+// (без второго «3-2-1»). Игрок никогда не залипает.
+const phase = ref(props.instant ? 'fighting' : 'countdown')
 const count = ref(3)
-const netStuck = ref(false) // онлайн-данные так и не пришли — показываем выбор, НЕ ботим молча
 let countTimer = null
 
 // пауза по кнопке (поверх фазы fighting)
@@ -330,17 +330,23 @@ onMounted(async () => {
   else game.setClass(DEFAULT_CLASS)
   await game.mount(stage.value)
   game.setMinimap(minimap.value)
-  startCountdown() // отсчёт сразу — и в онлайне (NetGame рисует мир по мере прихода снапшотов)
+  if (props.instant) {
+    // авто-откат в офлайн: без отсчёта, сразу в бой
+    phase.value = 'fighting'
+    game.setPaused(false)
+  } else {
+    startCountdown() // отсчёт сразу — и в онлайне (NetGame рисует мир по мере прихода снапшотов)
+  }
   if (isNet) {
-    // реальный матч НЕ подменяем ботами молча: если за 12с не пришло НИ ОДНОГО
-    // снапшота — показываем ВЫБОР (играть с ботами / в ангар)
+    // если за 5с не пришло НИ ОДНОГО снапшота — авто-откат в бой с ботами
+    // (мгновенно, без второго отсчёта). Игрок никогда не залипает на «нет связи».
     netWatchdog = setTimeout(() => {
       netWatchdog = null
       if (!game.cur) {
-        console.warn('[battle] онлайн-бой: 12с без снапшотов — предлагаю выбор')
-        netStuck.value = true
+        console.warn('[battle] онлайн-бой: 5с без снапшотов — авто-откат в офлайн с ботами')
+        emit('netfail')
       }
-    }, 12000)
+    }, 5000)
   }
 })
 // диагностика прода: состояние боя доступно из консоли (window.__pz)
@@ -476,18 +482,6 @@ onBeforeUnmount(() => {
       </svg>
       <span class="pz-display flabel">{{ state.ready ? 'ОГОНЬ' : state.reloadLeft.toFixed(1) + 'с' }}</span>
     </button>
-
-    <!-- онлайн: нет данных боя — НЕ ботим молча, даём выбор (поверх всего) -->
-    <transition name="fade">
-      <div v-if="netStuck" class="overlay countdown" style="z-index: 20">
-        <div class="cd-num pz-display" style="font-size: 22px; letter-spacing: 0.12em">НЕТ СВЯЗИ С БОЕМ</div>
-        <div class="cd-sub" style="margin-bottom: 16px">сервер не ответил — выберите</div>
-        <div style="display: flex; flex-direction: column; gap: 10px; width: 240px">
-          <button class="pz-cta pz-cta--hazard" @click="emit('netfail')">Играть с ботами</button>
-          <button class="pz-btn2" @click="toHangar">← В ангар</button>
-        </div>
-      </div>
-    </transition>
 
     <!-- стартовый отсчёт -->
     <transition name="fade">
