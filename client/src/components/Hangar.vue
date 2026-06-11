@@ -2,8 +2,8 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed } from 'vue'
-import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, buySkin, setSkin, tasksClaimable } from '../store.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, SKINS, SKIN_BY_ID } from '../game/meta.js'
+import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, buySkin, setSkin, tasksClaimable, tankModLevel } from '../store.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, SKINS, SKIN_BY_ID, MODULE_COMBAT } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
@@ -19,6 +19,21 @@ const squadOpen = ref(false)
 const tasksOpen = ref(false)
 
 const tank = computed(() => TANK_BY_ID[profile.selectedTank] || tanksOfNation(profile.nation)[0])
+
+// ТТХ с учётом прокачки: дизайн-стата × модуль × экипаж (как в loadoutStats).
+// base — исходное, value — с прокачкой; шторка рисует прирост, а не статику.
+const STAT_MOD = { dmg: 'gun', hp: 'tur', spd: 'eng', mnv: 'trk', view: 'rad' }
+const ttxStats = computed(() => {
+  const t = tank.value
+  const ck = 1 + (crewLevel() - 1) * 0.01 // экипаж баффает ход/манёвр/обзор/темп
+  return Object.entries(t.stats).map(([k, base]) => {
+    let m = 1
+    const mod = STAT_MOD[k]
+    if (mod) m *= MODULE_COMBAT[mod][tankModLevel(t.id, mod) - 1]
+    if (k === 'spd' || k === 'mnv' || k === 'view' || k === 'rof') m *= ck
+    return { key: k, label: STAT_LABELS[k], base, value: Math.min(10, +(base * m).toFixed(1)) }
+  })
+})
 const locked = computed(() => !isOwned(tank.value.id))
 const nationLabel = computed(() => (NATIONS.find((n) => n.id === profile.nation) || {}).label)
 const tanks = computed(() => tanksOfNation(profile.nation))
@@ -114,7 +129,7 @@ function buyPreviewed() {
 
     <!-- ТТХ-шторка -->
     <div v-if="ttx" class="pz-plate" style="margin: 0 14px 8px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; animation: pz-slide-up 0.22s ease">
-      <StatRow v-for="(v, k) in tank.stats" :key="k" :label="STAT_LABELS[k]" :value="v" />
+      <StatRow v-for="s in ttxStats" :key="s.key" :label="s.label" :value="s.value" :base="s.base" />
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
     </div>
 
