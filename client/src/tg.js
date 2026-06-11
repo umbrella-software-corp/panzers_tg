@@ -15,6 +15,58 @@ export function tgUser() {
   return name ? { id: u.id, name } : null
 }
 
+// id текущего игрока в Telegram (число) — для реферальных/взводных deep-link'ов
+export function tgUserId() {
+  const u = tgUser()
+  return u ? u.id : null
+}
+
+// start_param из deep-link (?startapp=...): реферал «ref_<id>» или взвод «sq_<id>».
+// Вне Telegram (dev в браузере) — можно подставить через ?tgWebAppStartParam=.
+export function startParam() {
+  const tg = window.Telegram && window.Telegram.WebApp
+  const p = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param
+  if (p) return String(p)
+  try {
+    return new URL(location.href).searchParams.get('tgWebAppStartParam') || null
+  } catch {
+    return null
+  }
+}
+
+// deep-link на мини-апп с параметром запуска. Бот и (опц.) короткое имя апп —
+// из env, дефолт @panzers_bot. Открывший ссылку получит param в start_param.
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'panzers_bot'
+const BOT_APP = import.meta.env.VITE_BOT_APP || ''
+export function inviteLink(param) {
+  const base = BOT_APP ? `https://t.me/${BOT_USERNAME}/${BOT_APP}` : `https://t.me/${BOT_USERNAME}`
+  return `${base}?startapp=${encodeURIComponent(param)}`
+}
+
+// поделиться ссылкой: 1) нативный шэр Telegram (выбор чата), 2) буфер обмена,
+// 3) не вышло. Возвращает 'share' | 'copied' | 'none' — UI подберёт тост.
+export function shareLink(url, text = '') {
+  const tg = window.Telegram && window.Telegram.WebApp
+  const share = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`
+  if (tg && typeof tg.openTelegramLink === 'function') {
+    try {
+      tg.openTelegramLink(share)
+      return 'share'
+    } catch {
+      /* старый клиент — пробуем буфер ниже */
+    }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url)
+      return 'copied'
+    }
+  } catch {
+    /* нет clipboard API */
+  }
+  return 'none'
+}
+
 // текущий обработчик кнопки «Назад» (его дёргает единый onClick из initTelegram)
 let backHandler = null
 
@@ -41,16 +93,17 @@ const VIBE_MS = { select: 8, light: 12, soft: 12, medium: 22, rigid: 28, heavy: 
 export function haptic(kind = 'light') {
   const tg = window.Telegram && window.Telegram.WebApp
   const h = tg && tg.HapticFeedback
-  // Telegram-хаптик, если клиент достаточно свежий (≥6.1). isVersionAtLeast нет у
-  // совсем старых — тогда не рискуем и идём в нативную вибру.
-  if (h && tg.isVersionAtLeast && tg.isVersionAtLeast('6.1')) {
+  // Telegram-хаптик — единственный, что работает на iOS. Гейт по версии УБРАН:
+  // если HapticFeedback есть, просто пробуем (старый клиент кинет — ловим и идём
+  // в нативную вибру). Версионный гейт раньше глушил отдачу на части клиентов.
+  if (h) {
     try {
       if (kind === 'success' || kind === 'warning' || kind === 'error') h.notificationOccurred(kind)
       else if (kind === 'select') h.selectionChanged()
       else h.impactOccurred(kind)
       return
     } catch {
-      /* падаем в нативную вибрацию ниже */
+      /* старый клиент без impactOccurred — падаем в нативную вибрацию ниже */
     }
   }
   // фолбэк: нативная вибрация (Android и обычный браузер; на iOS — no-op)

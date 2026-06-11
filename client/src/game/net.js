@@ -12,12 +12,14 @@ const WS_URL =
  * onLobby({players, you, startsIn}) — обновления комнаты ожидания,
  * onStart(msg match-start) — бой начался, onClose — соединение закрылось.
  */
-export function connectMatch({ name, tankId, tint, skin, stats, battles, onLobby, onStart, onClose }, timeoutMs = 4000) {
+export function connectMatch({ name, tankId, tint, skin, stats, battles, party, onLobby, onStart, onClose }, timeoutMs = 4000) {
   return new Promise((resolve, reject) => {
     let settled = false
     let ws
+    // токен взвода едет в query — сервер группирует одинаковые токены в одну комнату
+    const url = party ? `${WS_URL}?party=${encodeURIComponent(party)}` : WS_URL
     try {
-      ws = new WebSocket(WS_URL)
+      ws = new WebSocket(url)
     } catch (e) {
       return reject(e)
     }

@@ -7,6 +7,18 @@ import { tgUser } from './tg.js'
 
 // серверный конфиг (флаги админки: турниры вкл/выкл)
 export const serverConfig = reactive({ tournaments: false })
+
+// взвод текущего сеанса (НЕ персистится): token — id командира взвода. Друзья,
+// открывшие твою sq-ссылку, ищут бой с тем же token и попадают в одну комнату.
+export const party = reactive({ token: null, leader: false })
+export function setPartyToken(token, leader = false) {
+  party.token = token ? String(token) : null
+  party.leader = !!leader
+}
+export function clearParty() {
+  party.token = null
+  party.leader = false
+}
 export async function loadConfig() {
   try {
     const c = await apiConfig()
@@ -493,16 +505,9 @@ export function claimTask(id) {
   return true
 }
 
-// ---------- взвод и рефералы ----------
-export function setParty(ids) {
-  profile.party = ids.slice(0, 2) // максимум 2 напарника (взвод 3/3 с командиром)
-}
-
-export function addReferral(name) {
-  if (profile.referrals.length >= 5) return false
-  profile.referrals.push(name)
-  return true
-}
+// ---------- рефералы ----------
+// referrals/referralIds/referredBy ведёт СЕРВЕР (защищены от затирания при сейве
+// профиля), клиент их только читает. Локального fake-addReferral больше нет.
 
 // забрать награду рубежа рефералов (i — индекс REF_MILESTONES)
 export function claimRefMilestone(i) {

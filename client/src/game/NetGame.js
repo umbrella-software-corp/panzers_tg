@@ -252,6 +252,7 @@ export class NetGame {
     this.bg = new Graphics()
     this.terrain = new Graphics()
     this.gfx = new Graphics()
+    this.markGfx = new Graphics() // командные «пятаки» свой/чужой ПОД танками
     this.terrLayer = new Container()
     this.tankLayer = new Container()
     this.fxLayer = new Container()
@@ -261,7 +262,7 @@ export class NetGame {
       if (this.map.tint) this.groundTile.tint = this.map.tint
       this.world.addChild(this.groundTile)
     }
-    this.world.addChild(this.bg, this.terrLayer, this.terrain, this.tankLayer, this.gfx, this.fxLayer)
+    this.world.addChild(this.bg, this.terrLayer, this.terrain, this.markGfx, this.tankLayer, this.gfx, this.fxLayer)
     this.app.stage.addChild(this.world)
 
     this.unitSprites = new Map() // unitId -> Sprite (создаются по мере появления)
@@ -517,6 +518,8 @@ export class NetGame {
 
     const g = this.gfx
     g.clear()
+    const mg = this.markGfx
+    mg.clear()
 
     // точки захвата
     const caps = this.cur ? this.cur.caps : []
@@ -608,13 +611,20 @@ export class NetGame {
       }
 
       const flash = this.flash.get(u.id) > 0
+      // командный «пятак» ПОД чужими/союзными танками (свой танк — это ты, не нужен):
+      // свой/чужой читается без перекраски машины — модель в собственном камуфляже
+      if (!isSelf) {
+        mg.ellipse(u.x, u.y + 8, 30, 12).fill({ color: pal.hp, alpha: 0.16 })
+        mg.ellipse(u.x, u.y + 8, 30, 12).stroke({ width: 2.5, color: pal.hp, alpha: 0.75 })
+      }
       if (spr) {
         spr.visible = true
         spr.position.set(u.x, u.y)
         spr.rotation = u.hull - Math.PI / 2
-        // узорный камуфляж уже запечён в текстуру — поверх не тонируем
+        // узорный камуфляж уже запечён в текстуру — поверх не тонируем; командный
+        // оттенок НЕ накладываем: танк в своём камо/окраске, команду даёт «пятак»
         const baked = spr._texKey && spr._texKey.includes(':')
-        spr.tint = baked ? 0xffffff : isSelf ? this.playerTint || 0xffffff : u.tankId ? (u.tint || pal.tint) : 0xffffff
+        spr.tint = baked ? 0xffffff : isSelf ? this.playerTint || 0xffffff : u.tint || 0xffffff
         if (flash) g.circle(u.x, u.y, 30).fill({ color: 0xffffff, alpha: 0.45 })
         if (isSelf && this.hurtFlash > 0) g.circle(u.x, u.y, 36).fill({ color: 0xff6a5a, alpha: 0.4 })
       } else {

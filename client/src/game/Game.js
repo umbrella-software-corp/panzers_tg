@@ -29,6 +29,10 @@ const TEAM_PALETTE = {
   red: { main: 0xff8d7d, hp: 0xff5a4a, muzzle: 0xff7043, tint: 0xffa090, body: 0xd8543f, dark: 0x6e1f12, sprite: 'red', css: '#ff6a6a' },
 }
 
+const WATER_DEEP = 0.6 // доля радиуса воды = смертельная глубина (центр), кромка — брод
+const WATER_SLOW = 0.45 // множитель скорости в мелководье (брод)
+const REVEAL_S = 4 // сек видимости после выстрела — «выстрел снимает маскировку» из куста
+
 function angleDiff(a, b) {
   let d = (a - b) % (Math.PI * 2)
   if (d > Math.PI) d -= Math.PI * 2
@@ -112,6 +116,7 @@ export class Game {
     this.setClass(DEFAULT_CLASS)
     this.ready = true
     this.reloadRemaining = 0
+    this.revealT = 0 // >0 — игрок недавно стрелял, маскировка кустом снята (видят боты)
     this.ammoMult = 1 // 1 = обычный снаряд, GOLD_AMMO_MULT = голдовый
 
     const c = MAP_SIZE / 2
@@ -314,6 +319,7 @@ export class Game {
     this.bg = new Graphics()
     this.terrain = new Graphics()
     this.gfx = new Graphics()
+    this.markGfx = new Graphics() // командные «пятаки» свой/чужой ПОД танками
     this.terrLayer = new Container() // текстуры местности под векторными обводками
     this.tankLayer = new Container() // спрайты танков под HUD-графикой (hp-бары и т.п.)
     this.fxLayer = new Container() // аддитивные вспышки взрывов поверх всего
@@ -323,7 +329,7 @@ export class Game {
       if (this.map.tint) this.groundTile.tint = this.map.tint // характер местности карты
       this.world.addChild(this.groundTile)
     }
-    this.world.addChild(this.bg, this.terrLayer, this.terrain, this.tankLayer, this.gfx, this.fxLayer)
+    this.world.addChild(this.bg, this.terrLayer, this.terrain, this.markGfx, this.tankLayer, this.gfx, this.fxLayer)
     this.app.stage.addChild(this.world)
 
     // спрайты юнитов: игрок янтарный, союзники синие, враги красные
@@ -485,9 +491,10 @@ export class Game {
     return out
   }
 
-  // прокси игрока как боевой единицы (для таргетинга ботов)
+  // прокси игрока как боевой единицы (для таргетинга ботов). revealT прокидываем —
+  // выстрелив, игрок становится видим ботам даже из куста
   _playerUnit() {
-    return { isPlayer: true, team: TEAM.ALLY, x: this.tank.x, y: this.tank.y, hp: this.hp }
+    return { isPlayer: true, team: TEAM.ALLY, x: this.tank.x, y: this.tank.y, hp: this.hp, revealT: this.revealT }
   }
 
   _enemiesOf(team) {
@@ -510,6 +517,7 @@ export class Game {
     this.ready = false
     this.reloadRemaining = this.cls.reload
     this.shots++
+    this.revealT = REVEAL_S // выстрел снимает маскировку: пару секунд тебя видно из куста
 
     const tx = this.tank.x
     const ty = this.tank.y
@@ -544,6 +552,7 @@ export class Game {
     let pen = null
     if (best) {
       this.hits++ // попадание есть, даже если броня не пробита
+      this._alertBot(best.b, tx, ty) // получил по броне — реагирует, даже если стрелка не видит
       pen = this._penetration(lineAngle, best.b.classId, best.b.hull, this.ammoMult > 1)
       const dmg = Math.round(this.cls.damage * this.ammoMult * pen.mult)
       if (dmg > 0) {
@@ -605,10 +614,11 @@ export class Game {
 
   // --- геометрия препятствий ---
 
-  // блокировка ВЫСТРЕЛА: рельеф + стены
+  // блокировка ВЫСТРЕЛА: рельеф + стены. Куст и вода — мягкие: снаряд проходит
+  // (куст только скрывает силуэт, см. _visionBlocked; стену/камень/холм снаряд держит)
   _lineBlocked(x1, y1, x2, y2) {
     for (const o of this.obstacles) {
-      if (o.kind === 'water') continue // поверх воды видно и стреляется
+      if (o.kind === 'water' || o.kind === 'bush') continue
       if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
     }
     for (const w of this.walls) {
@@ -705,7 +715,8 @@ export class Game {
       if (Math.hypot(b.x - this.tank.x, b.y - this.tank.y) > reach) continue
       if (b._ramAt && this.t - b._ramAt < 0.5) continue
       b._ramAt = this.t
-      const dmg = Math.round((spd / this.cls.maxSpeed) * 16 * massK)
+      // урон тарана урезан ~на 62% (коэф. 16→6, фидбек Романа: таран был слишком злой)
+      const dmg = Math.round((spd / this.cls.maxSpeed) * 6 * massK)
       if (dmg <= 0) continue
       this._damageUnit(b, dmg, TEAM.ALLY) // урон врагу
       this.booms.push({ x: (this.tank.x + b.x) / 2, y: (this.tank.y + b.y) / 2, age: 0, big: false })
@@ -716,7 +727,7 @@ export class Game {
 
   _resolveCollisions(pos, radius) {
     for (const o of this.obstacles) {
-      if (o.kind === 'bush') continue // лес проходим; block/hill/water — нет
+      if (o.kind === 'bush' || o.kind === 'water') continue // лес и вода проходимы (вода — брод/глубина в _waterState); block/hill — нет
       const dx = pos.x - o.x
       const dy = pos.y - o.y
       const d = Math.hypot(dx, dy)
@@ -755,6 +766,26 @@ export class Game {
     const m = 60
     pos.x = Math.max(m, Math.min(MAP_SIZE - m, pos.x))
     pos.y = Math.max(m, Math.min(MAP_SIZE - m, pos.y))
+  }
+
+  // состояние воды под танком: 'deep' — глубина (топит), 'shallow' — брод (тормозит),
+  // null — суша. Боты НЕ топятся: их выталкиваем на кромку глубокой воды (не топим
+  // стадо ботов), игрок же сам решает соваться ли в глубину.
+  _waterState(u, isPlayer) {
+    for (const o of this.obstacles) {
+      if (o.kind !== 'water') continue
+      const dx = u.x - o.x
+      const dy = u.y - o.y
+      const d = Math.hypot(dx, dy) || 0.0001
+      if (d >= o.r) continue
+      if (d < o.r * WATER_DEEP) {
+        if (isPlayer) return 'deep'
+        u.x = o.x + (dx / d) * o.r * WATER_DEEP // бот: выталкиваем на кромку глубины
+        u.y = o.y + (dy / d) * o.r * WATER_DEEP
+      }
+      return 'shallow' // мелководье ИЛИ вытолкнутый на кромку бот — брод (замедление)
+    }
+    return null
   }
 
   // одна жизнь: убитый танк остаётся обломками до конца боя
@@ -872,7 +903,9 @@ export class Game {
     for (const b of this.bots) {
       if (b.team !== TEAM.ENEMY) continue
       const byMe = this.hp > 0 && this._spottedByPlayer(b)
-      b.spotted = b.alive && (this.hp <= 0 || byMe || this._spottedByAllies(b))
+      // бот выстрелил (revealT) и он в пределах твоего обзора — видно даже из куста
+      const byFire = b.revealT > 0 && this.hp > 0 && Math.hypot(b.x - this.tank.x, b.y - this.tank.y) <= this._vision()
+      b.spotted = b.alive && (this.hp <= 0 || byMe || byFire || this._spottedByAllies(b))
       // опыт за РАЗВЕДКУ: первый ЛИЧНЫЙ засвет каждого живого врага (без спама)
       if (byMe && b.alive && !this.spotScored.has(b.id)) {
         this.spotScored.add(b.id)
@@ -1077,6 +1110,27 @@ export class Game {
     this.tank.x += Math.cos(this.hullAngle) * this.speed * dt
     this.tank.y += Math.sin(this.hullAngle) * this.speed * dt
     this._resolveCollisions(this.tank, this.tankRadius)
+
+    if (this.revealT > 0) this.revealT -= dt // маскировка кустом восстанавливается после выстрела
+    // вода: заехал в глубину — тонешь; брод — едешь медленно (уязвим)
+    const water = this._waterState(this.tank, true)
+    if (water === 'deep') this._drownPlayer()
+    else if (water === 'shallow') {
+      const cap = this.cls.maxSpeed * WATER_SLOW
+      this.speed = Math.max(-cap, Math.min(cap, this.speed))
+    }
+  }
+
+  // утонул в глубокой воде: выбываем как от смертельного урона (одна жизнь)
+  _drownPlayer() {
+    if (this.hp <= 0) return
+    this.hp = 0
+    this.deaths++
+    this.score.enemy++
+    this.speed = 0
+    this.booms.push({ x: this.tank.x, y: this.tank.y, age: 0, big: true })
+    this._spawnFx(this.tank.x, this.tank.y, 1.9)
+    this._emitState() // onState покажет «ВЫ УНИЧТОЖЕНЫ» и тряску
   }
 
   // --- ИИ бота (общий для обеих команд) ---
@@ -1089,16 +1143,19 @@ export class Game {
     const foes = this._enemiesOf(b.team)
     const vision = b.vision || ai.vision // обзор = как у игрока на классе
     const ideal = vision * 0.5 // держит дистанцию ВДВОЕ ближе обзора (близкий бой)
-    const fireRange = vision * 0.66 // стреляет только сблизившись — не лупит издалека
+    // стреляет по ЛЮБОМУ засвеченному врагу (точность сама падает с дистанцией в
+    // _botFire) — иначе бот игнорил «пикера» на средней дальности и казался тупым
+    const fireRange = vision * 0.92
     let target = null
     let bestD = Infinity
     for (const f of foes) {
       const d = Math.hypot(f.x - b.x, f.y - b.y)
-      // боты не всевидящие: цель только в пределах своего обзора и при прямой видимости
-      if (d <= vision && d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
-        bestD = d
-        target = f
-      }
+      if (d > vision || d >= bestD) continue // не дальше своего обзора, ближайшая цель
+      if (this._lineBlocked(b.x, b.y, f.x, f.y)) continue // камень/холм/стена держат снаряд
+      // куст СКРЫВАЕТ цель, пока она не выстрелила: revealT>0 — видно сквозь куст
+      if (!(f.revealT > 0) && this._visionBlocked(b.x, b.y, f.x, f.y)) continue
+      bestD = d
+      target = f
     }
 
     if (b.fireCd > 0) b.fireCd -= dt
@@ -1106,30 +1163,47 @@ export class Game {
     const py = b.y
     let wantMove = true
 
-    // ближний бой ТОЛЬКО если враг близко; дальнего «пикера» НЕ преследуем, иначе
-    // один игрок из куста уводит ботов с карты (фидбек Романа). Дальний враг —
-    // едем к объективу, стреляя по нему, если он попал в сектор.
+    // Засёк врага → ВСЕГДА доворачиваем корпус на него и стреляем (бот защищается,
+    // не подставляет корму — иначе кажется тупым). А вот ПРЕСЛЕДУЕМ (едем на
+    // сближение) только врага вблизи: дальнего «пикера» из куста не гоним по всей
+    // карте (анти-кайт, фидбек Романа) — стоим и отстреливаемся.
     const engageRange = vision * 0.7
-    if (target && bestD <= engageRange) {
+    if (b.reverseT > 0) {
+      // экстренный задний ход: зажало в препятствии — сдаём назад и доворачиваем в
+      // сторону, чтобы оторваться от стены/камня и не залипнуть АФК
+      b.hull += (b.avoidDir || 1) * b.turnRate * dt
+      this._botDrive(b, -0.7, dt)
+      if (target) this._botFire(b, target, bestD, fireRange) // отстреливается и на ходу назад
+    } else if (target) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
-      // при объезде целимся в сторону; лёгкое вилянье курсом (боком не ездят)
-      let steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18
+      const near = bestD <= engageRange
+      // вблизи — лёгкое вилянье курсом (боком не ездят); издали — ровно на цель
+      const steerA = near ? (b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18) : ang
       const diff = angleDiff(steerA, b.hull)
       const turnEff = b.turnRate * (1 - 0.35 * Math.min(1, Math.abs(b.vel) / b.speed))
       const maxTurn = turnEff * dt
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
-      if (b.hp < b.maxHp * 0.3) move = -1 // мало хп — отступаем, продолжая отстреливаться
-      else if (bestD > ideal * 1.1) move = 1 // далеко в зоне боя — чуть на сближение
-      else if (bestD < ideal * 0.55) move = -0.5 // совсем вплотную — чуть назад
+      if (near) {
+        if (b.hp < b.maxHp * 0.3) move = -1 // мало хп — отступаем, продолжая отстреливаться
+        else if (bestD > ideal * 1.1) move = 1 // далеко в зоне боя — чуть на сближение
+        else if (bestD < ideal * 0.55) move = -0.5 // совсем вплотную — чуть назад
+      }
       wantMove = move !== 0
-
       this._botDrive(b, move, dt)
       this._botFire(b, target, bestD, fireRange)
+    } else if (b.alertT > 0) {
+      // получил урон от стрелка ВНЕ обзора → выдвигаемся на источник, чтобы засветить
+      // и не стоять мишенью (фидбек: КВ-1 отстреливает с дистанции больше обзора бота)
+      let a = Math.atan2(b.alertY - b.y, b.alertX - b.x)
+      if (b.avoidT > 0) a += b.avoidDir * 1.5
+      const diff = angleDiff(a, b.hull)
+      const turnEff = b.turnRate * (1 - 0.35 * Math.min(1, Math.abs(b.vel) / b.speed))
+      b.hull += Math.max(-turnEff * dt, Math.min(turnEff * dt, diff))
+      this._botDrive(b, 1, dt) // на полном ходу сближается со стрелком
     } else {
-      // ОБЪЕКТИВ: к открытой точке / на защиту своей базы. Дальнего врага не гонимся,
-      // но стреляем оппортунистически, если он сам попал в сектор и дальность.
+      // нет видимого врага и тревоги — к объективу: открытая точка / защита своей базы
       const goal = this._botGoal(b)
       const c = MAP_SIZE / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
@@ -1138,20 +1212,37 @@ export class Game {
       const turnEff = b.turnRate * (1 - 0.35 * Math.min(1, Math.abs(b.vel) / b.speed))
       b.hull += Math.max(-turnEff * dt, Math.min(turnEff * dt, diff))
       this._botDrive(b, 0.6, dt)
-      if (target) this._botFire(b, target, bestD, fireRange)
     }
 
     this._resolveCollisions(b, ai.radius)
+    // вода: бот не топится (выталкивается на кромку глубины), но в броде тормозит
+    if (this._waterState(b, false) === 'shallow') {
+      const cap = b.speed * WATER_SLOW
+      b.vel = Math.max(-cap, Math.min(cap, b.vel))
+    }
 
-    // антизастревание: хотел ехать, но упёрся — объезд по дуге случайной стороной
+    // тревога, маскировка и таймеры объезда тают
+    if (b.alertT > 0) b.alertT -= dt
+    if (b.revealT > 0) b.revealT -= dt
     if (b.avoidT > 0) b.avoidT -= dt
+    if (b.reverseT > 0) b.reverseT -= dt
+    // антизастревание: упёрся — объезд дугой; упёрся ПОВТОРНО — задний ход и разворот
     const moved = Math.hypot(b.x - px, b.y - py)
     if (wantMove && moved < Math.abs(b.vel) * dt * 0.25) b.stuckT = (b.stuckT || 0) + dt
     else b.stuckT = 0
-    if (b.stuckT > 0.5) {
+    if (moved > Math.abs(b.vel) * dt * 0.6) b.stuckHits = 0 // поехал нормально — серия сброшена
+    if (b.stuckT > 0.45) {
       b.stuckT = 0
-      b.avoidT = 0.9
-      b.avoidDir = Math.random() < 0.5 ? -1 : 1
+      const fresh = b.avoidT <= 0
+      if (fresh) b.avoidDir = Math.random() < 0.5 ? -1 : 1 // новая попытка — выбираем сторону
+      b.stuckHits = fresh ? 1 : (b.stuckHits || 0) + 1
+      if (b.stuckHits >= 2) {
+        b.reverseT = 0.45 // объезд не помог — сдаём назад, ломаем контакт с препятствием
+        b.avoidT = 1.6
+        b.stuckHits = 0
+      } else {
+        b.avoidT = 1.0
+      }
     }
   }
 
@@ -1165,12 +1256,22 @@ export class Game {
     return open.length ? open[b.id % open.length] : null
   }
 
+  // бот получил урон от (возможно невидимого) стрелка: запоминаем источник и на
+  // несколько секунд выдвигаемся к нему — чтобы не стоять мишенью под дальним огнём
+  _alertBot(b, fromX, fromY) {
+    if (!b || !b.alive) return
+    b.alertT = 4
+    b.alertX = fromX
+    b.alertY = fromY
+  }
+
   // выстрел бота по цели, если она в секторе и дальности стрельбы и огонь готов
   _botFire(b, target, bestD, fireRange) {
     if (b.fireCd > 0 || bestD > fireRange) return
     const ang = Math.atan2(target.y - b.y, target.x - b.x)
     if (Math.abs(angleDiff(ang, b.hull)) > (ENEMY_AI.sectorHalfDeg * Math.PI) / 180) return
     b.fireCd = b.reload
+    b.revealT = REVEAL_S // бот выстрелил — виден игроку даже из куста (засветился)
     const col = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).muzzle
     this.muzzles.push({ x: b.x + Math.cos(b.hull) * 34, y: b.y + Math.sin(b.hull) * 34, a: b.hull, age: 0, color: col })
     // точность падает с дистанцией: в упор полная, у края дальности ~0.45
@@ -1333,6 +1434,8 @@ export class Game {
 
     const g = this.gfx
     g.clear()
+    const mg = this.markGfx
+    mg.clear()
 
     const tx = this.tank.x
     const ty = this.tank.y
@@ -1384,6 +1487,18 @@ export class Game {
       g.moveTo(ex - px * tick, ey - py * tick)
         .lineTo(ex + px * tick, ey + py * tick)
         .stroke({ width: ready ? 4 : 3, color: col, alpha: ready ? 1 : 0.5, cap: 'round' })
+      // «блайнд»-зона: пушка добивает ДАЛЬШЕ обзора — продолжаем линию тускло-пунктиром
+      // до макс. дальности, чтобы было видно, где стрельба идёт вслепую (фидбек Романа)
+      if (this.cls.range > L + 24) {
+        const bx = tx + Math.cos(lineA) * this.cls.range
+        const by = ty + Math.sin(lineA) * this.cls.range
+        for (let s = 0; s < 5; s += 2) {
+          g.moveTo(ex + (bx - ex) * (s / 5), ey + (by - ey) * (s / 5))
+            .lineTo(ex + (bx - ex) * ((s + 1) / 5), ey + (by - ey) * ((s + 1) / 5))
+            .stroke({ width: 2, color: col, alpha: ready ? 0.22 : 0.12, cap: 'round' })
+        }
+        g.moveTo(bx - px * 9, by - py * 9).lineTo(bx + px * 9, by + py * 9).stroke({ width: 2, color: col, alpha: 0.28 })
+      }
     }
 
     // спрайтовый режим: каждый кадр прячем все и включаем только видимых
@@ -1413,9 +1528,12 @@ export class Game {
       const isAlly = b.team === TEAM.ALLY
       if (!isAlly && !b.spotted) continue
       const teamCol = isAlly ? this.colors.ally : this.colors.enemy
-      // реальные машины подкрашиваем командным оттенком, классовые уже цветные
-      const aliveTint = b.realSprite ? teamCol.tint : 0xffffff
-      if (useSpr && placeSpr(b.id, b.x, b.y, b.hull, aliveTint)) {
+      // командный «пятак» ПОД танком (markGfx) — свой/чужой читается без перекраски
+      // машины: реальные модели остаются в собственном камуфляже (tint 0xffffff)
+      mg.ellipse(b.x, b.y + 8, 30, 12).fill({ color: teamCol.hp, alpha: 0.16 })
+      mg.ellipse(b.x, b.y + 8, 30, 12).stroke({ width: 2.5, color: teamCol.hp, alpha: 0.75 })
+      // классовый фоллбэк-спрайт уже окрашен в текстуре под команду; реальный — нет
+      if (useSpr && placeSpr(b.id, b.x, b.y, b.hull, 0xffffff)) {
         if (b.flash > 0) g.circle(b.x, b.y, 30).fill({ color: 0xffffff, alpha: 0.45 })
       } else {
         const c = { body: teamCol.body, dark: teamCol.dark }
@@ -1756,11 +1874,13 @@ export class Game {
     this.bushSprites = [] // кусты для динамической прозрачности при заезде
     for (const o of this.obstacles) {
       if (o.kind === 'water') {
-        // вода — круглый патч с маской (фон спрайта однородный)
+        // вода — круглый патч с маской (фон спрайта однородный). Кромка — брод
+        // (тормозит), тёмное ядро — глубина (топит): рисуем ядро, чтобы читалась опасность
         const sprited = this._terrainPatch('water', o.x, o.y, o.r)
         if (!sprited) g.circle(o.x, o.y, o.r).fill({ color: 0x1d4a66, alpha: 0.9 })
         g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2e6e8e })
-        if (!sprited) g.circle(o.x, o.y, o.r * 0.62).stroke({ width: 2, color: 0x2e6e8e, alpha: 0.4 })
+        g.circle(o.x, o.y, o.r * WATER_DEEP).fill({ color: 0x0a2233, alpha: 0.5 })
+        g.circle(o.x, o.y, o.r * WATER_DEEP).stroke({ width: 2, color: 0x08151f, alpha: 0.55 })
       } else if (o.kind === 'hill') {
         // гора — спрайт с прозрачным фоном, чуть крупнее круга коллизии
         if (!this._terrainSprite('hill', o.x, o.y, o.r)) {

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, markRaw } from 'vue'
-import { setBackButton } from './tg.js'
+import { setBackButton, startParam, tgUserId } from './tg.js'
+import { apiReferred } from './api.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
 import Crew from './components/Crew.vue'
@@ -9,7 +10,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig } from './store.js'
+import { profile, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken } from './store.js'
 import { randomMap } from './game/maps.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
@@ -29,8 +30,28 @@ onMounted(async () => {
   await syncProfile() // офлайн — молча остаёмся на локальном кеше
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)
+  handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
   if (dailyAvailable()) daily.value = true
 })
+
+// разбор start_param из пригласительной ссылки. ref_<id> — засчитать реферера на
+// сервере (один раз). sq_<id> — встать во взвод командира <id> на этот сеанс.
+async function handleStartParam() {
+  const m = /^(ref|sq)_(\d{3,})$/.exec(startParam() || '')
+  if (!m) return
+  const kind = m[1]
+  const id = m[2]
+  if (String(id) === String(tgUserId())) return // свою же ссылку игнорируем
+  if (kind === 'sq') {
+    setPartyToken(id, false) // приглашён — командир взвода id
+  } else {
+    try {
+      await apiReferred(id) // сервер привяжет реферера и добавит меня ему в рекруты
+    } catch {
+      /* офлайн — реферал не засчитан; повторно засчитывать не пытаемся */
+    }
+  }
+}
 
 function go(to) {
   screen.value = to
@@ -51,6 +72,9 @@ function deploy(net) {
   // markRaw: НЕ оборачивать клиент (ws + onMessage-подписка) в реактивный прокси —
   // иначе net.js (сырой объект) и NetGame (прокси) расходятся, снапшоты не доходят
   netMatch.value = net ? markRaw(net) : null // онлайн, если матчмейкинг нашёл сервер
+  // фиксируем сторону онлайн-боя в жребий: если связь оборвётся ПОСРЕДИ боя и будет
+  // откат в офлайн — игрок останется за ту же команду (без смены синие↔красные)
+  if (net) draw.value = { ...draw.value, side: net.side }
   instantDeploy.value = false // обычный старт с отсчётом
   battleKey.value++ // каждый матч — свежий бой
   screen.value = 'battle'

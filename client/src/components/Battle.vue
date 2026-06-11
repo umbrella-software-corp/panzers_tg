@@ -145,7 +145,7 @@ game.onState = (s) => {
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
   if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
   if (s.playerHp < prevHp && s.playerHp > 0) {
-    haptic('rigid') // получил урон — резкий толчок
+    haptic('heavy') // получил урон — сильный толчок (хорошо ощущается на iOS)
     shaking.value = true
     clearTimeout(shakeTimer)
     shakeTimer = setTimeout(() => (shaking.value = false), 320)
@@ -231,8 +231,10 @@ game.onShot = (r) => {
     haptic('medium') // пробитие — отдача попадания
     showToast('hit', 'ПРОБИТИЕ')
   } else if (r.type === 'ricochet') {
+    haptic('light') // снаряд лизнул броню — лёгкий тик
     showToast('miss', 'РИКОШЕТ')
   } else if (r.type === 'nopen') {
+    haptic('light') // попал, но не пробил — лёгкий тик
     showToast('miss', 'НЕ ПРОБИЛ')
   } else if (r.type === 'miss') {
     const txt =

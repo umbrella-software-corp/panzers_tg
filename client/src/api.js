@@ -36,3 +36,6 @@ export const apiLeaderboard = () => call('/api/leaderboard')
 export const apiConfig = () => call('/api/config')
 // публичный профиль игрока по месту в таблице
 export const apiPlayer = (rank) => call('/api/player?rank=' + rank)
+// засчёт реферала: «меня пригласил <ref>» (Telegram id пригласившего из deep-link).
+// Сервер один раз привязывает реферера и добавляет меня ему в рекруты.
+export const apiReferred = (ref) => call('/api/referred', { method: 'POST', body: JSON.stringify({ ref: String(ref) }) })

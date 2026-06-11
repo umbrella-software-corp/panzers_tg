@@ -120,20 +120,7 @@ export const CREW_PERK_MAX = 3
 export const CREW_PERK_COSTS = [800, 2000, 4500] // кредиты за ранг I/II/III
 export const crewPerkCost = (curLevel) => CREW_PERK_COSTS[curLevel] ?? Infinity
 
-// ---------- взвод и рефералы (порт screen-squad) ----------
-export const FRIENDS = [
-  { id: 'f1', name: 'Серый_152', tank: 'КВ-1', status: 'online' },
-  { id: 'f2', name: 'MaxPower', tank: 'Т-34', status: 'online' },
-  { id: 'f3', name: 'Кефир', tank: 'БТ-7', status: 'battle' },
-  { id: 'f4', name: 'Danila_PRO', tank: 'Pz. IV', status: 'online' },
-  { id: 'f5', name: 'штурман77', tank: 'Т-26', status: 'offline' },
-]
-export const FRIEND_STATUS = {
-  online: { label: 'В сети', color: 'var(--green)' },
-  battle: { label: 'В бою', color: 'var(--red)' },
-  offline: { label: 'Не в сети', color: 'var(--ink-faint)' },
-}
-export const REF_NAMES = ['Виталя_98', 'KOT_B_TANKE', 'Лёха77', 'sn1per_x', 'Бородач']
+// ---------- рефералы (взвод/друзья — через реальные Telegram deep-link'и, без фейка) ----------
 export const REF_MILESTONES = [
   { need: 1, label: '500 кредитов', credits: 500, tokens: 0 },
   { need: 3, label: 'Офицерский ящик', credits: 1800, tokens: 0 },

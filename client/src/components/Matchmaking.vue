@@ -2,8 +2,8 @@
 // Поиск боя: НАСТОЯЩИЙ онлайн через WS (живые игроки, добор ботами на
 // сервере по дедлайну). Сервер недоступен — офлайн-бой с ботами, как раньше.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { profile, loadoutStats } from '../store.js'
-import { TANK_BY_ID, FRIENDS, MAX_TIER, SKIN_BY_ID, rankByBattles } from '../game/meta.js'
+import { profile, loadoutStats, party } from '../store.js'
+import { TANK_BY_ID, MAX_TIER, SKIN_BY_ID, rankByBattles } from '../game/meta.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { connectMatch } from '../game/net.js'
 import TankTopDown from './ui/TankTopDown.vue'
@@ -71,11 +71,8 @@ function startOffline() {
 onMounted(async () => {
   tick = setInterval(() => secs.value++, 1000)
 
-  // взвод — мгновенно (визуально; в онлайне взвод пока соло)
-  profile.party.forEach((id, i) => {
-    const name = (FRIENDS.find((f) => f.id === id) || {}).name || String(id)
-    timers.push(setTimeout(() => allies.value.push({ name, kind: 'party' }), 300 + i * 250))
-  })
+  // напарников взвода больше НЕ подставляем фейково — они приходят живыми из
+  // серверного лобби (onLobby) той же комнаты, в которую группирует party-токен
 
   try {
     client = await connectMatch({
@@ -84,6 +81,7 @@ onMounted(async () => {
       tint: (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff,
       skin: profile.skin,
       battles: profile.stats.battles,
+      party: party.token, // взвод: одинаковый токен → одна комната на сервере
       stats: JSON.parse(JSON.stringify(loadoutStats(profile.selectedTank))),
       onLobby: (msg) => {
         // живые игроки комнаты (кроме нас) + таймер добора ботов
@@ -96,19 +94,25 @@ onMounted(async () => {
         phase.value = 'go'
         const need = TEAM - 1 - allies.value.length
         MM_BOTS.slice(0, Math.max(0, need)).forEach((n) => allies.value.push({ name: n, kind: 'bot' }))
-        timers.push(
-          setTimeout(() => {
-            if (gone) return
+        // НЕ входим в бой, пока не пришёл первый снапшот мира от сервера. Иначе бой
+        // грузился, висел на 0:00 без связи и пересобирался офлайн — «двойная
+        // загрузка» и смена стороны. Ждём мир ДО входа: один бой, в верном режиме.
+        const deadline = Date.now() + 4000
+        const enter = () => {
+          if (gone) return
+          if (client && client.stateN >= 1 && client.ws.readyState === 1) {
             gone = true
-            emit('battle', {
-              client,
-              mapId: msg.mapId,
-              side: msg.youTeam,
-              youUnit: msg.youUnit,
-              tickHz: msg.tickHz,
-            })
-          }, 900),
-        )
+            emit('battle', { client, mapId: msg.mapId, side: msg.youTeam, youUnit: msg.youUnit, tickHz: msg.tickHz })
+          } else if (Date.now() >= deadline) {
+            // сервер так и не прислал мир — честный офлайн с ботами (один бой, без отката)
+            gone = true
+            if (client) client.close()
+            emit('battle', null)
+          } else {
+            timers.push(setTimeout(enter, 120))
+          }
+        }
+        timers.push(setTimeout(enter, 900)) // короткая пауза «БОЙ НАЙДЕН»
       },
       onClose: () => {
         // сервер оборвал до старта — уходим в офлайн

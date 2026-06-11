@@ -1,23 +1,23 @@
 <script setup>
-// Шторка взвода (порт SquadSheet): таб ВЗВОД — слоты 3/3 (вы-командир + 2),
-// список друзей с «Позвать» (фейк-приглашение с задержкой); таб НАГРАДЫ —
-// рефералы: прогресс 0..5, рубежи с «Забрать», список рекрутов,
-// «Пригласить по ссылке» (фейк: через 2.2с приходит рекрут).
+// Шторка взвода. Таб ВЗВОД — реальный взвод через Telegram deep-link: собираешь
+// взвод (становишься командиром) и шлёшь другу sq-ссылку; кто откроет — ищет бой
+// с тем же токеном и попадает в ТВОЮ комнату (одна команда живых). Таб НАГРАДЫ —
+// рефералы: постоянная ref-ссылка, рекруты считаются на сервере (не фейк).
 import { ref, computed, onUnmounted } from 'vue'
-import { profile, setParty, addReferral, claimRefMilestone } from '../store.js'
-import { FRIENDS, FRIEND_STATUS, REF_NAMES, REF_MILESTONES } from '../game/meta.js'
+import { profile, party, setPartyToken, clearParty, claimRefMilestone } from '../store.js'
+import { REF_MILESTONES } from '../game/meta.js'
+import { tgUserId, inviteLink, shareLink } from '../tg.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
 
 const tab = ref(0)
-const invited = ref([])
 const toast = ref(null)
 let toastTimer = null
-const timers = {}
 
-const full = computed(() => profile.party.length >= 2)
-const partySlots = computed(() => [0, 1].map((i) => FRIENDS.find((f) => f.id === profile.party[i]) || null))
+const myId = computed(() => tgUserId())
+const inParty = computed(() => !!party.token)
+const isLeader = computed(() => inParty.value && (party.leader || String(party.token) === String(myId.value)))
 const rewardsDot = computed(() =>
   REF_MILESTONES.some((m, i) => !profile.claimedRef.includes(i) && profile.referrals.length >= m.need),
 )
@@ -25,35 +25,31 @@ const rewardsDot = computed(() =>
 function showToast(text) {
   toast.value = { key: Date.now(), text }
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => (toast.value = null), 1700)
+  toastTimer = setTimeout(() => (toast.value = null), 1900)
 }
 
-function invite(f) {
-  if (full.value || invited.value.includes(f.id) || profile.party.includes(f.id) || f.status !== 'online') return
-  invited.value.push(f.id)
-  timers[f.id] = setTimeout(
-    () => {
-      invited.value = invited.value.filter((x) => x !== f.id)
-      if (!full.value && !profile.party.includes(f.id)) {
-        setParty([...profile.party, f.id])
-        showToast(`${f.name} в взводе!`)
-      }
-    },
-    1400 + Math.random() * 1200,
-  )
-}
-function kick(id) {
-  setParty(profile.party.filter((x) => x !== id))
+// результат шэра ссылки → понятный тост
+function afterShare(kind) {
+  if (kind === 'share') showToast('Выбери чат — отправь другу')
+  else if (kind === 'copied') showToast('Ссылка скопирована — кидай в чат!')
+  else showToast('Шэр недоступен — открой игру в Telegram')
 }
 
-function inviteByLink() {
-  showToast('Ссылка скопирована — кидай в чат!')
-  if (profile.referrals.length >= 5 || timers.ref) return
-  timers.ref = setTimeout(() => {
-    delete timers.ref
-    const name = REF_NAMES[profile.referrals.length]
-    if (name && addReferral(name)) showToast(`${name} вступил по твоей ссылке!`)
-  }, 2200)
+// собрать взвод: стать командиром и отправить другу приглашение
+function inviteToParty() {
+  if (!myId.value) return showToast('Взвод доступен только в Telegram')
+  setPartyToken(myId.value, true)
+  afterShare(shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG — вместе в один бой!'))
+}
+function leaveParty() {
+  clearParty()
+  showToast('Взвод распущен')
+}
+
+// постоянная реф-ссылка: кто зайдёт по ней — засчитается тебе в рекруты на сервере
+function inviteFriend() {
+  if (!myId.value) return showToast('Приглашение доступно только в Telegram')
+  afterShare(shareLink(inviteLink(`ref_${myId.value}`), 'Залетай в Panzer TG — танковые бои в Telegram!'))
 }
 
 function claim(i) {
@@ -62,10 +58,7 @@ function claim(i) {
 
 const needWord = (n) => (n === 1 ? 'друг' : n < 5 ? 'друга' : 'друзей')
 
-onUnmounted(() => {
-  clearTimeout(toastTimer)
-  Object.values(timers).forEach(clearTimeout)
-})
+onUnmounted(() => clearTimeout(toastTimer))
 </script>
 
 <template>
@@ -83,46 +76,40 @@ onUnmounted(() => {
 
       <!-- ===== таб ВЗВОД ===== -->
       <template v-if="tab === 0">
-        <div class="pz-stencil-h" style="margin-bottom: 12px">ВЗВОД · {{ 1 + profile.party.length }}/3</div>
+        <div class="pz-stencil-h" style="margin-bottom: 10px">ВЗВОД</div>
+        <p class="hint">Друзья в одном онлайн-бою на твоей стороне. Позови их по ссылке: кто откроет игру по ней и нажмёт «В бой» — встанет в твою команду.</p>
 
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px">
-          <!-- вы -->
-          <div class="pz-brackets you-slot" style="--bk: var(--amber)">
-            <div style="display: flex; justify-content: center; margin-bottom: 4px"><PzIcon name="star" :size="14" color="var(--amber)" /></div>
-            <div class="pz-display" style="font-size: 11.5px">ВЫ</div>
-            <div style="font-size: 9.5px; color: var(--ink-dim); margin-top: 1px; font-weight: 600">командир</div>
-          </div>
-          <!-- напарники -->
-          <template v-for="(f, i) in partySlots" :key="i">
-            <button v-if="f" class="mate-slot" @click="kick(f.id)">
-              <div style="width: 14px; height: 14px; border-radius: 50%; background: var(--blue); margin: 0 auto 4px"></div>
-              <div class="pz-display" style="font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ f.name }}</div>
-              <div style="font-size: 9.5px; color: var(--ink-dim); margin-top: 1px; font-weight: 600">убрать ✕</div>
-            </button>
-            <div v-else class="free-slot">
-              <div style="font-size: 16px; line-height: 14px; margin-bottom: 4px">+</div>
-              <div style="font-size: 9.5px; font-weight: 600">свободно</div>
+        <!-- статус взвода -->
+        <div class="party-card" :class="{ active: inParty }">
+          <span class="party-dot" :class="{ on: inParty }"></span>
+          <div style="flex: 1; min-width: 0">
+            <div class="pz-display" style="font-size: 12px">
+              {{ inParty ? (isLeader ? 'ВЗВОД СОБРАН · ТЫ КОМАНДИР' : 'ТЫ ВО ВЗВОДЕ') : 'ВЗВОД НЕ СОБРАН' }}
             </div>
-          </template>
+            <div style="font-size: 11px; color: var(--ink-dim); font-weight: 600; margin-top: 2px">
+              {{ inParty ? (isLeader ? 'Друзья по ссылке встанут в твою команду' : 'Ищи бой — попадёшь к командиру') : 'Позови друзей в один бой' }}
+            </div>
+          </div>
         </div>
 
-        <div class="pz-stencil-h" style="margin-bottom: 8px">ДРУЗЬЯ</div>
-        <div class="pz-noscroll" style="overflow-y: auto; display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0">
-          <div v-for="f in FRIENDS" :key="f.id" class="friend-row">
-            <span
-              class="dot"
-              :style="{ background: FRIEND_STATUS[f.status].color, animation: f.status === 'battle' ? 'pz-blink 1.2s linear infinite' : 'none' }"
-            ></span>
-            <div style="flex: 1; min-width: 0">
-              <div style="font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ f.name }}</div>
-              <div style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500">{{ f.tank }} · {{ FRIEND_STATUS[f.status].label }}</div>
-            </div>
-            <span v-if="profile.party.includes(f.id)" class="pz-chip" style="color: var(--blue); font-size: 11px">в взводе</span>
-            <span v-else-if="invited.includes(f.id)" class="pz-chip" style="color: var(--amber); font-size: 11px; animation: pz-blink 1s linear infinite">зову…</span>
-            <button v-else class="pz-btn2" style="padding: 7px 12px; font-size: 11px" :disabled="f.status !== 'online' || full" @click="invite(f)">
-              {{ f.status === 'online' && !full ? 'Позвать' : '—' }}
-            </button>
-          </div>
+        <!-- действия -->
+        <button v-if="!inParty || isLeader" class="pz-cta" style="width: 100%; margin-top: 12px; gap: 8px; font-size: 14px; padding: 13px 16px" @click="inviteToParty">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M10 14l8.5-8.5M13 5h6v6" /><path d="M19 14v5a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h5" />
+          </svg>
+          {{ inParty ? 'Позвать ещё друга' : 'Собрать взвод и пригласить' }}
+        </button>
+        <button v-if="inParty" class="pz-btn2" style="width: 100%; margin-top: 8px" @click="leaveParty">
+          {{ isLeader ? 'Распустить взвод' : 'Покинуть взвод' }}
+        </button>
+
+        <div class="howto">
+          <div class="pz-stencil-h" style="margin-bottom: 8px">КАК ЭТО РАБОТАЕТ</div>
+          <ol class="steps">
+            <li>Жмёшь «Собрать взвод» — откроется выбор чата в Telegram.</li>
+            <li>Кидаешь ссылку другу, он открывает игру по ней.</li>
+            <li>Оба жмёте «В БОЙ» — сервер сводит вас в один онлайн-бой.</li>
+          </ol>
         </div>
       </template>
 
@@ -184,8 +171,8 @@ onUnmounted(() => {
         </div>
       </template>
 
-      <!-- пригласить по ссылке -->
-      <button class="pz-btn2" style="margin-top: 12px; gap: 8px" @click="inviteByLink">
+      <!-- пригласить по постоянной реф-ссылке (только на табе НАГРАДЫ) -->
+      <button v-if="tab === 1" class="pz-cta" style="margin-top: 12px; gap: 8px; font-size: 14px; padding: 13px 16px" @click="inviteFriend">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
           <path d="M10 14l8.5-8.5M13 5h6v6" />
           <path d="M19 14v5a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h5" />
@@ -312,6 +299,54 @@ onUnmounted(() => {
 .mile-row.ready {
   background: rgba(242, 165, 12, 0.06);
   border-color: var(--amber);
+}
+.hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  font-weight: 500;
+  margin: 0 0 12px;
+}
+.party-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+}
+.party-card.active {
+  background: rgba(242, 165, 12, 0.07);
+  border-color: var(--amber);
+}
+.party-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-faint);
+}
+.party-dot.on {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pz-blink 1.6s linear infinite;
+}
+.howto {
+  margin-top: 16px;
+}
+.steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.steps li {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+  font-weight: 500;
 }
 .sheet-toast {
   position: absolute;

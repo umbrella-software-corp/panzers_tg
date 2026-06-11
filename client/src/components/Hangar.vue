@@ -2,7 +2,7 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed } from 'vue'
-import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel } from '../store.js'
+import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel } from '../store.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
@@ -39,7 +39,7 @@ const nationLabel = computed(() => (NATIONS.find((n) => n.id === profile.nation)
 const tanks = computed(() => tanksOfNation(profile.nation))
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
-const partyMul = computed(() => profile.party.length)
+const inParty = computed(() => !!party.token) // взвод собран на этот сеанс (по deep-link)
 // камуфляж на КАЖДЫЙ танк: разблокировка за жетоны, потом надевается бесплатно
 const selCamo = computed(() => tankCamo(tank.value.id))
 function pickCamo(id) {
@@ -196,15 +196,15 @@ function pickCamo(id) {
       <button class="pz-btn2 squad-btn" @click="squadOpen = true">
         <span class="dots">
           <span class="slot you"><PzIcon name="star" :size="7" color="var(--amber)" /></span>
-          <span class="slot" :class="{ filled: partyMul >= 1 }"></span>
-          <span class="slot" :class="{ filled: partyMul >= 2 }"></span>
+          <span class="slot" :class="{ filled: inParty }"></span>
+          <span class="slot" :class="{ filled: inParty }"></span>
         </span>
         ВЗВОД
       </button>
       <button class="pz-cta pz-cta--hazard playbtn" :disabled="locked" @click="emit('play')">
         <template v-if="locked">ИССЛЕДУЙ В РАЗВИТИИ</template>
         <span v-else class="play-stack">
-          <span class="play-main">В БОЙ<template v-if="partyMul > 0"> ×{{ 1 + partyMul }}</template></span>
+          <span class="play-main">В БОЙ<template v-if="inParty"> · ВЗВОД</template></span>
           <span class="play-sub">▸ {{ tank.name }}</span>
         </span>
       </button>

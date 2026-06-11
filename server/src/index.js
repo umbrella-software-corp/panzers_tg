@@ -88,6 +88,30 @@ async function handleAdmin(req, res) {
   json(res, 404, { error: 'not found' })
 }
 
+// засчёт реферала: игрок (user) открыл игру по ссылке игрока с tg-id <ref>.
+// Привязка одноразовая (referredBy у новичка), реферер получает рекрута в referrals.
+// Дедуп на стороне реферера по uid — повторный заход по ссылке рекрута не задваивает.
+async function registerReferral(user, ref) {
+  const refId = String(ref || '').replace(/[^0-9]/g, '').slice(0, 20)
+  if (!refId) return { ok: false, reason: 'no-ref' }
+  const inviterUid = `tg_${refId}`
+  if (inviterUid === user.uid) return { ok: false, reason: 'self' }
+  const me = (await loadProfile(user.uid)) || {}
+  if (me.referredBy) return { ok: false, reason: 'already' }
+  me.referredBy = inviterUid
+  await saveProfile(user.uid, me)
+  const inviter = await loadProfile(inviterUid)
+  if (!inviter) return { ok: true, credited: false } // реферер ещё не заходил в игру
+  if (!Array.isArray(inviter.referrals)) inviter.referrals = []
+  if (!Array.isArray(inviter.referralIds)) inviter.referralIds = []
+  if (!inviter.referralIds.includes(user.uid)) {
+    inviter.referralIds.push(user.uid)
+    inviter.referrals.push(user.name || 'Боец')
+    await saveProfile(inviterUid, inviter)
+  }
+  return { ok: true, credited: true }
+}
+
 async function handleApi(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, CORS)
@@ -115,8 +139,21 @@ async function handleApi(req, res) {
   if (req.url === '/api/profile' && req.method === 'POST') {
     const body = await readBody(req)
     if (!body || typeof body.profile !== 'object') return json(res, 400, { error: 'bad profile' })
-    await saveProfile(user.uid, body.profile)
+    // серверные поля (рефералы/реферер) ведёт сервер — клиент их НЕ перезаписывает,
+    // иначе сейв профиля затирал бы засчитанных рекрутов. Берём прежние из хранилища.
+    const prev = (await loadProfile(user.uid)) || {}
+    const merged = {
+      ...body.profile,
+      referrals: Array.isArray(prev.referrals) ? prev.referrals : [],
+      referralIds: Array.isArray(prev.referralIds) ? prev.referralIds : [],
+      referredBy: prev.referredBy || null,
+    }
+    await saveProfile(user.uid, merged)
     return json(res, 200, { ok: true })
+  }
+  if (req.url === '/api/referred' && req.method === 'POST') {
+    const { ref } = await readBody(req)
+    return json(res, 200, await registerReferral(user, ref))
   }
   if (req.url === '/api/invoice' && req.method === 'POST') {
     const { productId, name } = await readBody(req)
@@ -193,6 +230,9 @@ const ID_RE = /^[a-z0-9_]{1,16}$/
 let nextId = 1
 const rooms = new Map()
 let waitingRoom = null
+// комнаты взводов по токену: игроки с одним party-токеном (= id командира) попадают
+// в ОДНУ комнату → друзья гарантированно в одном бою (одна команда живых)
+const partyRooms = new Map()
 
 function newRoom() {
   const room = {
@@ -210,7 +250,16 @@ function newRoom() {
   return room
 }
 
-function getJoinRoom() {
+function getJoinRoom(party) {
+  // взвод: все с одинаковым токеном — в одну комнату (своя комната на токен)
+  if (party) {
+    const ex = partyRooms.get(party)
+    if (ex && !ex.started && ex.humans.length < TEAM_SIZE) return ex
+    const nr = newRoom()
+    nr.party = party
+    partyRooms.set(party, nr)
+    return nr
+  }
   // комната = ОДНА команда живых игроков (как обещает UI «ВАША КОМАНДА · X/7»);
   // враг — боты. Поэтому добираем людей до TEAM_SIZE, а не до TEAM_SIZE*2.
   if (waitingRoom && !waitingRoom.started && waitingRoom.humans.length < TEAM_SIZE) return waitingRoom
@@ -241,6 +290,7 @@ function startRoom(room) {
   room.started = true
   clearTimeout(room.waitTimer)
   if (waitingRoom === room) waitingRoom = null
+  if (room.party && partyRooms.get(room.party) === room) partyRooms.delete(room.party) // токен свободен для нового взвода
 
   // ВСЕ живые игроки комнаты — в ОДНУ команду (юг, team 0), как обещает экран
   // поиска «ВАША КОМАНДА»: друзья всегда вместе. Враг — боты (team 1, добор в sim)
@@ -319,6 +369,7 @@ function endRoom(room) {
   clearTimeout(room.waitTimer)
   rooms.delete(room.id)
   if (waitingRoom === room) waitingRoom = null
+  if (room.party && partyRooms.get(room.party) === room) partyRooms.delete(room.party)
   // сокеты не рвём — клиент сам уходит после match-end
 }
 
@@ -350,8 +401,15 @@ wss.on('connection', (ws, req) => {
   let tokens = MSG_BURST
   let lastRefill = Date.now()
 
+  // токен взвода из query (?party=<id командира>) — группирует друзей в одну комнату
+  let party = null
+  try {
+    party = (new URL(req.url, 'http://x').searchParams.get('party') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
+  } catch {
+    party = null
+  }
   const id = `p${nextId++}`
-  const room = getJoinRoom()
+  const room = getJoinRoom(party)
   const human = { id, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0 }
   room.humans.push(human)
   ws.playerId = id
