@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, markRaw } from 'vue'
 import { setBackButton } from './tg.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
@@ -45,7 +45,9 @@ function play() {
   screen.value = 'matchmaking'
 }
 function deploy(net) {
-  netMatch.value = net || null // онлайн, если матчмейкинг нашёл сервер
+  // markRaw: НЕ оборачивать клиент (ws + onMessage-подписка) в реактивный прокси —
+  // иначе net.js (сырой объект) и NetGame (прокси) расходятся, снапшоты не доходят
+  netMatch.value = net ? markRaw(net) : null // онлайн, если матчмейкинг нашёл сервер
   battleKey.value++ // каждый матч — свежий бой
   screen.value = 'battle'
 }
