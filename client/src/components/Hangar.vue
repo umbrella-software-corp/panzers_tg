@@ -4,6 +4,7 @@
 import { ref, computed } from 'vue'
 import { profile, setNation, selectTank, isOwned, crewLevel, crewProgress, buySkin, setSkin, tasksClaimable } from '../store.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, SKINS, SKIN_BY_ID } from '../game/meta.js'
+import { camoCss } from '../game/camo.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -26,10 +27,8 @@ const fmt = (n) => n.toLocaleString('ru-RU')
 const partyMul = computed(() => profile.party.length)
 // превью: клик по запертому камуфляжу примеряет его, покупка — отдельной кнопкой
 const previewSkin = ref(null)
-const skinTint = computed(() => {
-  const id = previewSkin.value || profile.skin
-  return (SKIN_BY_ID[id] || SKIN_BY_ID.std).tint
-})
+const skinId = computed(() => previewSkin.value || profile.skin)
+const skinTint = computed(() => (SKIN_BY_ID[skinId.value] || SKIN_BY_ID.std).tint)
 const previewDef = computed(() => (previewSkin.value ? SKIN_BY_ID[previewSkin.value] : null))
 
 function pickSkin(s) {
@@ -43,7 +42,6 @@ function pickSkin(s) {
 function buyPreviewed() {
   if (previewDef.value && buySkin(previewDef.value.id)) previewSkin.value = null
 }
-const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
 </script>
 
 <template>
@@ -73,7 +71,7 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
       <div class="tank-wrap">
         <div class="tank-shadow"></div>
         <div :key="tank.id + profile.skin" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankImg :tank-id="tank.id" :size="300" :tint="locked ? 0xffffff : skinTint" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
+          <TankImg :tank-id="tank.id" :size="300" :tint="locked ? 0xffffff : skinTint" :skin="locked ? '' : skinId" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
         </div>
         <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
           <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
@@ -128,7 +126,7 @@ const tintCss = (t) => '#' + t.toString(16).padStart(6, '0')
         :key="s.id"
         class="skin-dot"
         :class="{ on: profile.skin === s.id && !previewSkin, fit: previewSkin === s.id }"
-        :style="{ background: tintCss(s.tint) }"
+        :style="{ background: camoCss(s) }"
         :title="s.name + (profile.skins.includes(s.id) ? '' : ` · ${s.costTokens} жет.`)"
         @click="pickSkin(s)"
       >

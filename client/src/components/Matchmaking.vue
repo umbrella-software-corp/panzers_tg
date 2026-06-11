@@ -82,6 +82,7 @@ onMounted(async () => {
       name: profile.name,
       tankId: profile.selectedTank,
       tint: (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff,
+      skin: profile.skin,
       stats: JSON.parse(JSON.stringify(loadoutStats(profile.selectedTank))),
       onLobby: (msg) => {
         // живые игроки комнаты (кроме нас) + таймер добора ботов

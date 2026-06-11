@@ -292,7 +292,8 @@ onMounted(async () => {
   const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map((t) => ({ ...combatStats(t), tankId: t.id }))
   game.setBotTanks(pool)
   game.playerTankId = profile.selectedTank // реальный спрайт своей машины
-  game.playerTint = (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff // камуфляж виден в бою
+  game.playerTint = (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff // оттенок-фоллбэк
+  game.playerSkin = profile.skin // узорный камуфляж (печётся в текстуру)
   // статы до mount: спрайт игрока выбирается по классу лоадаута
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)

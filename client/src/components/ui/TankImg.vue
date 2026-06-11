@@ -3,12 +3,15 @@
 // хромакее) — режется в альфу на canvas. В текстурах ствол смотрит вниз,
 // поэтому по умолчанию разворачиваем на 180°.
 import { ref, watch, onMounted } from 'vue'
+import { SKIN_BY_ID } from '../../game/meta.js'
+import { applyCamo } from '../../game/camo.js'
 
 const props = defineProps({
   tankId: { type: String, required: true },
   size: { type: Number, default: 132 },
   rotate: { type: Number, default: 180 },
-  tint: { type: Number, default: 0xffffff }, // камуфляж (multiply-оттенок)
+  tint: { type: Number, default: 0xffffff }, // камуфляж-оттенок (фоллбэк)
+  skin: { type: String, default: '' }, // id скина — узорный камуфляж поверх
 })
 
 const canvas = ref(null)
@@ -27,24 +30,27 @@ function render() {
     ctx.drawImage(img, 0, 0, S, S)
     const d = ctx.getImageData(0, 0, S, S)
     const p = d.data
+    const camo = (SKIN_BY_ID[props.skin] || {}).camo
     const tr = (props.tint >> 16) & 0xff
     const tg = (props.tint >> 8) & 0xff
     const tb = props.tint & 0xff
+    const tinted = !camo && props.tint !== 0xffffff
     for (let i = 0; i < p.length; i += 4) {
       if (p[i] > p[i + 1] * 1.5 && p[i + 2] > p[i + 1] * 1.2) {
         p[i + 3] = 0
-      } else if (props.tint !== 0xffffff) {
+      } else if (tinted) {
         p[i] = (p[i] * tr) / 255
         p[i + 1] = (p[i + 1] * tg) / 255
         p[i + 2] = (p[i + 2] * tb) / 255
       }
     }
     ctx.putImageData(d, 0, 0)
+    if (camo) applyCamo(ctx, S, camo)
   }
 }
 
 onMounted(render)
-watch(() => [props.tankId, props.tint], render)
+watch(() => [props.tankId, props.tint, props.skin], render)
 </script>
 
 <template>

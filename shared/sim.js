@@ -96,7 +96,8 @@ export class BattleSim {
       human,
       ownerId: human ? h.id : null,
       tankId: human ? h.tankId || null : null, // реальная машина игрока (спрайт)
-      tint: human ? h.tint || 0 : 0, // камуфляж игрока
+      tint: human ? h.tint || 0 : 0, // оттенок камуфляжа игрока
+      skin: human ? h.skin || null : null, // id узорного камуфляжа (рендер у клиентов)
       name: human ? h.name || `Игрок ${id}` : BOT_NAMES[team][slot % BOT_NAMES[team].length],
       classId: stats.id,
       stats,
@@ -123,6 +124,7 @@ export class BattleSim {
       stuckT: 0,
       avoidT: 0,
       avoidDir: 1,
+      _blockT: -1, // тик последнего события «выстрел заблокирован»
     }
   }
 
@@ -139,12 +141,20 @@ export class BattleSim {
   fire(ownerId) {
     const u = this.byOwner.get(ownerId)
     if (!u || !u.alive || this.matchOver) return
+    // заблокированный выстрел — максимум одно событие за тик: спам «fire»
+    // не должен раздувать рассылку всей комнате
     if (u.crippled.gun > 0) {
-      this.events.push({ type: 'shot', unit: u.id, blocked: 'gun' })
+      if (u._blockT !== this.t) {
+        u._blockT = this.t
+        this.events.push({ type: 'shot', unit: u.id, blocked: 'gun' })
+      }
       return
     }
     if (u.reload > 0) {
-      this.events.push({ type: 'shot', unit: u.id, blocked: 'reload' })
+      if (u._blockT !== this.t) {
+        u._blockT = this.t
+        this.events.push({ type: 'shot', unit: u.id, blocked: 'reload' })
+      }
       return
     }
     u.reload = u.stats.reload
@@ -191,6 +201,23 @@ export class BattleSim {
     const ev = this.events
     this.events = []
     return ev
+  }
+
+  // события с учётом тумана команды: трассеры и киллы — всем (механика),
+  // а хп/криты незасвеченных врагов команде не утекают (анти-wallhack)
+  eventsForTeam(events, team) {
+    const seen = this._spotted[team]
+    return events.filter((ev) => {
+      if (ev.type === 'hp') {
+        const u = this.byId.get(ev.unit)
+        return !u || u.team === team || !u.alive || seen.has(u.id)
+      }
+      if (ev.type === 'crit') {
+        const u = this.byId.get(ev.unit)
+        return !u || u.team === team
+      }
+      return true
+    })
   }
 
   // отключившийся человек становится ботом (ИИ доигрывает)
@@ -254,7 +281,8 @@ export class BattleSim {
     for (const f of this.units) {
       if (!f.alive || f.team === b.team) continue
       const d = Math.hypot(f.x - b.x, f.y - b.y)
-      if (d < bestD && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
+      // бот видит и стреляет только в радиусе своего зрения — не через всю карту
+      if (d < bestD && d <= ai.vision && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
         bestD = d
         target = f
       }
@@ -521,6 +549,7 @@ export class BattleSim {
           human: u.human,
           tankId: u.tankId,
           tint: u.tint,
+          skin: u.skin,
         })),
     }
   }

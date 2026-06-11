@@ -55,7 +55,7 @@ export const TANK_CLASSES = {
 export const DEFAULT_CLASS = 'medium'
 export const MAP_SIZE = 2400
 
-// Рельеф/стены/базы/точки переехали в shared/maps.js (6 карт);
+// Рельеф/стены/базы/точки переехали в shared/maps.js (9 карт);
 // карту боя выбирает сервер при старте комнаты.
 export const CAP_TIME = 6
 export const CAP_TICK = 8

@@ -21,6 +21,11 @@ import {
   classToRadians,
 } from './config.js'
 import { MAPS, MAP_BY_ID } from './maps.js'
+import { SKIN_BY_ID } from './meta.js'
+import { applyCamo } from './camo.js'
+
+// камуфляж с узором (для скинов-оттенков и неизвестных id — null)
+const camoOf = (skinId) => (skinId && SKIN_BY_ID[skinId] ? SKIN_BY_ID[skinId].camo || null : null)
 
 // Палитры команд: юг всегда воюет синим, север — красным; чья из них «наша» —
 // решает жребий стороны (side). Игрок при этом остаётся янтарным.
@@ -90,6 +95,8 @@ export class Game {
   constructor(opts = {}) {
     this.app = new Application()
     this.t = 0
+    this._baked = [] // текстуры, запечённые из canvas — убиваем в destroy()
+    this._hudAcc = 0 // троттлинг снапшота HUD (Vue не перерисовываем 60 раз/с)
 
     // карта боя и жребий стороны: 0 — юг (синие), 1 — север (красные)
     this.map = MAP_BY_ID[opts.mapId] || MAPS[0]
@@ -289,8 +296,19 @@ export class Game {
     idList.forEach((id, i) => {
       if (unitTex[i].status === 'fulfilled') this.tex[`unit_${id}`] = this._chromaKey(unitTex[i].value)
     })
-    if (this.playerTankId && this.tex[`unit_${this.playerTankId}`])
+    if (this.playerTankId && this.tex[`unit_${this.playerTankId}`]) {
       this.tex.player_tank = this.tex[`unit_${this.playerTankId}`]
+      // узорный камуфляж игрока печём отдельно: бот на той же машине
+      // останется в заводской окраске
+      const camo = camoOf(this.playerSkin)
+      const raw = unitTex[idList.indexOf(this.playerTankId)]
+      if (camo && raw && raw.status === 'fulfilled') {
+        const c = this._chromaCanvas(raw.value)
+        applyCamo(c.getContext('2d'), c.width, camo)
+        this.tex.player_tank = this._bake(Texture.from(c))
+        this.playerCamoBaked = true
+      }
+    }
 
     this.world = new Container()
     this.bg = new Graphics()
@@ -401,7 +419,7 @@ export class Game {
 
   // вырезает chroma-key фон у спрайта танка; тип фона (зелёный/магента)
   // определяется по углу картинки — правило ловит и затенённый фон
-  _chromaKey(tex) {
+  _chromaCanvas(tex) {
     const c = document.createElement('canvas')
     c.width = tex.width
     c.height = tex.height
@@ -419,7 +437,18 @@ export class Game {
       if (isBg) p[i + 3] = 0
     }
     ctx.putImageData(d, 0, 0)
-    return Texture.from(c)
+    return c
+  }
+
+  _chromaKey(tex) {
+    return this._bake(Texture.from(this._chromaCanvas(tex)))
+  }
+
+  // canvas-текстуры оседают в глобальном кэше Pixi и переживают app.destroy —
+  // без учёта каждый бой утекают мегабайты
+  _bake(tex) {
+    this._baked.push(tex)
+    return tex
   }
 
   // взрыв-спрайт (аддитивный) в мировых координатах; крупный взрыв (гибель) —
@@ -634,7 +663,7 @@ export class Game {
       this.walls = this.walls.filter((x) => x !== w)
       this.booms.push({ x: w.cx, y: w.cy, age: 0, big: true })
       this._spawnFx(w.cx, w.cy, 1.5)
-      if (this.terrLayer) this.terrLayer.removeChildren()
+      if (this.terrLayer) for (const ch of this.terrLayer.removeChildren()) ch.destroy()
       this._drawTerrain()
     }
   }
@@ -846,7 +875,12 @@ export class Game {
 
     this._checkMatchEnd()
     this._draw()
-    this.onState(this._snapshot())
+    // HUD обновляем 20 раз/с — глаз не отличит, а Vue-перерендер втрое реже
+    this._hudAcc += dt
+    if (this._hudAcc >= 0.05 || this.matchOver) {
+      this._hudAcc = 0
+      this.onState(this._snapshot())
+    }
   }
 
   _updateCaptures(dt) {
@@ -1272,7 +1306,7 @@ export class Game {
 
     // игрок: живой — в своём камуфляже, уничтожен — обломки
     if (this.hp > 0) {
-      if (useSpr && placeSpr('player', tx, ty, hull, this.playerTint || 0xffffff)) {
+      if (useSpr && placeSpr('player', tx, ty, hull, this.playerCamoBaked ? 0xffffff : this.playerTint || 0xffffff)) {
         if (this.hurtFlash > 0) g.circle(tx, ty, 36).fill({ color: 0xff6a5a, alpha: 0.4 })
       } else {
         this._drawTank(
@@ -1385,7 +1419,9 @@ export class Game {
       grad.addColorStop(1, 'rgba(7,9,13,0.9)')
       ctx.fillStyle = grad
       ctx.fillRect(0, 0, S, S)
+      const old = this.fog.texture
       this.fog.texture = Texture.from(c)
+      if (old && old !== Texture.EMPTY) old.destroy(true) // ресайз/крит рации не копит 1024²-текстуры
       this.fog.width = this.fog.height = radius * 2
     }
     this.fog.position.set(this.tank.x, this.tank.y) // центр виньетки = танк (в мире)
@@ -1622,6 +1658,12 @@ export class Game {
   destroy() {
     window.removeEventListener('keydown', this._onKeyDown)
     window.removeEventListener('keyup', this._onKeyUp)
+    const fogTex = this.fog && this.fog.texture
     this.app.destroy(true, { children: true })
+    // запечённые из canvas текстуры живут в кэше Pixi мимо app.destroy
+    if (fogTex && fogTex !== Texture.EMPTY) fogTex.destroy(true)
+    for (const t of this._baked) t.destroy(true)
+    this._baked = []
+    this.tex = null
   }
 }

@@ -3,6 +3,7 @@
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch } from 'vue'
 import { apiLoadProfile, apiSaveProfile } from './api.js'
+import { tgUser } from './tg.js'
 import {
   TANK_BY_ID,
   STARTERS,
@@ -15,7 +16,6 @@ import {
   REF_MILESTONES,
   SKINS,
   SKIN_BY_ID,
-  RENAME_COST_TOKENS,
   combatStats,
   DAILY_REWARDS,
   RATING_START,
@@ -65,9 +65,13 @@ if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } 
 if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {} // перки специалистов { memberId: 0..3 }
 if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {} // опыт по веткам наций
 if (typeof profile.name !== 'string' || !profile.name) profile.name = 'Боец'
+if (typeof profile.nameCustom !== 'boolean') profile.nameCustom = false // имя сменено платно (за звёзды)
 if (!Array.isArray(profile.skins)) profile.skins = ['std'] // купленные камуфляжи
 if (!profile.tasks || typeof profile.tasks !== 'object') profile.tasks = { date: '', progress: {}, claimed: [] } // задачи дня
 if (typeof profile.skin !== 'string') profile.skin = 'std'
+
+// имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
+applyTgName()
 
 // локальный кеш — мгновенно; на сервер — с дебаунсом (офлайн не мешает игре)
 let pushTimer = null
@@ -276,12 +280,21 @@ export function grantRandomSkin() {
   return s
 }
 
-// платная смена позывного
-export function renamePlayer(name) {
+// имя из Telegram: подставляем ник профиля, пока игрок не сменил позывной
+// платно (за звёзды). Кастомное имя приоритетнее ника TG.
+export function applyTgName() {
+  if (profile.nameCustom) return
+  const u = tgUser()
+  if (u && u.name) profile.name = u.name.slice(0, 16)
+}
+
+// зафиксировать платно сменённый позывной локально (после оплаты звёздами).
+// Сервер уже сохранил то же имя — это для мгновенного отклика UI.
+export function setCustomName(name) {
   const clean = String(name || '').trim().slice(0, 16)
   if (clean.length < 3) return false
-  if (!spendTokens(RENAME_COST_TOKENS)) return false
   profile.name = clean
+  profile.nameCustom = true
   return true
 }
 

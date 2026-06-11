@@ -20,12 +20,29 @@ export async function loadProfile(uid) {
   }
 }
 
+// записи одного uid сериализуем цепочкой, tmp-файл уникален — конкурентные
+// сейвы не делят файл и не портят друг друга
+const saveChain = new Map()
+let tmpSeq = 0
 export async function saveProfile(uid, profile) {
-  const file = path.join(PROFILES, safe(uid) + '.json')
-  const tmp = file + '.tmp'
-  const data = JSON.stringify({ ...profile, _updatedAt: Date.now() })
-  await fs.writeFile(tmp, data)
-  await fs.rename(tmp, file) // атомарно — не побьём профиль при падении
+  const key = safe(uid)
+  const prev = saveChain.get(key) || Promise.resolve()
+  const job = prev.then(async () => {
+    const file = path.join(PROFILES, key + '.json')
+    const tmp = `${file}.${process.pid}.${++tmpSeq}.tmp`
+    const data = JSON.stringify({ ...profile, _updatedAt: Date.now() })
+    await fs.writeFile(tmp, data)
+    await fs.rename(tmp, file) // атомарно — не побьём профиль при падении
+  })
+  saveChain.set(key, job.catch(() => {}))
+  if (saveChain.size > 5000) {
+    // не копим завершённые цепочки вечно
+    for (const [k, p] of saveChain) {
+      if (p !== job) saveChain.delete(k)
+      if (saveChain.size <= 2500) break
+    }
+  }
+  return job
 }
 
 // журнал платежей: и идемпотентность по charge id, и записи для админки.
@@ -50,15 +67,29 @@ export async function paymentSeen(chargeId) {
 export async function markPayment(chargeId, info = {}) {
   const list = await loadPaid()
   list.push({ charge: chargeId, ts: Date.now(), ...info })
-  await fs.writeFile(PAYMENTS, JSON.stringify(list))
+  // атомарно: журнал оплат терять при падении нельзя
+  const tmp = `${PAYMENTS}.${process.pid}.tmp`
+  await fs.writeFile(tmp, JSON.stringify(list))
+  await fs.rename(tmp, PAYMENTS)
 }
 
 export async function listPayments() {
   return [...(await loadPaid())].reverse() // свежие сверху
 }
 
-// сводка профилей для админки (читаем все файлы — на текущих объёмах ок)
+// сводка профилей для админки; чтение всех файлов кэшируем на 5с —
+// поллинг админки не должен молотить диск на каждый запрос
+let profilesCache = null
+let profilesCacheAt = 0
 export async function listProfiles() {
+  if (profilesCache && Date.now() - profilesCacheAt < 5000) return profilesCache
+  const out = await listProfilesUncached()
+  profilesCache = out
+  profilesCacheAt = Date.now()
+  return out
+}
+
+async function listProfilesUncached() {
   let files = []
   try {
     files = (await fs.readdir(PROFILES)).filter((f) => f.endsWith('.json'))

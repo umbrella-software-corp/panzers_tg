@@ -1,6 +1,11 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, Texture, TilingSprite } from 'pixi.js'
 import { TANK_CLASSES, DEFAULT_CLASS, MAP_SIZE, SCORE_LIMIT, classToRadians } from './config.js'
 import { MAP_BY_ID, MAPS } from './maps.js'
+import { SKIN_BY_ID } from './meta.js'
+import { applyCamo } from './camo.js'
+
+// камуфляж с узором (для скинов-оттенков и неизвестных id — null)
+const camoOf = (skinId) => (skinId && SKIN_BY_ID[skinId] ? SKIN_BY_ID[skinId].camo || null : null)
 
 // маркер класса над танком: лёгкий ▲ / средний ◆ / тяжёлый ■
 const CLS_MARK = { light: '▲', medium: '◆', heavy: '■' }
@@ -33,6 +38,7 @@ export class NetGame {
     this.setClass(DEFAULT_CLASS)
     this.playerTankId = null
     this.playerTint = 0xffffff
+    this.playerSkin = null // id узорного камуфляжа своей машины
     this.ammoMult = 1 // голды в PvP нет — поле для совместимости с Battle
 
     // снапшоты сервера
@@ -120,7 +126,7 @@ export class NetGame {
       this.recvAt = performance.now()
       if (msg.you) this.you = msg.you
       this._units = new Map(msg.units.map((u) => [u.id, u]))
-      for (const u of msg.units) this._wantTex(u.tankId)
+      for (const u of msg.units) this._wantTex(u.tankId, u.skin)
       for (const ev of msg.events || []) this._onEvent(ev)
       if (msg.matchOver && !this.matchOver) this._finish(msg.winner)
       this._emitState()
@@ -235,7 +241,7 @@ export class NetGame {
       if (k.startsWith('tank_')) this.tex[k] = this._chromaKey(this.tex[k])
     }
     // кусты/камни/горы — AI-спрайты с вырезанным фоном (прозрачная альфа)
-    if (this.playerTankId) this._wantTex(this.playerTankId)
+    if (this.playerTankId) this._wantTex(this.playerTankId, this.playerSkin)
 
     this.world = new Container()
     this.bg = new Graphics()
@@ -300,7 +306,8 @@ export class NetGame {
     window.addEventListener('keyup', this._onKeyUp)
   }
 
-  _chromaKey(tex) {
+  // вырезает фон (магента/зелень) в прозрачную альфу, возвращает canvas
+  _chromaCanvas(tex) {
     const c = document.createElement('canvas')
     c.width = tex.width
     c.height = tex.height
@@ -318,16 +325,31 @@ export class NetGame {
       if (isBg) p[i + 3] = 0
     }
     ctx.putImageData(d, 0, 0)
-    return Texture.from(c)
+    return c
   }
 
-  // ленивые текстуры реальных машин игроков
-  _wantTex(tankId) {
-    if (!tankId || this._wantedTex.has(tankId)) return
-    this._wantedTex.add(tankId)
+  _chromaKey(tex) {
+    return Texture.from(this._chromaCanvas(tex))
+  }
+
+  // ключ текстуры машины: с узорным камуфляжем — отдельная запечённая
+  _tankTexKey(tankId, skinId) {
+    return camoOf(skinId) ? `unit_${tankId}:${skinId}` : `unit_${tankId}`
+  }
+
+  // ленивые текстуры реальных машин игроков (+вариант с узором камуфляжа)
+  _wantTex(tankId, skinId = null) {
+    if (!tankId) return
+    const key = this._tankTexKey(tankId, skinId)
+    if (this._wantedTex.has(key)) return
+    this._wantedTex.add(key)
     Assets.load(`/sprites/tanks/${tankId}.png`)
       .then((t) => {
-        if (this.tex) this.tex[`unit_${tankId}`] = this._chromaKey(t)
+        if (!this.tex) return
+        const c = this._chromaCanvas(t)
+        const camo = camoOf(skinId)
+        if (camo) applyCamo(c.getContext('2d'), c.width, camo)
+        this.tex[key] = Texture.from(c)
       })
       .catch(() => {})
   }
@@ -554,7 +576,9 @@ export class NetGame {
         spr.visible = true
         spr.position.set(u.x, u.y)
         spr.rotation = u.hull - Math.PI / 2
-        spr.tint = isSelf ? this.playerTint || 0xffffff : u.tankId ? (u.tint || pal.tint) : 0xffffff
+        // узорный камуфляж уже запечён в текстуру — поверх не тонируем
+        const baked = spr._texKey && spr._texKey.includes(':')
+        spr.tint = baked ? 0xffffff : isSelf ? this.playerTint || 0xffffff : u.tankId ? (u.tint || pal.tint) : 0xffffff
         if (flash) g.circle(u.x, u.y, 30).fill({ color: 0xffffff, alpha: 0.45 })
         if (isSelf && this.hurtFlash > 0) g.circle(u.x, u.y, 36).fill({ color: 0xff6a5a, alpha: 0.4 })
       } else {
@@ -656,19 +680,31 @@ export class NetGame {
     this.fog.position.set(own.x, own.y)
   }
 
-  // спрайт юнита: реальная машина игрока → классовый цветной → null (вектор)
+  // спрайт юнита: реальная машина игрока (с узором камуфляжа) → классовый
+  // цветной → null (вектор). Запечённая текстура могла прийти позже создания
+  // спрайта — тогда подменяем на месте.
   _unitSprite(u, isSelf, pal) {
     if (!this.unitSprites || !this.tex) return null
+    const skinId = isSelf ? this.playerSkin : u.skin
+    const wantKey = u.tankId ? this._tankTexKey(u.tankId, skinId) : null
+    const want = wantKey && this.tex[wantKey]
+    const size = isSelf ? 96 : u.cls === 'heavy' ? 92 : u.cls === 'light' ? 76 : 84
     let spr = this.unitSprites.get(u.id)
-    if (spr) return spr
-    const real = u.tankId && this.tex[`unit_${u.tankId}`]
+    if (spr) {
+      if (want && spr._texKey !== wantKey) {
+        spr.texture = want
+        spr._texKey = wantKey
+        spr.scale.set(size / spr.texture.height)
+      }
+      return spr
+    }
     const color = isSelf ? 'amber' : pal.sprite
     const byClass = this.tex[`tank_${u.cls}_${color}`] || this.tex[`tank_${color}`]
-    const tex = real || byClass
+    const tex = want || byClass
     if (!tex) return null
     spr = new Sprite(tex)
+    spr._texKey = want ? wantKey : null
     spr.anchor.set(0.5)
-    const size = isSelf ? 96 : u.cls === 'heavy' ? 92 : u.cls === 'light' ? 76 : 84
     spr.scale.set(size / spr.texture.height)
     this.tankLayer.addChild(spr)
     this.unitSprites.set(u.id, spr)

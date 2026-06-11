@@ -21,6 +21,9 @@ export function verifyInitData(initData) {
   const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest()
   const calc = crypto.createHmac('sha256', secret).update(dataCheck).digest('hex')
   if (calc !== hash) return null
+  // украденный initData не должен жить вечно: сутки — и до свидания
+  const authDate = +params.get('auth_date') || 0
+  if (!authDate || Date.now() / 1000 - authDate > 86400) return null
   // подпись валидна — достаём пользователя
   try {
     const user = JSON.parse(params.get('user') || '{}')

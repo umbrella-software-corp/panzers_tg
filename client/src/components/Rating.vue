@@ -4,19 +4,54 @@
 // Соперники пока фейковые вокруг моего рейтинга (бэкенда нет) — но
 // стабильные между заходами, чтобы таблица не скакала.
 import { computed, ref } from 'vue'
-import { profile, renamePlayer } from '../store.js'
-import { RATING_RIVALS, RENAME_COST_TOKENS } from '../game/meta.js'
+import { profile, setCustomName, syncProfile } from '../store.js'
+import { RATING_RIVALS, RENAME_COST_STARS } from '../game/meta.js'
+import { apiRename } from '../api.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 
 const emit = defineEmits(['go'])
 const tab = ref(0)
 const TABS = ['ПРОФИЛЬ', 'РЕЙТИНГ', 'КЛАНЫ', 'ТУРНИРЫ']
+const renaming = ref(false)
 
-function rename() {
-  const name = window.prompt(`Новый позывной (3-16 символов) — ${RENAME_COST_TOKENS} жетонов:`, profile.name)
+// смена позывного за Telegram Stars: имя → инвойс сервера → openInvoice.
+// Без бота (dev/браузер) сервер ставит имя сразу. Цена авторитетна на сервере.
+async function rename() {
+  if (renaming.value) return
+  const name = window.prompt(`Новый позывной (3–16 символов) — ${RENAME_COST_STARS} ⭐:`, profile.name)
   if (name === null) return
-  if (!renamePlayer(name)) window.alert('Не вышло: короткое имя или не хватает жетонов')
+  const clean = String(name).trim().slice(0, 16)
+  if (clean.length < 3) {
+    window.alert('Слишком короткий позывной (минимум 3 символа)')
+    return
+  }
+  if (clean === profile.name) return
+  renaming.value = true
+  try {
+    const r = await apiRename(clean)
+    if (r.granted) {
+      // dev-режим: сервер уже сохранил имя — фиксируем локально
+      setCustomName(clean)
+      await syncProfile()
+      window.alert(`Позывной изменён${r.dev ? ' (dev)' : ''}`)
+    } else if (r.link && window.Telegram?.WebApp?.openInvoice) {
+      window.Telegram.WebApp.openInvoice(r.link, (status) => {
+        if (status === 'paid') {
+          setCustomName(clean) // мгновенно в UI; сервер ставит то же имя по факту оплаты
+          setTimeout(() => syncProfile(), 1200) // даём поллингу зачислить
+        }
+      })
+    } else if (r.error) {
+      window.alert(`Не вышло: ${r.error === 'bad name' ? 'недопустимый позывной' : r.error}`)
+    } else {
+      window.alert('Оплата звёздами недоступна')
+    }
+  } catch {
+    window.alert('Сервер недоступен')
+  } finally {
+    renaming.value = false
+  }
 }
 
 const winrate = computed(() => {
@@ -82,7 +117,7 @@ const fmtTime = (t) => {
         <div class="pz-stencil-h">ПОЗЫВНОЙ</div>
         <div class="pz-plate" style="margin-top: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 10px">
           <span class="pz-display" style="flex: 1; font-size: 18px">{{ profile.name }}</span>
-          <button class="pz-btn2" style="padding: 7px 12px; font-size: 11px" @click="rename">Сменить · {{ RENAME_COST_TOKENS }} жет.</button>
+          <button class="pz-btn2" style="padding: 7px 12px; font-size: 11px" :disabled="renaming" @click="rename">Сменить · {{ RENAME_COST_STARS }} ⭐</button>
         </div>
       </section>
 

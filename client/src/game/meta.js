@@ -12,12 +12,12 @@ export const NATIONS = [
   { id: 'usa', label: 'США' },
 ]
 
-// Статы 0..10 (dmg/rof/spd/mnv/view/hp) — шкала растянута на 8 уровней
-// до современных машин: тир-1 — честное днище (1-3), топ — 7-10.
+// Статы 0..10 (dmg/rof/spd/mnv/view/hp) — шкала растянута на 10 уровней
+// до новейших машин: тир-1 — честное днище (1-3), топ-10 — 9-10.
 // Профильные просадки только у тяжёлых: темп/ход в обмен на dmg+hp.
 // Из них же считаются РЕАЛЬНЫЕ боевые статы (combatStats) — у каждого
 // танка свой бой, а не общий по классу.
-export const MAX_TIER = 8
+export const MAX_TIER = 10
 export const TANKS_BY_NATION = {
   ussr: [
     { id: 't26', name: 'Т-26', tier: 1, cls: 'Лёгкий', desc: 'Учебная парта танкиста. Лёгкий, простой, везде успевает.', stats: { dmg: 1, rof: 3, spd: 3, mnv: 3, view: 2, hp: 1 } },
@@ -28,6 +28,8 @@ export const TANKS_BY_NATION = {
     { id: 'is2', name: 'ИС-2', tier: 6, cls: 'Тяжёлый', desc: 'Зверобой. 122-мм аргумент, после которого спор окончен.', stats: { dmg: 7, rof: 3, spd: 4, mnv: 4, view: 5, hp: 7 }, cost: 70000 },
     { id: 't72', name: 'Т-72', tier: 7, cls: 'Средний', desc: 'Рабочая лошадь холодной войны: автомат заряжания, низкий силуэт.', stats: { dmg: 7, rof: 6, spd: 7, mnv: 6, view: 7, hp: 6 }, cost: 150000 },
     { id: 't90', name: 'Т-90', tier: 8, cls: 'Средний', desc: 'Современный ОБТ: тепловизор, динамическая защита, точность.', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 7 }, cost: 300000 },
+    { id: 't80u', name: 'Т-80У', tier: 9, cls: 'Средний', desc: 'Газотурбинная молния. Врывается первым и уходит до ответа.', stats: { dmg: 8, rof: 7, spd: 9, mnv: 8, view: 8, hp: 7 }, cost: 600000 },
+    { id: 't14', name: 'Т-14 Армата', tier: 10, cls: 'Тяжёлый', desc: 'Необитаемая башня, «Афганит». Танк из будущего — уже здесь.', stats: { dmg: 10, rof: 7, spd: 8, mnv: 7, view: 10, hp: 10 }, cost: 1200000 },
   ],
   ger: [
     { id: 'pz2', name: 'Pz. II', tier: 1, cls: 'Лёгкий', desc: 'Скорострельная малокалиберка. Шквал огня на ближней дистанции.', stats: { dmg: 1, rof: 4, spd: 3, mnv: 3, view: 2, hp: 1 } },
@@ -38,6 +40,8 @@ export const TANKS_BY_NATION = {
     { id: 'tgr2', name: 'Tiger II', tier: 6, cls: 'Тяжёлый', desc: 'Королевский тигр: лоб, который не пробивается в принципе.', stats: { dmg: 7, rof: 3, spd: 4, mnv: 3, view: 5, hp: 7 }, cost: 70000 },
     { id: 'leo1', name: 'Leopard 1', tier: 7, cls: 'Средний', desc: 'Скорость вместо брони. Стреляй первым — и тебя не достанут.', stats: { dmg: 7, rof: 6, spd: 8, mnv: 7, view: 7, hp: 5 }, cost: 150000 },
     { id: 'leo2', name: 'Leopard 2', tier: 8, cls: 'Средний', desc: 'Эталон современного ОБТ: оптика, стабилизация, немецкая точность.', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 8 }, cost: 300000 },
+    { id: 'leo2a7', name: 'Leopard 2A7', tier: 9, cls: 'Средний', desc: 'Цифровое поле боя: видит всё, попадает с первого выстрела.', stats: { dmg: 9, rof: 7, spd: 8, mnv: 7, view: 9, hp: 8 }, cost: 600000 },
+    { id: 'kf51', name: 'KF51 Panther', tier: 10, cls: 'Средний', desc: 'Новая «Пантера»: 130-мм орудие и дроны-разведчики на борту.', stats: { dmg: 10, rof: 8, spd: 9, mnv: 8, view: 10, hp: 8 }, cost: 1200000 },
   ],
   usa: [
     { id: 'm2l', name: 'M2 Light', tier: 1, cls: 'Лёгкий', desc: 'Юркий разведчик. Пулемётный шквал по лёгкой броне.', stats: { dmg: 1, rof: 4, spd: 4, mnv: 3, view: 2, hp: 1 } },
@@ -48,6 +52,8 @@ export const TANKS_BY_NATION = {
     { id: 'm48', name: 'M48 Patton', tier: 6, cls: 'Средний', desc: 'Универсал поствоенной школы: всего по чуть-чуть, и всё работает.', stats: { dmg: 6, rof: 5, spd: 5, mnv: 5, view: 6, hp: 5 }, cost: 70000 },
     { id: 'm60', name: 'M60', tier: 7, cls: 'Средний', desc: 'Патруль холодной войны. Надёжный, зоркий, везде успевает.', stats: { dmg: 7, rof: 6, spd: 6, mnv: 6, view: 7, hp: 6 }, cost: 150000 },
     { id: 'abr', name: 'M1 Abrams', tier: 8, cls: 'Тяжёлый', desc: 'Газотурбинный монстр: композитная броня и убойный темп.', stats: { dmg: 9, rof: 6, spd: 7, mnv: 6, view: 9, hp: 9 }, cost: 300000 },
+    { id: 'm1a2', name: 'M1A2 SEP', tier: 9, cls: 'Тяжёлый', desc: 'Абрамс с цифровой начинкой: тепловизоры третьего поколения.', stats: { dmg: 9, rof: 6, spd: 7, mnv: 7, view: 9, hp: 9 }, cost: 600000 },
+    { id: 'abrx', name: 'AbramsX', tier: 10, cls: 'Тяжёлый', desc: 'Гибридный прототип: тише, злее, автомат заряжания на 30 тонн легче.', stats: { dmg: 10, rof: 8, spd: 8, mnv: 7, view: 10, hp: 9 }, cost: 1200000 },
   ],
 }
 
@@ -175,17 +181,24 @@ export const DAILY_REWARDS = [
   { credits: 1200, tokens: 10, gold: 5 },
 ]
 
-// ---------- камуфляжи (платные скины — оттенок танка, виден всем) ----------
+// ---------- камуфляжи (платные скины, видны всем) ----------
+// tint — базовый оттенок (фоллбэк и цвет «точки» в ангаре); camo — настоящий
+// узор поверх спрайта (см. game/camo.js): spots — пятна, digital — пиксельная
+// цифра, stripes — тигровые полосы. colors — палитра узора, alpha — плотность.
 export const SKINS = [
   { id: 'std', name: 'Штатный', tint: 0xffffff, costTokens: 0 },
-  { id: 'winter', name: 'Зимний', tint: 0xdce8ff, costTokens: 15 },
-  { id: 'desert', name: 'Пустынный', tint: 0xffd9a0, costTokens: 15 },
-  { id: 'forest', name: 'Лесной', tint: 0xa8cc8e, costTokens: 15 },
-  { id: 'night', name: 'Ночной', tint: 0x9aa0ad, costTokens: 25 },
+  { id: 'winter', name: 'Зимний', tint: 0xdce8ff, costTokens: 15, camo: { type: 'spots', colors: ['#e9eef5', '#b9c6d6', '#8794a6'], alpha: 0.6 } },
+  { id: 'desert', name: 'Пустынный', tint: 0xffd9a0, costTokens: 15, camo: { type: 'spots', colors: ['#d8b87c', '#b08a50', '#8a683c'], alpha: 0.55 } },
+  { id: 'forest', name: 'Лесной', tint: 0xa8cc8e, costTokens: 15, camo: { type: 'spots', colors: ['#5e7a3e', '#3c572c', '#7d6a45'], alpha: 0.55 } },
+  { id: 'night', name: 'Ночной', tint: 0x9aa0ad, costTokens: 25, camo: { type: 'digital', colors: ['#3a4150', '#262c38', '#4d5666'], alpha: 0.62 } },
+  { id: 'digital', name: 'Цифра', tint: 0xa9bba1, costTokens: 35, camo: { type: 'digital', colors: ['#7d8f72', '#55654e', '#a3b39a'], alpha: 0.6 } },
+  { id: 'urban', name: 'Городской', tint: 0xc4c8cf, costTokens: 35, camo: { type: 'digital', colors: ['#9aa0a8', '#686d74', '#c9ced6'], alpha: 0.6 } },
+  { id: 'tiger', name: 'Тигровый', tint: 0xd8b56a, costTokens: 45, camo: { type: 'stripes', colors: ['#c8a35e', '#332c1e'], alpha: 0.62 } },
   { id: 'gold', name: 'Парадный', tint: 0xffd24a, costTokens: 60 },
 ]
 export const SKIN_BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]))
-export const RENAME_COST_TOKENS = 20
+// смена позывного — за Telegram Stars (цена авторитетна на сервере, PRODUCTS.rename)
+export const RENAME_COST_STARS = 50
 
 // ---------- рейтинг ----------
 export const RATING_START = 1000

@@ -1,6 +1,20 @@
 // Интеграция Telegram Mini App: безопасные зоны контейнера.
 // Складываем device safe area + контент-зону Telegram (шапка/кнопки) в CSS-переменные.
 // https://core.telegram.org/bots/webapps#contentsafeareainset
+
+// Личность игрока из Telegram: ник профиля. Вне Telegram → null.
+// Имя — first_name (как показывает Telegram), запасной вариант — @username.
+export function tgUser() {
+  const u =
+    window.Telegram &&
+    window.Telegram.WebApp &&
+    window.Telegram.WebApp.initDataUnsafe &&
+    window.Telegram.WebApp.initDataUnsafe.user
+  if (!u) return null
+  const name = String(u.first_name || u.username || '').trim()
+  return name ? { id: u.id, name } : null
+}
+
 export function initTelegram() {
   const tg = window.Telegram && window.Telegram.WebApp
   const root = document.documentElement

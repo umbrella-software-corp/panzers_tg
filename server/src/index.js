@@ -13,6 +13,10 @@ const ADMIN_KEY = process.env.ADMIN_KEY || ''
 
 const PORT = +(process.env.PORT || 8080)
 
+// страховки процесса: одиночный сбой логируем, сервер с сотней боёв не роняем
+process.on('uncaughtException', (e) => console.error('[srv] uncaughtException:', e))
+process.on('unhandledRejection', (e) => console.error('[srv] unhandledRejection:', e))
+
 // ---------- HTTP API ----------
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -23,10 +27,18 @@ const json = (res, code, obj) => {
   res.writeHead(code, { 'Content-Type': 'application/json', ...CORS })
   res.end(JSON.stringify(obj))
 }
+const BODY_LIMIT = 64 * 1024 // профиль — десятки КБ максимум
 const readBody = (req) =>
   new Promise((resolve) => {
     let raw = ''
-    req.on('data', (c) => (raw += c))
+    req.on('data', (c) => {
+      raw += c
+      if (raw.length > BODY_LIMIT) {
+        resolve({})
+        req.destroy()
+      }
+    })
+    req.on('error', () => resolve({}))
     req.on('end', () => {
       try {
         resolve(raw ? JSON.parse(raw) : {})
@@ -83,14 +95,15 @@ async function handleApi(req, res) {
     return json(res, 200, { ok: true })
   }
   if (req.url === '/api/invoice' && req.method === 'POST') {
-    const { productId } = await readBody(req)
-    const out = await createInvoice(user.uid, productId)
+    const { productId, name } = await readBody(req)
+    const out = await createInvoice(user.uid, productId, { name })
+    if (out.error) return json(res, 400, out)
     // dev-режим: токена нет — начисляем сразу, фронт покажет «куплено (dev)»
     if (out.dev) {
-      await grantProduct(user.uid, productId)
-      return json(res, 200, { dev: true, granted: true })
+      const granted = await grantProduct(user.uid, productId, { name })
+      return json(res, 200, { dev: true, granted })
     }
-    return json(res, out.error ? 400 : 200, out)
+    return json(res, 200, out)
   }
   if (req.url === '/api/products' && req.method === 'GET') {
     return json(res, 200, { products: PRODUCTS, payments: hasBot() ? 'stars' : 'dev' })
@@ -113,7 +126,45 @@ const WAIT_MS = +(process.env.WAIT_MS || 20000)
 const TICK_HZ = +(process.env.TICK_HZ || 20)
 const TICK_DT = 1 / TICK_HZ
 
-const wss = new WebSocketServer({ server: httpServer })
+// пределы против флуда: вход больше 2КБ боевому клиенту не нужен
+const MAX_SOCKETS = +(process.env.MAX_SOCKETS || 1200)
+const MAX_PER_IP = +(process.env.MAX_PER_IP || 30)
+const MSG_RATE = 40 // сообщений/с на сокет (ввод 10Гц + огонь + пинг — с запасом)
+const MSG_BURST = 80
+const SEND_BUFFER_LIMIT = 256 * 1024 // backpressure: дальше кадры дропаем
+
+const wss = new WebSocketServer({ server: httpServer, maxPayload: 2048 })
+wss.on('error', (e) => console.error('[ws] server error:', e.message))
+
+const ipCount = new Map()
+
+// валидация боевых статов из клиентского лоадаута: только известные числовые
+// поля, каждое зажато в честный диапазон (читы и NaN не проходят)
+const STAT_CLAMP = {
+  sectorDeg: [20, 80],
+  sweepPeriod: [1.2, 6],
+  toleranceDeg: [2, 12],
+  reload: [1.2, 8],
+  damage: [10, 80],
+  hp: [40, 320],
+  range: [300, 800],
+  vision: [200, 800],
+  maxSpeed: [40, 220],
+  accel: [80, 400],
+  turnRate: [0.4, 4],
+}
+function sanitizeStats(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const out = {}
+  for (const [k, [lo, hi]] of Object.entries(STAT_CLAMP)) {
+    const v = +raw[k]
+    if (!Number.isFinite(v)) return null
+    out[k] = Math.max(lo, Math.min(hi, v))
+  }
+  out.id = typeof raw.id === 'string' && /^[a-z]{1,12}$/.test(raw.id) ? raw.id : 'medium'
+  return out
+}
+const ID_RE = /^[a-z0-9_]{1,16}$/
 
 let nextId = 1
 const rooms = new Map()
@@ -145,6 +196,12 @@ function send(ws, msg) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg))
 }
 
+// горячий путь тика: строка уже собрана; при забитом буфере кадр дропаем —
+// клиент интерполирует, а сервер не копит чужие мегабайты в памяти
+function sendRaw(ws, str) {
+  if (ws.readyState === ws.OPEN && ws.bufferedAmount < SEND_BUFFER_LIMIT) ws.send(str)
+}
+
 // лобби ожидающим: кто уже в комнате (живые игроки видны в матчмейкинге)
 function broadcastLobby(room) {
   if (room.started) return
@@ -165,7 +222,7 @@ function startRoom(room) {
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
     mapId: map.id,
-    humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint })),
+    humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
   })
 
   for (const h of room.humans) {
@@ -184,12 +241,28 @@ function startRoom(room) {
   console.log(`[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», людей ${room.humans.length}, ботов ${TEAM_SIZE * 2 - room.humans.length}`)
 
   room.timer = setInterval(() => {
+    try {
+      roomTick(room)
+    } catch (e) {
+      // комната не должна ронять процесс с остальными боями
+      console.error(`[ws] ${room.id}: tick error, закрываю комнату`, e)
+      for (const h of room.humans) send(h.ws, { type: 'match-end', winner: null, score: room.sim ? room.sim.score : [0, 0], stats: [] })
+      endRoom(room)
+    }
+  }, 1000 / TICK_HZ)
+}
+
+function roomTick(room) {
     const t0 = process.hrtime.bigint()
     room.sim.step(TICK_DT)
     const events = room.sim.takeEvents()
-    const snaps = [room.sim.snapshotForTeam(0), room.sim.snapshotForTeam(1)]
+    // сериализация один раз на команду: личная добавка подклеивается строкой
+    const teamStr = [0, 1].map((t) =>
+      JSON.stringify({ ...room.sim.snapshotForTeam(t), events: room.sim.eventsForTeam(events, t) }),
+    )
     for (const h of room.humans) {
-      send(h.ws, { ...snaps[h.team], events, you: room.sim.personalFor(h.id) })
+      const you = JSON.stringify(room.sim.personalFor(h.id))
+      sendRaw(h.ws, teamStr[h.team].slice(0, -1) + ',"you":' + you + '}')
     }
     room.tickAccMs += Number(process.hrtime.bigint() - t0) / 1e6
     room.tickN++
@@ -212,7 +285,6 @@ function startRoom(room) {
       )
       endRoom(room)
     }
-  }, 1000 / TICK_HZ)
 }
 
 function endRoom(room) {
@@ -223,10 +295,37 @@ function endRoom(room) {
   // сокеты не рвём — клиент сам уходит после match-end
 }
 
-wss.on('connection', (ws) => {
+// heartbeat: полуоткрытые сокеты (мобильная сеть пропала) добиваем сами
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate()
+      continue
+    }
+    ws.isAlive = false
+    ws.ping()
+  }
+}, 30000)
+wss.on('close', () => clearInterval(heartbeat))
+
+wss.on('connection', (ws, req) => {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?'
+  if (wss.clients.size > MAX_SOCKETS || (ipCount.get(ip) || 0) >= MAX_PER_IP) {
+    ws.close(1013, 'busy')
+    return
+  }
+  ipCount.set(ip, (ipCount.get(ip) || 0) + 1)
+  ws.isAlive = true
+  ws.on('pong', () => (ws.isAlive = true))
+  ws.on('error', (e) => console.error(`[ws] socket error:`, e.message)) // без хендлера 'error' валит процесс
+
+  // токен-бакет на входящие: спамеру — разрыв
+  let tokens = MSG_BURST
+  let lastRefill = Date.now()
+
   const id = `p${nextId++}`
   const room = getJoinRoom()
-  const human = { id, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0 }
+  const human = { id, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null }
   room.humans.push(human)
   ws.playerId = id
   ws.room = room
@@ -242,6 +341,14 @@ wss.on('connection', (ws) => {
   if (room.humans.length >= TEAM_SIZE * 2) startRoom(room)
 
   ws.on('message', (raw) => {
+    const now = Date.now()
+    tokens = Math.min(MSG_BURST, tokens + ((now - lastRefill) / 1000) * MSG_RATE)
+    lastRefill = now
+    if (--tokens < 0) {
+      console.log(`[ws] ${id}: флуд (${ip}), разрываю`)
+      ws.terminate()
+      return
+    }
     let msg
     try {
       msg = JSON.parse(raw.toString())
@@ -252,11 +359,13 @@ wss.on('connection', (ws) => {
       human.name = msg.name.slice(0, 24)
       broadcastLobby(room)
     } else if (msg.type === 'join') {
-      // профиль бойца: имя, машина, камуфляж и боевые статы лоадаута
+      // профиль бойца: имя, машина, камуфляж и боевые статы лоадаута —
+      // всё с клиента, поэтому формат и диапазоны проверяем жёстко
       if (typeof msg.name === 'string' && msg.name.trim()) human.name = msg.name.trim().slice(0, 24)
-      if (typeof msg.tankId === 'string') human.tankId = msg.tankId.slice(0, 16)
-      if (typeof msg.tint === 'number') human.tint = msg.tint
-      if (msg.stats && typeof msg.stats === 'object' && typeof msg.stats.sectorDeg === 'number') human.stats = msg.stats
+      if (typeof msg.tankId === 'string' && ID_RE.test(msg.tankId)) human.tankId = msg.tankId
+      if (typeof msg.tint === 'number' && Number.isFinite(msg.tint)) human.tint = msg.tint & 0xffffff
+      if (typeof msg.skin === 'string' && ID_RE.test(msg.skin)) human.skin = msg.skin
+      human.stats = sanitizeStats(msg.stats)
       broadcastLobby(room)
     } else if (!room.sim) {
       return
@@ -270,6 +379,9 @@ wss.on('connection', (ws) => {
   })
 
   ws.on('close', () => {
+    const n = (ipCount.get(ip) || 1) - 1
+    if (n <= 0) ipCount.delete(ip)
+    else ipCount.set(ip, n)
     console.log(`[ws] ${id} вышел из ${room.id}`)
     room.humans = room.humans.filter((h) => h.id !== id)
     if (room.sim) room.sim.humanLeft(id) // ИИ доигрывает за него

@@ -28,4 +28,6 @@ async function call(path, opts = {}) {
 
 export const apiLoadProfile = () => call('/api/profile')
 export const apiSaveProfile = (profile) => call('/api/profile', { method: 'POST', body: JSON.stringify({ profile }) })
-export const apiBuy = (productId) => call('/api/invoice', { method: 'POST', body: JSON.stringify({ productId }) })
+export const apiBuy = (productId, extra = {}) => call('/api/invoice', { method: 'POST', body: JSON.stringify({ productId, ...extra }) })
+// смена позывного за звёзды: имя едет в payload инвойса, сервер ставит его после оплаты
+export const apiRename = (name) => apiBuy('rename', { name })

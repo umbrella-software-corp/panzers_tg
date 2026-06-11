@@ -7,6 +7,8 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "test:sim": "node test-sim.js",
+    "test:maps": "node test-maps.js",
+    "test:load": "node test-load.js",
     "test:smoke": "node smoke.js"
   },
   "dependencies": {

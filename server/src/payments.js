@@ -12,6 +12,17 @@ export const PRODUCTS = {
   t1: { title: '20 жетонов', stars: 65, tokens: 20 },
   t2: { title: '60 жетонов', stars: 165, tokens: 60 },
   t3: { title: '150 жетонов', stars: 329, tokens: 150 },
+  rename: { title: 'Смена позывного', stars: 50, rename: true },
+}
+
+// позывной с клиента: режем управляющие символы, тримим, 3..16 символов.
+// null — недопустим (платёж не создаём / не начисляем).
+function cleanName(raw) {
+  const s = String(raw || '')
+    .replace(/[\u0000-\u001f]/g, '')
+    .trim()
+    .slice(0, 16)
+  return s.length >= 3 ? s : null
 }
 
 const api = (method, body) =>
@@ -19,16 +30,24 @@ const api = (method, body) =>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    // лонг-полл 25с + запас; без таймаута зависший fetch молча стопит платежи
+    signal: AbortSignal.timeout(40000),
   }).then((r) => r.json())
 
-export async function createInvoice(uid, productId) {
+export async function createInvoice(uid, productId, extra = {}) {
   const p = PRODUCTS[productId]
   if (!p) return { error: 'unknown product' }
+  // товары с параметром (смена позывного) — проверяем его ДО создания счёта
+  let name
+  if (p.rename) {
+    name = cleanName(extra.name)
+    if (!name) return { error: 'bad name' }
+  }
   if (!hasBot()) return { dev: true } // локальная разработка — без оплаты
   const res = await api('createInvoiceLink', {
     title: p.title,
-    description: `Panzer TG · ${p.title}`,
-    payload: JSON.stringify({ uid, productId }),
+    description: p.rename ? `Panzer TG · новый позывной «${name}»` : `Panzer TG · ${p.title}`,
+    payload: JSON.stringify(name ? { uid, productId, name } : { uid, productId }),
     currency: 'XTR',
     prices: [{ label: p.title, amount: p.stars }],
   })
@@ -37,12 +56,18 @@ export async function createInvoice(uid, productId) {
 }
 
 // начисление товара профилю (используется и поллингом, и dev-эндпоинтом)
-export async function grantProduct(uid, productId) {
+export async function grantProduct(uid, productId, extra = {}) {
   const p = PRODUCTS[productId]
   if (!p) return false
   const profile = (await loadProfile(uid)) || {}
   if (p.credits) profile.credits = (profile.credits || 0) + p.credits
   if (p.tokens) profile.tokens = (profile.tokens || 0) + p.tokens
+  if (p.rename) {
+    const name = cleanName(extra.name)
+    if (!name) return false // недопустимое имя — не «съедаем» оплату молча
+    profile.name = name
+    profile.nameCustom = true // больше не перетираем ником из Telegram
+  }
   await saveProfile(uid, profile)
   return true
 }
@@ -80,8 +105,8 @@ export function startPaymentsLoop() {
           if (sp) {
             const charge = sp.telegram_payment_charge_id
             if (await paymentSeen(charge)) continue
-            const { uid, productId } = JSON.parse(sp.invoice_payload || '{}')
-            if (uid && productId && (await grantProduct(uid, productId))) {
+            const { uid, productId, name } = JSON.parse(sp.invoice_payload || '{}')
+            if (uid && productId && (await grantProduct(uid, productId, { name }))) {
               await markPayment(charge, { uid, productId, stars: sp.total_amount })
               console.log(`[pay] ${uid} оплатил ${productId} (${sp.total_amount} XTR)`)
             }

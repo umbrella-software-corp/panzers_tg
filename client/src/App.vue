@@ -8,7 +8,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, bankBattleXp, bankTaskProgress, loadoutStats, dailyAvailable, syncProfile } from './store.js'
+import { profile, addRewards, bankBattleXp, bankTaskProgress, loadoutStats, dailyAvailable, syncProfile, applyTgName } from './store.js'
 import { randomMap } from './game/maps.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
@@ -24,6 +24,7 @@ const netMatch = ref(null)
 const daily = ref(false)
 onMounted(async () => {
   await syncProfile() // офлайн — молча остаёмся на локальном кеше
+  applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   if (dailyAvailable()) daily.value = true
 })
 
