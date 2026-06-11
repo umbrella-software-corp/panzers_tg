@@ -69,6 +69,7 @@ if (typeof profile.nameCustom !== 'boolean') profile.nameCustom = false // им�
 if (!Array.isArray(profile.skins)) profile.skins = ['std'] // купленные камуфляжи
 if (!profile.tasks || typeof profile.tasks !== 'object') profile.tasks = { date: '', progress: {}, claimed: [] } // задачи дня
 if (typeof profile.skin !== 'string') profile.skin = 'std'
+if (typeof profile.premiumUntil !== 'number') profile.premiumUntil = 0 // премиум активен, пока > Date.now()
 
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()
@@ -167,6 +168,12 @@ export function upgradeModule(tankId, modId) {
   profile.modules[tankId][modId] = lvl + 1
   return true
 }
+
+// ---------- премиум-аккаунт (Stars): +15% к опыту экипажа/ветки и кредитам ----------
+export const PREMIUM_BONUS = 0.15
+export const isPremium = () => profile.premiumUntil > Date.now()
+// сколько дней премиума осталось (для бейджа); 0 — нет
+export const premiumDaysLeft = () => Math.max(0, Math.ceil((profile.premiumUntil - Date.now()) / 86400000))
 
 // ---------- валюта ----------
 export function addRewards(credits = 0, tokens = 0) {

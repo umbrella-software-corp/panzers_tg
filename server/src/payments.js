@@ -13,6 +13,7 @@ export const PRODUCTS = {
   t2: { title: '60 жетонов', stars: 165, tokens: 60 },
   t3: { title: '150 жетонов', stars: 329, tokens: 150 },
   rename: { title: 'Смена позывного', stars: 50, rename: true },
+  prem: { title: 'Премиум-аккаунт · 7 дней', stars: 99, premiumDays: 7 },
 }
 
 // позывной с клиента: режем управляющие символы, тримим, 3..16 символов.
@@ -62,6 +63,11 @@ export async function grantProduct(uid, productId, extra = {}) {
   const profile = (await loadProfile(uid)) || {}
   if (p.credits) profile.credits = (profile.credits || 0) + p.credits
   if (p.tokens) profile.tokens = (profile.tokens || 0) + p.tokens
+  if (p.premiumDays) {
+    // продлеваем от текущего конца премиума (или от сейчас, если истёк)
+    const base = Math.max(Date.now(), profile.premiumUntil || 0)
+    profile.premiumUntil = base + p.premiumDays * 86400000
+  }
   if (p.rename) {
     const name = cleanName(extra.name)
     if (!name) return false // недопустимое имя — не «съедаем» оплату молча

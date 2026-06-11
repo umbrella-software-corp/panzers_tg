@@ -9,7 +9,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, bankBattleXp, bankTaskProgress, loadoutStats, dailyAvailable, syncProfile, applyTgName } from './store.js'
+import { profile, addRewards, bankBattleXp, bankTaskProgress, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS } from './store.js'
 import { randomMap } from './game/maps.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
@@ -61,8 +61,10 @@ function netFail() {
 // награда боя + прогресс задач дня
 function bankBattle(reward) {
   if (!reward) return
-  addRewards(reward.silver || 0)
-  bankBattleXp(reward.xp) // 50% в ветку танка, 50% экипажу
+  // премиум: +15% к кредитам и опыту (экипаж + ветка техники) за бой
+  const m = isPremium() ? 1 + PREMIUM_BONUS : 1
+  addRewards(Math.round((reward.silver || 0) * m))
+  bankBattleXp(Math.round(reward.xp * m)) // 50% в ветку танка, 50% экипажу
   bankTaskProgress({
     damage: reward.damage,
     kills: reward.kills,

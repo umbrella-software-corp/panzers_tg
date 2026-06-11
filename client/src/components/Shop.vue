@@ -2,7 +2,7 @@
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin, syncProfile } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo, grantRandomSkin, syncProfile, isPremium, premiumDaysLeft } from '../store.js'
 import { apiBuy } from '../api.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
@@ -80,6 +80,7 @@ async function buyPack(p, label) {
 }
 const buyCredits = (p) => buyPack(p, `${p.amount.toLocaleString('ru-RU')} кредитов`)
 const buyTokens = (p) => buyPack(p, `${p.amount} жетонов`)
+const buyPremium = () => buyPack({ id: 'prem' }, 'Премиум · 7 дней')
 function buyGold(p) {
   if (!buyGoldAmmo(p.id)) {
     showToast('Не хватает жетонов', true)
@@ -98,6 +99,24 @@ const fmt = (n) => n.toLocaleString('ru-RU')
     </header>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
+      <!-- премиум-аккаунт -->
+      <section>
+        <div class="pz-stencil-h">ПРЕМИУМ-АККАУНТ</div>
+        <div class="pz-plate pz-brackets" style="--bk: var(--amber); margin-top: 10px; padding: 13px 14px; display: flex; align-items: center; gap: 12px">
+          <PzIcon name="star" :size="38" color="var(--amber)" />
+          <div style="flex: 1; min-width: 0">
+            <div class="pz-display" style="font-size: 15px; color: var(--amber)">ПРЕМИУМ · 7 ДНЕЙ</div>
+            <div style="font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 500; line-height: 1.4">
+              +15% к опыту экипажа, ветке техники и кредитам за каждый бой
+            </div>
+            <div v-if="isPremium()" class="pz-pixel" style="font-size: 8px; color: var(--green); margin-top: 5px; letter-spacing: 0.1em">
+              АКТИВЕН · ОСТАЛОСЬ {{ premiumDaysLeft() }} ДН.
+            </div>
+          </div>
+          <button class="pz-cta" style="padding: 11px 13px; font-size: 13px; white-space: nowrap" @click="buyPremium">99 ⭐</button>
+        </div>
+      </section>
+
       <!-- ящики -->
       <section>
         <div class="pz-stencil-h">ЯЩИКИ СНАБЖЕНИЯ</div>
