@@ -12,7 +12,7 @@ const WS_URL =
  * onLobby({players, you, startsIn}) — обновления комнаты ожидания,
  * onStart(msg match-start) — бой начался, onClose — соединение закрылось.
  */
-export function connectMatch({ name, tankId, tint, skin, stats, onLobby, onStart, onClose }, timeoutMs = 4000) {
+export function connectMatch({ name, tankId, tint, skin, stats, battles, onLobby, onStart, onClose }, timeoutMs = 4000) {
   return new Promise((resolve, reject) => {
     let settled = false
     let ws
@@ -55,7 +55,7 @@ export function connectMatch({ name, tankId, tint, skin, stats, onLobby, onStart
     const log = (...a) => console.log('[net]', ...a)
     ws.onopen = () => {
       log('ws открыт →', WS_URL)
-      client.send({ type: 'join', name, tankId, tint, skin, stats })
+      client.send({ type: 'join', name, tankId, tint, skin, stats, battles })
     }
     ws.onmessage = (e) => {
       let msg

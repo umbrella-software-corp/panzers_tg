@@ -2,13 +2,14 @@
 // Карточка профиля игрока (модалка): рейтинг, место, бои/винрейт/фраги,
 // любимая техника. Медали добавятся, когда будет система медалей.
 import { computed } from 'vue'
-import { TANK_BY_ID, MEDALS } from '../game/meta.js'
+import { TANK_BY_ID, MEDALS, rankByBattles } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
 import Medal from './ui/Medal.vue'
 
 const props = defineProps({ player: { type: Object, required: true } })
 const emit = defineEmits(['close'])
 const p = computed(() => props.player)
+const rank = computed(() => rankByBattles(p.value.battles))
 const winrate = computed(() => (p.value.battles ? Math.round((p.value.wins / p.value.battles) * 100) : 0))
 const tankName = computed(() => (TANK_BY_ID[p.value.tank] || {}).name || p.value.favoriteTank || '—')
 // медали игрока: карта { id: счётчик } → значки в порядке каталога
@@ -26,6 +27,7 @@ const medals = computed(() => {
         <span v-if="p.premium" style="text-shadow: 0 0 6px rgba(242,165,12,.6)">♛ </span>{{ p.name }}
       </div>
       <div v-if="p.premium" class="pz-pixel" style="text-align: center; font-size: 7px; color: var(--amber); letter-spacing: 0.14em; margin-top: 3px">ПРЕМИУМ-АККАУНТ</div>
+      <div class="rank-chip pz-display">{{ rank.name }}</div>
       <div v-if="p.place" class="pz-pixel place">МЕСТО {{ p.place }} В РЕЙТИНГЕ</div>
 
       <div class="rating-big pz-display">{{ p.rating }}<span class="unit">рейтинг</span></div>
@@ -86,6 +88,18 @@ const medals = computed(() => {
   color: var(--ink-dim);
   cursor: pointer;
   font-size: 13px;
+}
+.rank-chip {
+  display: block;
+  width: fit-content;
+  margin: 7px auto 0;
+  padding: 3px 12px;
+  font-size: 12px;
+  color: var(--amber);
+  background: rgba(242, 165, 12, 0.1);
+  border: 1px solid var(--amber);
+  border-radius: 12px;
+  letter-spacing: 0.04em;
 }
 .place {
   font-size: 8px;

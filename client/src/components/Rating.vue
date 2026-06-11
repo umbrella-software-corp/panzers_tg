@@ -4,7 +4,7 @@
 // Соперники пока фейковые вокруг моего рейтинга (бэкенда нет) — но
 // стабильные между заходами, чтобы таблица не скакала.
 import { computed, ref, onMounted } from 'vue'
-import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft } from '../store.js'
+import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft, playerRank } from '../store.js'
 import { RATING_RIVALS, RENAME_COST_STARS, MEDALS } from '../game/meta.js'
 import { apiRename, apiLeaderboard, apiPlayer } from '../api.js'
 import { haptic } from '../tg.js'
@@ -195,7 +195,10 @@ const fmtTime = (t) => {
           <div style="display: flex; align-items: center; gap: 12px">
             <img src="/sprites/trophy.png" class="rank-badge" style="object-fit: cover" />
             <div style="flex: 1">
-              <div class="pz-display" style="font-size: 22px">{{ profile.stats.rating }}</div>
+              <div style="display: flex; align-items: baseline; gap: 8px">
+                <div class="pz-display" style="font-size: 22px">{{ profile.stats.rating }}</div>
+                <span class="pz-display" style="font-size: 12px; color: var(--amber)">{{ playerRank().name }}</span>
+              </div>
               <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500">боевой рейтинг · место {{ myPlace }} · открыть профиль ▸</div>
             </div>
           </div>

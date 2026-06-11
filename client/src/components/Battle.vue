@@ -77,6 +77,7 @@ const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.val
 // а не «3-2-1 → ждём → опять 3-2-1»)
 const phase = ref(isNet ? 'connecting' : 'countdown')
 const count = ref(3)
+const netStuck = ref(false) // онлайн-связь так и не пришла — показываем выбор, НЕ ботим молча
 let countTimer = null
 
 // пауза по кнопке (поверх фазы fighting)
@@ -334,15 +335,16 @@ onMounted(async () => {
   game.setMinimap(minimap.value)
   if (isNet) {
     // онлайн: НЕ запускаем отсчёт сразу — ждём первый снапшот сервера (см. onState),
-    // тогда будет единственный отсчёт. Нет данных за 4.5с → откат в офлайн с ботами.
+    // тогда будет единственный отсчёт. Реальный матч с друзьями НЕ подменяем
+    // ботами молча: если связь так и не пришла за 10с — показываем ВЫБОР игроку.
     game.setPaused(true)
     netWatchdog = setTimeout(() => {
       netWatchdog = null
       if (!game.cur) {
-        console.warn('[battle] онлайн-бой без снапшотов 4.5с — откат в офлайн с ботами')
-        emit('netfail')
+        console.warn('[battle] онлайн-бой без снапшотов 10с — предлагаем выбор (не ботим молча)')
+        netStuck.value = true
       }
-    }, 4500)
+    }, 10000)
   } else {
     startCountdown()
   }
@@ -481,11 +483,22 @@ onBeforeUnmount(() => {
       <span class="pz-display flabel">{{ state.ready ? 'ОГОНЬ' : state.reloadLeft.toFixed(1) + 'с' }}</span>
     </button>
 
-    <!-- онлайн: ждём данные сервера, чтобы отсчёт был один -->
+    <!-- онлайн: ждём данные сервера, чтобы отсчёт был один (и не подменить
+         реальный матч с друзьями ботами молча) -->
     <transition name="fade">
       <div v-if="phase === 'connecting'" class="overlay countdown">
-        <div class="cd-num pz-display" style="font-size: 28px; letter-spacing: 0.2em">СВЯЗЬ…</div>
-        <div class="cd-sub">собираем команду на сервере</div>
+        <template v-if="!netStuck">
+          <div class="cd-num pz-display" style="font-size: 28px; letter-spacing: 0.2em">СВЯЗЬ…</div>
+          <div class="cd-sub">собираем команду на сервере</div>
+        </template>
+        <template v-else>
+          <div class="cd-num pz-display" style="font-size: 22px; letter-spacing: 0.12em">НЕТ СВЯЗИ С БОЕМ</div>
+          <div class="cd-sub" style="margin-bottom: 16px">сервер не ответил — выберите</div>
+          <div style="display: flex; flex-direction: column; gap: 10px; width: 240px">
+            <button class="pz-cta pz-cta--hazard" @click="emit('netfail')">Играть с ботами</button>
+            <button class="pz-btn2" @click="toHangar">← В ангар</button>
+          </div>
+        </template>
       </div>
     </transition>
 

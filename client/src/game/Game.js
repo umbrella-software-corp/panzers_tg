@@ -664,7 +664,7 @@ export class Game {
   // танк-в-танк: после движения всех машин разводим перекрытия (игрок + боты),
   // чтобы не набивались в одну точку. Пара расталкивается симметрично.
   _separateUnits() {
-    const minD = this.tankRadius * 1.7
+    const minD = this.tankRadius * 2.0 // танки держат больше дистанции (плотнее коллизия)
     const all = []
     if (this.hp > 0) all.push(this.tank)
     for (const b of this.bots) if (b.alive) all.push(b)
@@ -1121,11 +1121,17 @@ export class Game {
         this._spawnShell(b.x, b.y, target.x, target.y, col, hit && pierced ? 'hit' : 'dust')
       }
     } else {
-      // никого не видит — едет к точке. РАСПРЕДЕЛЯЕМ ботов по точкам (сорт по
-      // дистанции, выбор по id), а не все на ближнюю — меньше кучкования
-      const open = this.caps.filter((cap) => cap.owner !== b.team)
-      open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
-      const goal = open.length ? open[b.id % open.length] : null
+      // защита базы: если НАШУ базу уже захватывают — едем оборонять (присутствие
+      // защитника сбрасывает прогресс захвата, плюс отстреливаем захватчиков)
+      const ownBase = this.bases.find((bs) => bs.team === b.team && bs.progress > 8)
+      let goal = ownBase || null
+      if (!goal) {
+        // иначе — к открытой точке. РАСПРЕДЕЛЯЕМ ботов (сорт по дистанции, выбор
+        // по id), а не все на ближнюю — меньше кучкования
+        const open = this.caps.filter((cap) => cap.owner !== b.team)
+        open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
+        goal = open.length ? open[b.id % open.length] : null
+      }
       const c = MAP_SIZE / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5

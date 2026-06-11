@@ -3,7 +3,7 @@
 // сервере по дедлайну). Сервер недоступен — офлайн-бой с ботами, как раньше.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { profile, loadoutStats } from '../store.js'
-import { TANK_BY_ID, FRIENDS, MAX_TIER, SKIN_BY_ID } from '../game/meta.js'
+import { TANK_BY_ID, FRIENDS, MAX_TIER, SKIN_BY_ID, rankByBattles } from '../game/meta.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { connectMatch } from '../game/net.js'
 import TankTopDown from './ui/TankTopDown.vue'
@@ -83,12 +83,13 @@ onMounted(async () => {
       tankId: profile.selectedTank,
       tint: (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff,
       skin: profile.skin,
+      battles: profile.stats.battles,
       stats: JSON.parse(JSON.stringify(loadoutStats(profile.selectedTank))),
       onLobby: (msg) => {
         // живые игроки комнаты (кроме нас) + таймер добора ботов
         allies.value = msg.players
           .filter((p) => p.id !== msg.you)
-          .map((p) => ({ name: p.name, kind: 'player' }))
+          .map((p) => ({ name: p.name, kind: 'player', battles: p.battles }))
         botsEtaOnline.value = Math.max(0, Math.ceil(msg.startsIn / 1000))
       },
       onStart: (msg) => {
@@ -213,10 +214,10 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
         <template v-if="s">
           <span style="width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0" :style="{ background: s.kind === 'you' ? 'var(--amber)' : blipColor(s) }"></span>
           <span style="flex: 1; font-size: 13px; font-weight: 600" :style="{ color: s.kind === 'bot' ? 'var(--ink-dim)' : 'var(--ink)' }">{{ s.name }}</span>
-          <span v-if="s.kind === 'you'" class="pz-chip" style="color: var(--amber); font-size: 10px"><PzIcon name="star" :size="9" color="var(--amber)" /> вы</span>
+          <span v-if="s.kind === 'you'" class="pz-chip" style="color: var(--amber); font-size: 10px"><PzIcon name="star" :size="9" color="var(--amber)" /> {{ rankByBattles(profile.stats.battles).name }}</span>
           <span v-else-if="s.kind === 'party'" class="pz-chip" style="color: var(--blue); font-size: 10px">взвод</span>
           <span v-else-if="s.kind === 'player'" class="pz-chip" style="color: var(--green); font-size: 10px">
-            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green)"></span>живой
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green)"></span>{{ rankByBattles(s.battles).name }}
           </span>
           <span v-else class="pz-chip" style="color: var(--ink-faint); font-size: 10px">БОТ</span>
         </template>

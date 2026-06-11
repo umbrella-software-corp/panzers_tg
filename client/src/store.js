@@ -38,6 +38,8 @@ import {
   tasksOfDay,
   MEDALS,
   MEDAL_BY_ID,
+  RANKS,
+  rankByBattles,
 } from './game/meta.js'
 
 const KEY = 'pz.state.v1'
@@ -79,6 +81,9 @@ if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.cre
 if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {} // опыт по веткам наций
 if (!profile.medals || typeof profile.medals !== 'object') profile.medals = {} // { medalId: счётчик получений }
 if (!profile.camos || typeof profile.camos !== 'object') profile.camos = {} // { tankId: camoId } — камуфляж на танк
+// звание: rankClaimed — индекс последнего выданного звания. Существующим игрокам
+// ставим текущее (без задним числом награды за все ступени сразу), новым — 0.
+if (typeof profile.rankClaimed !== 'number') profile.rankClaimed = rankByBattles((profile.stats || {}).battles || 0).index
 if (typeof profile.name !== 'string' || !profile.name) profile.name = 'Боец'
 if (typeof profile.nameCustom !== 'boolean') profile.nameCustom = false // имя сменено платно (за звёзды)
 if (!Array.isArray(profile.skins)) profile.skins = ['std'] // купленные камуфляжи
@@ -342,12 +347,22 @@ export function spendGoldAmmo(n = 1) {
 }
 
 // ---------- статистика, рейтинг и история боёв ----------
+// текущее звание игрока (по числу боёв)
+export const playerRank = () => rankByBattles(profile.stats.battles)
+
 export function addBattleResult(result, kills = 0, extra = {}) {
   const s = profile.stats
   s.battles++
   if (result === 'victory') s.wins++
   s.kills += kills
   s.rating = Math.max(100, s.rating + (RATING_DELTA[result] ?? RATING_DELTA.defeat))
+  // повышение в звании: награда за каждую новую ступень (обычно одну за бой)
+  const reached = rankByBattles(s.battles).index
+  while (profile.rankClaimed < reached) {
+    profile.rankClaimed++
+    const r = RANKS[profile.rankClaimed]
+    if (r) addRewards(r.credits || 0, r.tokens || 0)
+  }
   profile.history.unshift({
     t: Date.now(),
     result,

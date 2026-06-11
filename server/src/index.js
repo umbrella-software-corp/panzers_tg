@@ -140,7 +140,7 @@ const httpServer = http.createServer((req, res) => {
 })
 const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
 // сколько комната ждёт живых игроков, прежде чем добрать ботов
-const WAIT_MS = +(process.env.WAIT_MS || 20000)
+const WAIT_MS = +(process.env.WAIT_MS || 8000)
 const TICK_HZ = +(process.env.TICK_HZ || 20)
 const TICK_DT = 1 / TICK_HZ
 
@@ -225,7 +225,7 @@ function sendRaw(ws, str) {
 // лобби ожидающим: кто уже в комнате (живые игроки видны в матчмейкинге)
 function broadcastLobby(room) {
   if (room.started) return
-  const players = room.humans.map((h) => ({ id: h.id, name: h.name }))
+  const players = room.humans.map((h) => ({ id: h.id, name: h.name, battles: h.battles || 0 }))
   const startsIn = Math.max(0, room.deadline ? room.deadline - Date.now() : WAIT_MS)
   for (const h of room.humans) send(h.ws, { type: 'lobby', players, you: h.id, startsIn })
 }
@@ -346,7 +346,7 @@ wss.on('connection', (ws, req) => {
 
   const id = `p${nextId++}`
   const room = getJoinRoom()
-  const human = { id, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null }
+  const human = { id, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0 }
   room.humans.push(human)
   ws.playerId = id
   ws.room = room
@@ -386,6 +386,7 @@ wss.on('connection', (ws, req) => {
       if (typeof msg.tankId === 'string' && ID_RE.test(msg.tankId)) human.tankId = msg.tankId
       if (typeof msg.tint === 'number' && Number.isFinite(msg.tint)) human.tint = msg.tint & 0xffffff
       if (typeof msg.skin === 'string' && ID_RE.test(msg.skin)) human.skin = msg.skin
+      if (typeof msg.battles === 'number' && Number.isFinite(msg.battles)) human.battles = Math.max(0, Math.min(1e6, msg.battles | 0))
       human.stats = sanitizeStats(msg.stats)
       broadcastLobby(room)
     } else if (!room.sim) {

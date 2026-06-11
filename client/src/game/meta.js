@@ -212,6 +212,32 @@ export const CAMO_IDS = CAMOS.map((c) => c.id).filter(Boolean)
 // смена позывного — за Telegram Stars (цена авторитетна на сервере, PRODUCTS.rename)
 export const RENAME_COST_STARS = 50
 
+// ---------- воинские звания (по числу боёв) ----------
+// Награда (credits/tokens) выдаётся ОДИН раз за каждое новое звание. Звание
+// видно в карточке игрока, профиле и поиске боя.
+export const RANKS = [
+  { name: 'Рядовой', battles: 0, credits: 0 },
+  { name: 'Ефрейтор', battles: 5, credits: 300 },
+  { name: 'Мл. сержант', battles: 15, credits: 600 },
+  { name: 'Сержант', battles: 30, credits: 1000, tokens: 2 },
+  { name: 'Ст. сержант', battles: 50, credits: 1500, tokens: 3 },
+  { name: 'Старшина', battles: 80, credits: 2200, tokens: 4 },
+  { name: 'Прапорщик', battles: 120, credits: 3000, tokens: 5 },
+  { name: 'Лейтенант', battles: 175, credits: 4200, tokens: 6 },
+  { name: 'Ст. лейтенант', battles: 250, credits: 5800, tokens: 8 },
+  { name: 'Капитан', battles: 350, credits: 7500, tokens: 10 },
+  { name: 'Майор', battles: 500, credits: 9500, tokens: 12 },
+  { name: 'Подполковник', battles: 700, credits: 13000, tokens: 16 },
+  { name: 'Полковник', battles: 1000, credits: 18000, tokens: 22 },
+  { name: 'Генерал', battles: 1500, credits: 28000, tokens: 35 },
+]
+// звание по числу боёв (+ индекс в списке)
+export function rankByBattles(battles) {
+  let idx = 0
+  for (let i = 0; i < RANKS.length; i++) if ((battles || 0) >= RANKS[i].battles) idx = i
+  return { ...RANKS[idx], index: idx }
+}
+
 // ---------- рейтинг ----------
 export const RATING_START = 1000
 export const RATING_DELTA = { victory: 24, draw: 2, defeat: -16 }
