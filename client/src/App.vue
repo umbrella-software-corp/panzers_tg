@@ -51,8 +51,10 @@ function deploy(net) {
   battleKey.value++ // каждый матч — свежий бой
   screen.value = 'battle'
 }
-// онлайн-бой не получил снапшоты (фриз) — пересобираем тот же бой офлайн с ботами
+// онлайн-бой не получил снапшоты (фриз) — пересобираем бой офлайн с ботами,
+// со СВЕЖЕЙ случайной картой (а не застрявшей старой)
 function netFail() {
+  draw.value = { mapId: randomMap().id, side: draw.value.side }
   netMatch.value = null
   battleKey.value++ // смена ключа пересоздаёт Battle уже в офлайн-режиме
 }
@@ -82,6 +84,8 @@ function rematch(reward) {
     netMatch.value = null
     play()
   } else {
+    // офлайн-реванш: новая случайная карта/сторона, а не та же самая
+    draw.value = { mapId: randomMap().id, side: Math.random() < 0.5 ? 0 : 1 }
     battleKey.value++
   }
 }

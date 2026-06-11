@@ -133,9 +133,16 @@ function buyPreviewed() {
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
     </div>
 
-    <!-- камуфляжи: платные скины, видны в бою; запертый — примерка по клику -->
-    <div style="display: flex; align-items: center; gap: 7px; padding: 2px 14px 4px; flex-shrink: 0">
+    <!-- камуфляжи: шапка (метка + кнопка покупки справа) с резервом высоты не
+         прыгает при примерке; сами точки — в отдельном скроллящемся ряду, не
+         разъезжаются от ширины кнопки -->
+    <div class="camo-head">
       <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">КАМУФЛЯЖ</span>
+      <button v-if="previewDef" class="pz-btn2 buy-skin" @click="buyPreviewed">
+        {{ previewDef.name }} · <PzIcon name="token" :size="11" /> {{ previewDef.costTokens }}
+      </button>
+    </div>
+    <div class="camo-dots pz-noscroll">
       <button
         v-for="s in SKINS"
         :key="s.id"
@@ -146,9 +153,6 @@ function buyPreviewed() {
         @click="pickSkin(s)"
       >
         <PzIcon v-if="!profile.skins.includes(s.id)" name="lock" :size="9" color="#1d1604" />
-      </button>
-      <button v-if="previewDef" class="pz-btn2 buy-skin" @click="buyPreviewed">
-        {{ previewDef.name }} · <PzIcon name="token" :size="11" /> {{ previewDef.costTokens }}
       </button>
     </div>
 
@@ -279,9 +283,27 @@ function buyPreviewed() {
   border-radius: 2px;
   opacity: 0.5;
 }
+.camo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 14px 0;
+  min-height: 40px; /* резерв под кнопку покупки — ряд точек не прыгает при примерке */
+  flex-shrink: 0;
+}
+.camo-dots {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px 4px;
+  overflow-x: auto; /* много скинов — горизонтальный скролл, ряд не ломается */
+  flex-shrink: 0;
+}
 .skin-dot {
   width: 20px;
   height: 20px;
+  flex-shrink: 0;
   border-radius: 50%;
   border: 1.5px solid rgba(0, 0, 0, 0.5);
   cursor: pointer;
