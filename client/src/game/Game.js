@@ -1106,67 +1106,31 @@ export class Game {
     const py = b.y
     let wantMove = true
 
-    if (target) {
+    // ближний бой ТОЛЬКО если враг близко; дальнего «пикера» НЕ преследуем, иначе
+    // один игрок из куста уводит ботов с карты (фидбек Романа). Дальний враг —
+    // едем к объективу, стреляя по нему, если он попал в сектор.
+    const engageRange = vision * 0.7
+    if (target && bestD <= engageRange) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
-      // при объезде временно целимся в сторону; лёгкое вилянье курсом вместо
-      // прежнего «краба» (боком танки не ездят)
+      // при объезде целимся в сторону; лёгкое вилянье курсом (боком не ездят)
       let steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18
       const diff = angleDiff(steerA, b.hull)
-      // на ходу руль тяжелеет — как у игрока
       const turnEff = b.turnRate * (1 - 0.35 * Math.min(1, Math.abs(b.vel) / b.speed))
       const maxTurn = turnEff * dt
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
       if (b.hp < b.maxHp * 0.3) move = -1 // мало хп — отступаем, продолжая отстреливаться
-      else if (bestD > ideal * 1.1) move = 1 // далеко — едет на сближение
+      else if (bestD > ideal * 1.1) move = 1 // далеко в зоне боя — чуть на сближение
       else if (bestD < ideal * 0.55) move = -0.5 // совсем вплотную — чуть назад
       wantMove = move !== 0
 
       this._botDrive(b, move, dt)
-
-      const fireDiff = angleDiff(ang, b.hull)
-      const inArc = Math.abs(fireDiff) <= (ai.sectorHalfDeg * Math.PI) / 180
-      // огонь только в ближней зоне (≤ fireRange) — издалека бот едет, а не стреляет
-      if (inArc && b.fireCd <= 0 && bestD <= fireRange) {
-        b.fireCd = b.reload
-        const col = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).muzzle
-        this.muzzles.push({ x: b.x + Math.cos(b.hull) * 34, y: b.y + Math.sin(b.hull) * 34, a: b.hull, age: 0, color: col })
-        // точность падает с дистанцией: в упор полная, у края дальности стрельбы ~0.45
-        const accFalloff = 1 - 0.55 * Math.min(1, bestD / fireRange)
-        const hit = Math.random() < ai.hitChance * accFalloff
-        let pierced = false
-        if (hit) {
-          // броня цели может срикошетить и ботский снаряд
-          const tCls = target.isPlayer ? this.cls.id : target.classId
-          const tHull = target.isPlayer ? this.hullAngle : target.hull
-          const shotA = Math.atan2(target.y - b.y, target.x - b.x)
-          const pen = this._penetration(shotA, tCls, tHull, false)
-          pierced = pen.pen
-          const dmg = Math.round(b.damage * pen.mult)
-          if (dmg > 0) {
-            this._damageUnit(target, dmg, b.team)
-            b.damageDealt = (b.damageDealt || 0) + dmg // для таблицы урона в донесении
-          }
-          if (target.isPlayer && !pen.pen) {
-            this.blocked++
-            this.onSaved(pen.kind)
-          }
-        }
-        this._spawnShell(b.x, b.y, target.x, target.y, col, hit && pierced ? 'hit' : 'dust')
-      }
+      this._botFire(b, target, bestD, fireRange)
     } else {
-      // защита базы: если НАШУ базу уже захватывают — едем оборонять (присутствие
-      // защитника сбрасывает прогресс захвата, плюс отстреливаем захватчиков)
-      const ownBase = this.bases.find((bs) => bs.team === b.team && bs.progress > 8)
-      let goal = ownBase || null
-      if (!goal) {
-        // иначе — к открытой точке. РАСПРЕДЕЛЯЕМ ботов (сорт по дистанции, выбор
-        // по id), а не все на ближнюю — меньше кучкования
-        const open = this.caps.filter((cap) => cap.owner !== b.team)
-        open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
-        goal = open.length ? open[b.id % open.length] : null
-      }
+      // ОБЪЕКТИВ: к открытой точке / на защиту своей базы. Дальнего врага не гонимся,
+      // но стреляем оппортунистически, если он сам попал в сектор и дальность.
+      const goal = this._botGoal(b)
       const c = MAP_SIZE / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
@@ -1174,6 +1138,7 @@ export class Game {
       const turnEff = b.turnRate * (1 - 0.35 * Math.min(1, Math.abs(b.vel) / b.speed))
       b.hull += Math.max(-turnEff * dt, Math.min(turnEff * dt, diff))
       this._botDrive(b, 0.6, dt)
+      if (target) this._botFire(b, target, bestD, fireRange)
     }
 
     this._resolveCollisions(b, ai.radius)
@@ -1188,6 +1153,47 @@ export class Game {
       b.avoidT = 0.9
       b.avoidDir = Math.random() < 0.5 ? -1 : 1
     }
+  }
+
+  // объектив бота: защита своей базы под захватом, иначе ближайшая открытая точка
+  // (распределяем по id, чтобы не кучковались на одной)
+  _botGoal(b) {
+    const ownBase = this.bases.find((bs) => bs.team === b.team && bs.progress > 8)
+    if (ownBase) return ownBase
+    const open = this.caps.filter((cap) => cap.owner !== b.team)
+    open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
+    return open.length ? open[b.id % open.length] : null
+  }
+
+  // выстрел бота по цели, если она в секторе и дальности стрельбы и огонь готов
+  _botFire(b, target, bestD, fireRange) {
+    if (b.fireCd > 0 || bestD > fireRange) return
+    const ang = Math.atan2(target.y - b.y, target.x - b.x)
+    if (Math.abs(angleDiff(ang, b.hull)) > (ENEMY_AI.sectorHalfDeg * Math.PI) / 180) return
+    b.fireCd = b.reload
+    const col = (b.team === TEAM.ALLY ? this.colors.ally : this.colors.enemy).muzzle
+    this.muzzles.push({ x: b.x + Math.cos(b.hull) * 34, y: b.y + Math.sin(b.hull) * 34, a: b.hull, age: 0, color: col })
+    // точность падает с дистанцией: в упор полная, у края дальности ~0.45
+    const accFalloff = 1 - 0.55 * Math.min(1, bestD / fireRange)
+    const hit = Math.random() < ENEMY_AI.hitChance * accFalloff
+    let pierced = false
+    if (hit) {
+      const tCls = target.isPlayer ? this.cls.id : target.classId
+      const tHull = target.isPlayer ? this.hullAngle : target.hull
+      const shotA = Math.atan2(target.y - b.y, target.x - b.x)
+      const pen = this._penetration(shotA, tCls, tHull, false)
+      pierced = pen.pen
+      const dmg = Math.round(b.damage * pen.mult)
+      if (dmg > 0) {
+        this._damageUnit(target, dmg, b.team)
+        b.damageDealt = (b.damageDealt || 0) + dmg
+      }
+      if (target.isPlayer && !pen.pen) {
+        this.blocked++
+        this.onSaved(pen.kind)
+      }
+    }
+    this._spawnShell(b.x, b.y, target.x, target.y, col, hit && pierced ? 'hit' : 'dust')
   }
 
   // ход бота с инерцией: скорость стремится к move×speed, движение — только
