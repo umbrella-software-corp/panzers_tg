@@ -4,9 +4,10 @@
 // с тем же токеном и попадает в ТВОЮ комнату (одна команда живых). Таб НАГРАДЫ —
 // рефералы: постоянная ref-ссылка, рекруты считаются на сервере (не фейк).
 import { ref, computed, onUnmounted } from 'vue'
-import { profile, party, setPartyToken, clearParty, claimRefMilestone } from '../store.js'
+import { profile, claimRefMilestone } from '../store.js'
 import { REF_MILESTONES } from '../game/meta.js'
 import { tgUserId, inviteLink, shareLink } from '../tg.js'
+import { squad, connectSquad, squadSetReady, squadLaunch, closeSquad, isSquadLeader, myReady, allReady } from '../game/squad.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -16,8 +17,7 @@ const toast = ref(null)
 let toastTimer = null
 
 const myId = computed(() => tgUserId())
-const inParty = computed(() => !!party.token)
-const isLeader = computed(() => inParty.value && (party.leader || String(party.token) === String(myId.value)))
+const isLeader = computed(() => isSquadLeader())
 const rewardsDot = computed(() =>
   REF_MILESTONES.some((m, i) => !profile.claimedRef.includes(i) && profile.referrals.length >= m.need),
 )
@@ -35,15 +35,27 @@ function afterShare(kind) {
   else showToast('Шэр недоступен — открой игру в Telegram')
 }
 
-// собрать взвод: стать командиром и отправить другу приглашение
-function inviteToParty() {
+// собрать взвод: стать командиром (зайти в своё лобби) и пригласить друга
+function createSquad() {
   if (!myId.value) return showToast('Взвод доступен только в Telegram')
-  setPartyToken(myId.value, true)
+  connectSquad(myId.value, profile.name)
   afterShare(shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG — вместе в один бой!'))
 }
-function leaveParty() {
-  clearParty()
-  showToast('Взвод распущен')
+function inviteMore() {
+  if (!myId.value) return
+  afterShare(shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG!'))
+}
+function toggleReady() {
+  squadSetReady(!myReady())
+}
+function launch() {
+  if (!isLeader.value || !allReady()) return
+  squadLaunch(profile.battleMode) // сервер пнёт всех → App.onLaunch → в бой с party=squadId
+  emit('close')
+}
+function leaveSquad() {
+  closeSquad()
+  showToast('Вышел из взвода')
 }
 
 // постоянная реф-ссылка: кто зайдёт по ней — засчитается тебе в рекруты на сервере
@@ -80,41 +92,57 @@ onUnmounted(() => clearTimeout(toastTimer))
 
       <!-- ===== таб ВЗВОД ===== -->
       <template v-if="tab === 0">
-        <div class="pz-stencil-h" style="margin-bottom: 10px">ВЗВОД</div>
-        <p class="hint">Друзья в одном онлайн-бою на твоей стороне. Позови их по ссылке: кто откроет игру по ней и нажмёт «В бой» — встанет в твою команду.</p>
+        <div class="pz-stencil-h" style="margin-bottom: 10px">ВЗВОД{{ squad.active ? ` · ${squad.members.length}/3` : '' }}</div>
 
-        <!-- статус взвода -->
-        <div class="party-card" :class="{ active: inParty }">
-          <span class="party-dot" :class="{ on: inParty }"></span>
-          <div style="flex: 1; min-width: 0">
-            <div class="pz-display" style="font-size: 12px">
-              {{ inParty ? (isLeader ? 'ВЗВОД СОБРАН · ТЫ КОМАНДИР' : 'ТЫ ВО ВЗВОДЕ') : 'ВЗВОД НЕ СОБРАН' }}
-            </div>
-            <div style="font-size: 11px; color: var(--ink-dim); font-weight: 600; margin-top: 2px">
-              {{ inParty ? (isLeader ? 'Друзья по ссылке встанут в твою команду' : 'Ищи бой — попадёшь к командиру') : 'Позови друзей в один бой' }}
+        <!-- НЕ в лобби -->
+        <template v-if="!squad.active">
+          <p class="hint">Собери взвод: друзья по ссылке зайдут в лобби, отметят готовность — и командир кинет всех в ОДИН бой на своей стороне.</p>
+          <button class="pz-cta" style="width: 100%; gap: 8px; font-size: 14px; padding: 13px 16px" @click="createSquad">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M10 14l8.5-8.5M13 5h6v6" /><path d="M19 14v5a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h5" />
+            </svg>
+            Собрать взвод
+          </button>
+          <div class="howto">
+            <div class="pz-stencil-h" style="margin-bottom: 8px">КАК ЭТО РАБОТАЕТ</div>
+            <ol class="steps">
+              <li>Жмёшь «Собрать взвод» — кидаешь ссылку другу в чат.</li>
+              <li>Друг открывает игру по ссылке — попадает в твоё лобби.</li>
+              <li>Все жмут «Готов», командир — «В БОЙ»: вы в одном бою.</li>
+            </ol>
+          </div>
+        </template>
+
+        <!-- В ЛОББИ: живой состав -->
+        <template v-else>
+          <div class="squad-slots">
+            <div v-for="i in 3" :key="i" class="squad-slot" :class="{ filled: !!squad.members[i - 1], ready: squad.members[i - 1] && squad.members[i - 1].ready, me: squad.members[i - 1] && String(squad.members[i - 1].id) === String(myId) }">
+              <template v-if="squad.members[i - 1]">
+                <span class="sl-dot" :class="{ ready: squad.members[i - 1].ready }"></span>
+                <div class="sl-name">
+                  <PzIcon v-if="squad.members[i - 1].leader" name="star" :size="11" color="var(--amber)" />
+                  {{ squad.members[i - 1].name }}<span v-if="String(squad.members[i - 1].id) === String(myId)" style="color: var(--ink-faint); font-weight: 600"> · ты</span>
+                </div>
+                <span class="sl-state" :class="{ ready: squad.members[i - 1].ready }">{{ squad.members[i - 1].ready ? 'ГОТОВ' : 'ждёт' }}</span>
+              </template>
+              <span v-else class="sl-free">— свободно —</span>
             </div>
           </div>
-        </div>
 
-        <!-- действия -->
-        <button v-if="!inParty || isLeader" class="pz-cta" style="width: 100%; margin-top: 12px; gap: 8px; font-size: 14px; padding: 13px 16px" @click="inviteToParty">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <path d="M10 14l8.5-8.5M13 5h6v6" /><path d="M19 14v5a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h5" />
-          </svg>
-          {{ inParty ? 'Позвать ещё друга' : 'Собрать взвод и пригласить' }}
-        </button>
-        <button v-if="inParty" class="pz-btn2" style="width: 100%; margin-top: 8px" @click="leaveParty">
-          {{ isLeader ? 'Распустить взвод' : 'Покинуть взвод' }}
-        </button>
+          <!-- моя готовность -->
+          <button class="ready-toggle" :class="{ on: myReady() }" @click="toggleReady">
+            {{ myReady() ? '✓ Я ГОТОВ' : 'ОТМЕТИТЬ ГОТОВНОСТЬ' }}
+          </button>
 
-        <div class="howto">
-          <div class="pz-stencil-h" style="margin-bottom: 8px">КАК ЭТО РАБОТАЕТ</div>
-          <ol class="steps">
-            <li>Жмёшь «Собрать взвод» — откроется выбор чата в Telegram.</li>
-            <li>Кидаешь ссылку другу, он открывает игру по ней.</li>
-            <li>Оба жмёте «В БОЙ» — сервер сводит вас в один онлайн-бой.</li>
-          </ol>
-        </div>
+          <!-- командир: позвать ещё + старт; участник — подсказка -->
+          <button v-if="isLeader && !squad.full" class="pz-btn2" style="width: 100%; margin-top: 8px" @click="inviteMore">Позвать ещё друга</button>
+          <button v-if="isLeader" class="pz-cta pz-cta--hazard" style="width: 100%; margin-top: 8px; padding: 13px" :disabled="!allReady()" :style="{ opacity: allReady() ? 1 : 0.5 }" @click="launch">
+            {{ allReady() ? `В БОЙ ×${squad.members.length}` : 'ЖДЁМ ГОТОВНОСТИ ВСЕХ' }}
+          </button>
+          <div v-else class="hint" style="text-align: center; margin-top: 10px">Командир запустит бой, когда все готовы</div>
+
+          <button class="pz-btn2" style="width: 100%; margin-top: 8px" @click="leaveSquad">{{ isLeader ? 'Распустить взвод' : 'Покинуть взвод' }}</button>
+        </template>
       </template>
 
       <!-- ===== таб НАГРАДЫ ===== -->
@@ -238,28 +266,90 @@ onUnmounted(() => clearTimeout(toastTimer))
   background: linear-gradient(180deg, var(--amber-hi), var(--amber));
   border-color: transparent;
 }
-.you-slot {
-  padding: 10px 6px;
-  text-align: center;
-  background: rgba(242, 165, 12, 0.08);
-  border: 1px solid var(--amber);
-  border-radius: 8px;
+.squad-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.mate-slot {
-  padding: 10px 6px;
-  text-align: center;
-  background: rgba(77, 163, 255, 0.1);
-  border: 1px solid var(--blue);
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--ink);
-}
-.free-slot {
-  padding: 10px 6px;
-  text-align: center;
+.squad-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
   border: 1.5px dashed var(--line-strong);
-  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  min-height: 46px;
+}
+.squad-slot.filled {
+  border-style: solid;
+  background: rgba(0, 0, 0, 0.4);
+}
+.squad-slot.ready {
+  border-color: var(--green);
+  background: rgba(141, 184, 74, 0.08);
+}
+.squad-slot.me.filled {
+  border-color: var(--amber);
+  background: rgba(242, 165, 12, 0.08);
+}
+.sl-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-faint);
+}
+.sl-dot.ready {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+.sl-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-state {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.sl-state.ready {
+  color: var(--green);
+}
+.sl-free {
+  flex: 1;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+.ready-toggle {
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  border: 1.5px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--ink-dim);
+}
+.ready-toggle.on {
+  border-color: var(--green);
+  background: rgba(141, 184, 74, 0.14);
+  color: var(--green);
 }
 .friend-row {
   display: flex;

@@ -3,6 +3,7 @@
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode } from '../store.js'
+import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
@@ -46,7 +47,9 @@ const nationLabel = computed(() => (NATIONS.find((n) => n.id === profile.nation)
 const tanks = computed(() => tanksOfNation(profile.nation))
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
-const inParty = computed(() => !!party.token) // взвод собран на этот сеанс (по deep-link)
+const inParty = computed(() => squad.active || !!party.token) // в лобби взвода или уже в бою с ним
+// друг зашёл по ссылке (squad стал активен) → авто-открываем шторку взвода, чтобы он видел лобби
+watch(() => squad.active, (a) => { if (a) squadOpen.value = true })
 // камуфляж на КАЖДЫЙ танк: разблокировка за жетоны, потом надевается бесплатно
 const selCamo = computed(() => tankCamo(tank.value.id))
 // предпросмотр запертого камо: показываем на БОЛЬШОМ танке, не покупая.

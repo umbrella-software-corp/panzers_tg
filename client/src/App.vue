@@ -10,8 +10,9 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken } from './store.js'
+import { profile, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode } from './store.js'
 import { randomMap } from './game/maps.js'
+import { squad, connectSquad, closeSquad } from './game/squad.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
 const screen = ref('hangar')
@@ -30,6 +31,14 @@ onMounted(async () => {
   await syncProfile() // офлайн — молча остаёмся на локальном кеше
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)
+  // взвод-лобби: командир жмёт старт → все участники сюда → в бой с party=squadId
+  squad.onLaunch = (m) => {
+    setPartyToken(m.squadId, String(m.squadId) === String(tgUserId()))
+    if (m.mode) setBattleMode(m.mode)
+    closeSquad()
+    play()
+  }
+  squad.onDisband = () => {} // UI взвода сам покажет роспуск
   handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
   if (dailyAvailable()) daily.value = true
 })
@@ -43,7 +52,7 @@ async function handleStartParam() {
   const id = m[2]
   if (String(id) === String(tgUserId())) return // свою же ссылку игнорируем
   if (kind === 'sq') {
-    setPartyToken(id, false) // приглашён — командир взвода id
+    connectSquad(id, profile.name) // приглашён — заходим в лобби взвода командира id
   } else {
     try {
       await apiReferred(id) // сервер привяжет реферера и добавит меня ему в рекруты
