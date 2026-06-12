@@ -186,11 +186,11 @@ const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
 const WAIT_MS = +(process.env.WAIT_MS || 8000)
 const TICK_HZ = +(process.env.TICK_HZ || 20)
 const TICK_DT = 1 / TICK_HZ
-// снапшоты шлём РЕЖЕ, чем считаем: симуляция 20Гц (отзывчивость/точность), а
-// поток клиенту 10Гц — вдвое меньше сообщений (на iOS Telegram WebView поток
-// 20Гц + Pixi-рендер забивал WebView и сокет умирал; см. миниполию: 100+/мин
-// краш). Клиент интерполирует между снапшотами по присланному snapHz.
-const SNAP_EVERY = Math.max(1, +(process.env.SNAP_EVERY || 2))
+// частота снапшотов клиенту. По умолчанию = TICK_HZ (20Гц, плавно). Низкий
+// поток НЕ был причиной iOS-заморозки (она в сорванном push, лечится pull'ом в
+// NetGame), поэтому держим полную частоту ради плавности; механизм оставлен для
+// тонкой настройки под слабые сети (SNAP_EVERY=2 → 10Гц).
+const SNAP_EVERY = Math.max(1, +(process.env.SNAP_EVERY || 1))
 const SNAP_HZ = TICK_HZ / SNAP_EVERY
 
 // пределы против флуда: вход больше 2КБ боевому клиенту не нужен

@@ -194,7 +194,14 @@ export class NetGame {
       for (const u of msg.units) this._wantTex(u.tankId, u.skin)
       for (const ev of msg.events || []) this._onEvent(ev)
       if (msg.matchOver && !this.matchOver) this._finish(msg.winner)
-      this._emitState()
+      // позиции танков интерполируются из this.cur каждый КАДР (плавно), а
+      // _emitState — это апдейт Vue-HUD (счёт/HP/перезарядка): его душим до ~12Гц,
+      // чтобы 20Гц снапшотов не грузили реактивность вдвое и не роняли fps на iOS
+      const now = performance.now()
+      if (now - (this._lastEmit || 0) > 80 || msg.matchOver) {
+        this._lastEmit = now
+        this._emitState()
+      }
     } else if (msg.type === 'match-end') {
       this.finalStats = msg.stats || null
       if (!this.matchOver) this._finish(msg.winner)
