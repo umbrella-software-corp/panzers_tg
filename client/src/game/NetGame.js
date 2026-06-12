@@ -294,47 +294,6 @@ export class NetGame {
     }
   }
 
-  // КЛИЕНТСКИЙ ПРЕДИКТ своего танка: интегрируем ТЕКУЩИЙ ввод локально каждый
-  // кадр (та же физика, что на сервере _stepHuman) — танк реагирует на руль
-  // МГНОВЕННО, без задержки пинга и без дрожи от рваной доставки снапшотов.
-  // Сервер авторитетен: мягко корректируем дрейф к нему, при большом расхождении
-  // (стена/респаун) — снап. Коллизии у препятствий не предсказываем — сервер
-  // поправит (игрок редко вжимается в стену, а снап ловит грубые случаи).
-  _predictOwn(dt) {
-    const srv = this._units && this.youUnit != null ? this._units.get(this.youUnit) : null
-    if (!srv || !srv.alive) {
-      this._pred = null
-      return
-    }
-    if (!this._pred || Math.hypot(this._pred.x - srv.x, this._pred.y - srv.y) > 140) {
-      this._pred = { x: srv.x, y: srv.y, hull: srv.hull, speed: srv.speed || 0 } // старт/снап
-      return
-    }
-    // мягкая коррекция к серверу (не дёргаем: малый коэф., чтобы не было резинки)
-    const corr = 0.05
-    this._pred.x += (srv.x - this._pred.x) * corr
-    this._pred.y += (srv.y - this._pred.y) * corr
-    let dh = (srv.hull - this._pred.hull) % (Math.PI * 2)
-    if (dh > Math.PI) dh -= Math.PI * 2
-    if (dh < -Math.PI) dh += Math.PI * 2
-    this._pred.hull += dh * corr
-    // интеграция ввода (как сервер: трак/мотор-криты глушат руль/газ)
-    let { throttle, steer } = this._computeInput()
-    const cr = this.you && this.you.crippled
-    if (cr && cr.tracks > 0) steer = 0
-    if (cr && cr.engine > 0) throttle = 0
-    const cls = this.cls
-    this._pred.hull += steer * cls.turnRate * dt
-    const target = cls.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
-    const da = cls.accel * dt
-    if (this._pred.speed < target) this._pred.speed = Math.min(target, this._pred.speed + da)
-    else this._pred.speed = Math.max(target, this._pred.speed - da * 1.4)
-    this._pred.x += Math.cos(this._pred.hull) * this._pred.speed * dt
-    this._pred.y += Math.sin(this._pred.hull) * this._pred.speed * dt
-    const m = 60
-    this._pred.x = Math.max(m, Math.min(this.mapSize - m, this._pred.x))
-    this._pred.y = Math.max(m, Math.min(this.mapSize - m, this._pred.y))
-  }
 
   // --- pixi ---
 
@@ -553,9 +512,9 @@ export class NetGame {
       f = span > 1e-6 ? Math.max(0, Math.min(1, (rt - a.t) / span)) : 0
     }
     return this.cur.units.map((u) => {
-      // свой танк — из клиентского предикта (мгновенно по вводу, без лага пинга)
-      if (u.id === this.youUnit && this._pred && u.alive) {
-        return { ...u, x: this._pred.x, y: this._pred.y, hull: this._pred.hull }
+      // свой танк — на сглаженной последней серверной позиции (совпадает с боёвкой)
+      if (u.id === this.youUnit && this._ownSmooth && u.alive) {
+        return { ...u, x: this._ownSmooth.x, y: this._ownSmooth.y, hull: this._ownSmooth.hull }
       }
       if (!haveBuf || !u.alive) return u // мало данных/обломок — последняя позиция
       const pa = a.units.get(u.id)
@@ -636,9 +595,26 @@ export class NetGame {
       }
     }
 
-    // СВОЙ танк — клиентский предикт (мгновенный отклик руля, без лага пинга и
-    // без дрожи от рваной доставки снапшотов). Чужие — интерполяция с задержкой.
-    this._predictOwn(dt)
+    // СВОЙ танк — на ПОСЛЕДНЕЙ серверной позиции (сглаживаем шаги тика). Без
+    // задержки интерполяции (отзывчиво), и СОВПАДАЕТ с серверной позицией, по
+    // которой считаются попадания — трассеры/урон приходят туда, где ты есть.
+    // (Предикт вперёд диваргировал в бою → «стреляют непонятно откуда», убран.)
+    const ownNow = this._units && this.youUnit != null ? this._units.get(this.youUnit) : null
+    if (ownNow && ownNow.alive) {
+      const k = 1 - Math.exp(-dt / Math.max(0.02, this.tickDt))
+      if (!this._ownSmooth) this._ownSmooth = { x: ownNow.x, y: ownNow.y, hull: ownNow.hull }
+      else {
+        const s = this._ownSmooth
+        s.x += (ownNow.x - s.x) * k
+        s.y += (ownNow.y - s.y) * k
+        let d = (ownNow.hull - s.hull) % (Math.PI * 2)
+        if (d > Math.PI) d -= Math.PI * 2
+        if (d < -Math.PI) d += Math.PI * 2
+        s.hull += d * k
+      }
+    } else {
+      this._ownSmooth = null
+    }
 
     // снапшоты сервера могли встать (реально мёртвый сокет/сеть) — тогда
     // _tryRecover пробует вернуться в тот же бой новым сокетом; показываем

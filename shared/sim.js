@@ -17,6 +17,7 @@ import {
   CRIT_SLOTS,
   ENEMY_AI,
   BOT_CLASS_MIX,
+  BOT_TANK_IDS,
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
   BOT_SPOT_VISION,
@@ -89,12 +90,17 @@ export class BattleSim {
   }
 
   _makeUnit(id, team, slot, human, h) {
+    const botClsId = BOT_CLASS_MIX[slot % BOT_CLASS_MIX.length]
     const cls = human
       ? h.stats && h.stats.sectorDeg
         ? h.stats
         : TANK_CLASSES[DEFAULT_CLASS]
-      : TANK_CLASSES[BOT_CLASS_MIX[slot % BOT_CLASS_MIX.length]]
+      : TANK_CLASSES[botClsId]
     const stats = classToRadians(cls)
+    // боту — реальная машина его класса (вместо классовой болванки в цвете
+    // команды): разнообразие по id+team, своя у каждой стороны
+    const botPool = BOT_TANK_IDS[botClsId] || BOT_TANK_IDS.medium
+    const botTankId = botPool[(id + team * 3) % botPool.length]
     const sc = this.mapSize / MAP_SIZE // спавны тоже растягиваем под размер карты
     const spread = ((slot - (this.teamSize - 1) / 2) / Math.max(1, this.teamSize)) * 1000 * sc
     const c = this.mapSize / 2
@@ -104,7 +110,7 @@ export class BattleSim {
       slot,
       human,
       ownerId: human ? h.id : null,
-      tankId: human ? h.tankId || null : null, // реальная машина игрока (спрайт)
+      tankId: human ? h.tankId || null : botTankId, // реальная машина (игрок — своя, бот — по классу)
       tint: human ? h.tint || 0 : 0, // оттенок камуфляжа игрока
       skin: human ? h.skin || null : null, // id узорного камуфляжа (рендер у клиентов)
       name: human ? h.name || `Игрок ${id}` : BOT_NAMES[team][slot % BOT_NAMES[team].length],

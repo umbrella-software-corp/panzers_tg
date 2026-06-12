@@ -79,6 +79,14 @@ export const ENEMY_AI = {
   radius: 18,
 }
 export const BOT_CLASS_MIX = ['light', 'medium', 'heavy', 'medium', 'light', 'medium', 'light']
+// реальные машины ботам по классу — чтобы в онлайне рисовались настоящими
+// танками (как офлайн), а не классовой болванкой в цвете команды. id = имена
+// PNG в client/public/sprites/tanks/<id>.png; класс совпадает с моделью.
+export const BOT_TANK_IDS = {
+  light: ['t26', 'bt7', 'pz2', 'pz3', 'm2l', 'stu'],
+  medium: ['t34', 't3485', 't72', 'pz4', 'pnt', 'leo1', 'sher', 'e8', 'm48', 'm60'],
+  heavy: ['kv1', 'is2', 'tgr', 'tgr2', 'per', 'abr', 't14'],
+}
 export const BOT_DMG_MULT = 0.45
 export const BOT_SPEED_MULT = 0.85
 export const BOT_SPOT_VISION = 480 // вклад бота в засвет для команды
