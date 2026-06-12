@@ -59,6 +59,8 @@ import {
   rankByBattles,
   CAMOS,
   CAMO_BY_ID,
+  expectedBattle,
+  battleScore,
 } from './game/meta.js'
 
 const KEY = 'pz.state.v1'
@@ -93,6 +95,20 @@ if (!Array.isArray(profile.claimedRef)) profile.claimedRef = []
 if (typeof profile.goldAmmo !== 'number') profile.goldAmmo = 5
 if (!profile.stats || typeof profile.stats !== 'object')
   profile.stats = { battles: 0, wins: 0, kills: 0, rating: RATING_START }
+// агрегаты боевого рейтинга (урон/фраги факт + ожидаемые). У существующих игроков
+// сидим из доступной истории боёв (танк берём текущий — приблизительно), новым — 0.
+if (typeof profile.stats.sumDmg !== 'number') {
+  const s = profile.stats
+  const hist = Array.isArray(profile.history) ? profile.history : []
+  s.sumDmg = hist.reduce((a, h) => a + (h.damage || 0), 0)
+  s.sumFrag = hist.reduce((a, h) => a + (h.kills || 0), 0)
+  const t = TANK_BY_ID[profile.selectedTank] || TANK_BY_ID[STARTERS[0]] || TANK_BY_ID.t26
+  const e = expectedBattle(t)
+  const n = Math.max(hist.length, 1)
+  s.expDmg = (e.dmg || 1) * n
+  s.expFrag = (e.frag || 1) * n
+  s.wn8 = battleScore(s)
+}
 if (!profile.daily || typeof profile.daily !== 'object') profile.daily = { last: '', streak: 0 }
 if (!Array.isArray(profile.history)) profile.history = [] // последние бои
 if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } // экипаж один на все танки
@@ -412,6 +428,17 @@ export function addBattleResult(result, kills = 0, extra = {}) {
   if (result === 'victory') s.wins++
   s.kills += kills
   s.rating = Math.max(100, s.rating + (RATING_DELTA[result] ?? RATING_DELTA.defeat))
+  // боевой рейтинг (по эффективности): копим факт/ожид. урон+фраги на сыгранном
+  // танке и пересчитываем career-агрегат. Это и есть «рейтинг», что видит игрок.
+  const ratedTank = TANK_BY_ID[profile.selectedTank] || TANK_BY_ID.t26
+  const exp = expectedBattle(ratedTank)
+  const prevWn8 = s.wn8 || 0
+  s.sumDmg = (s.sumDmg || 0) + (extra.damage || 0)
+  s.sumFrag = (s.sumFrag || 0) + kills
+  s.expDmg = (s.expDmg || 0) + exp.dmg
+  s.expFrag = (s.expFrag || 0) + exp.frag
+  s.wn8 = battleScore(s)
+  s.lastWn8Delta = s.wn8 - prevWn8 // для показа изменения в донесении
   // повышение в звании: награда за каждую новую ступень (обычно одну за бой)
   const reached = rankByBattles(s.battles).index
   while (profile.rankClaimed < reached) {

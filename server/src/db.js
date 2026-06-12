@@ -35,20 +35,21 @@ export async function setSetting(key, value) {
   return s
 }
 
-// топ игроков по боевому рейтингу для живой таблицы лидеров
+// топ игроков по боевому рейтингу (по эффективности — wn8) для живой таблицы лидеров.
+// Поле rating в ответе = wn8 (клиент показывает его как «боевой рейтинг»).
 export async function leaderboard(limit = 20) {
   const all = await listProfiles()
   return all
     .filter((p) => p.name)
-    .sort((a, b) => b.rating - a.rating)
+    .sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
     .slice(0, limit)
-    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.rating, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > Date.now() }))
+    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > Date.now() }))
 }
 
 // публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):
 // стата + любимая техника (самая частая в истории боёв)
 export async function playerByRank(rank) {
-  const sorted = (await listProfiles()).filter((p) => p.name).sort((a, b) => b.rating - a.rating)
+  const sorted = (await listProfiles()).filter((p) => p.name).sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
   const row = sorted[rank - 1]
   if (!row) return null
   const p = (await loadProfile(row.uid)) || {}
@@ -62,7 +63,8 @@ export async function playerByRank(rank) {
   return {
     place: rank,
     name: p.name || row.name || 'Боец',
-    rating: s.rating ?? row.rating ?? 0,
+    rating: s.wn8 ?? row.wn8 ?? 0, // боевой рейтинг по эффективности
+
     battles: s.battles ?? row.battles ?? 0,
     wins: s.wins ?? row.wins ?? 0,
     kills: s.kills || 0,
@@ -184,6 +186,7 @@ async function listProfilesUncached() {
         battles: (p.stats && p.stats.battles) || 0,
         wins: (p.stats && p.stats.wins) || 0,
         rating: (p.stats && p.stats.rating) || 0,
+        wn8: (p.stats && p.stats.wn8) || 0, // боевой рейтинг по эффективности
         crewXp: (p.crew && p.crew.xp) || 0,
         tanks: Array.isArray(p.owned) ? p.owned.length : 0,
         updatedAt: p._updatedAt || 0,

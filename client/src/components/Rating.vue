@@ -5,7 +5,7 @@
 // стабильные между заходами, чтобы таблица не скакала.
 import { computed, ref, onMounted } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft, playerRank } from '../store.js'
-import { RATING_RIVALS, RENAME_COST_STARS, MEDALS } from '../game/meta.js'
+import { RATING_RIVALS, RENAME_COST_STARS, MEDALS, ratingBand } from '../game/meta.js'
 import { apiRename, apiLeaderboard, apiPlayer } from '../api.js'
 import { haptic } from '../tg.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
@@ -85,11 +85,11 @@ const board = computed(() => {
       premium: p.name === profile.name ? isPremium() : !!p.premium, // ★ прем-игрок
       live: true,
     }))
-    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.rating, you: true, premium: isPremium(), live: false }) // я вне топа
+    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.wn8, you: true, premium: isPremium(), live: false }) // я вне топа
     return rows
   }
   // фоллбэк: детерминированные «соперники» вокруг моего рейтинга
-  const mine = profile.stats.rating
+  const mine = profile.stats.wn8
   const rows = RATING_RIVALS.map((name, i) => {
     let h = 0
     for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 997
@@ -119,7 +119,7 @@ function openMe() {
   viewing.value = {
     name: profile.name,
     place: myPlace.value,
-    rating: profile.stats.rating,
+    rating: profile.stats.wn8,
     battles: profile.stats.battles,
     wins: profile.stats.wins,
     kills: profile.stats.kills,
@@ -196,7 +196,8 @@ const fmtTime = (t) => {
             <img src="/sprites/trophy.png" class="rank-badge" style="object-fit: cover" />
             <div style="flex: 1">
               <div style="display: flex; align-items: baseline; gap: 8px">
-                <div class="pz-display" style="font-size: 22px">{{ profile.stats.rating }}</div>
+                <div class="pz-display" style="font-size: 22px" :style="{ color: ratingBand(profile.stats.wn8).color }">{{ profile.stats.wn8 }}</div>
+                <span class="pz-display" style="font-size: 10px; letter-spacing: 0.08em" :style="{ color: ratingBand(profile.stats.wn8).color }">{{ ratingBand(profile.stats.wn8).label }}</span>
                 <span class="pz-display" style="font-size: 12px; color: var(--amber)">{{ playerRank().name }}</span>
               </div>
               <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500">боевой рейтинг · место {{ myPlace }} · открыть профиль ▸</div>

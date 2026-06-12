@@ -230,6 +230,47 @@ export function rankByBattles(battles) {
 // ---------- рейтинг ----------
 export const RATING_START = 1000
 export const RATING_DELTA = { victory: 24, draw: 2, defeat: -16 }
+
+// «Боевой рейтинг» — оценка по эффективности на конкретном танке относительно
+// ОЖИДАЕМЫХ значений (а не просто по урону). Структурно как у известного формата:
+// урон — главный фактор, фраги усиливают его, победы добавляют сверху. Реальных
+// таблиц ожиданий у нас нет → выводим их из тира/класса машины, поэтому ratio
+// факт/ожид. тир-нейтрален: новичок на тир-1 и топ на тир-10 сравниваются честно.
+// Считаем по CAREER-агрегатам (стабильнее, чем по одному бою). Засвет/защиту в
+// v1 не учитываем (онлайн их не отдаёт — было бы нечестно), только урон+фраги+победы.
+export function expectedBattle(tank) {
+  const cs = combatStats(tank)
+  const cls = cs.id || 'medium' // light | medium | heavy
+  const hits = cls === 'light' ? 6 : cls === 'heavy' ? 8 : 7 // ожид. результативных попаданий за бой
+  return {
+    dmg: cs.damage * hits, // ожидаемый урон ≈ урон_выстрела × попадания (растёт с тиром)
+    frag: cls === 'light' ? 0.7 : cls === 'heavy' ? 0.95 : 0.85,
+  }
+}
+
+// агрегаты статистики: { battles, wins, sumDmg, sumFrag, expDmg, expFrag } → рейтинг
+export function battleScore(agg) {
+  if (!agg || !agg.battles) return 0
+  const rDMG = agg.expDmg > 0 ? agg.sumDmg / agg.expDmg : 0
+  const rFRAG = agg.expFrag > 0 ? agg.sumFrag / agg.expFrag : 0
+  const rWIN = agg.wins / agg.battles / 0.5 // ожидаемый винрейт 50%
+  const rDMGc = Math.max(0, (rDMG - 0.22) / (1 - 0.22))
+  const rFRAGc = Math.max(0, Math.min(rDMGc + 0.2, (rFRAG - 0.12) / (1 - 0.12)))
+  const rWINc = Math.max(0, (rWIN - 0.71) / (1 - 0.71))
+  return Math.round(980 * rDMGc + 210 * rDMGc * rFRAGc + 145 * Math.min(1.8, rWINc))
+}
+
+// градации рейтинга — подпись и цвет (наша шкала, откалибрована под expectedBattle)
+export const RATING_BANDS = [
+  { min: 2900, label: 'АС', color: '#c64bff' },
+  { min: 2000, label: 'ОТЛИЧНО', color: '#4aa3ff' },
+  { min: 1500, label: 'ХОРОШО', color: '#5fd35f' },
+  { min: 900, label: 'СРЕДНЕ', color: '#f2c14b' },
+  { min: 400, label: 'НИЖЕ СРЕДНЕГО', color: '#e0853c' },
+  { min: 0, label: 'НОВИЧОК', color: '#c2553f' },
+]
+export const ratingBand = (score) => RATING_BANDS.find((b) => score >= b.min) || RATING_BANDS[RATING_BANDS.length - 1]
+
 // фейковые соперники лидерборда (бэкенда пока нет)
 export const RATING_RIVALS = ['Kolyan_T34', 'дед_максим', 'Shtorm_88', 'Виталя_98', 'KOT_B_TANKE', 'Лёха77', 'sn1per_x', 'Бородач', 'MaxPower', 'Кефир']
 export const modLevel = (modules, tankId, modId) => ((modules || {})[tankId] || {})[modId] || 1

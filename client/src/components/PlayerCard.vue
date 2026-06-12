@@ -2,7 +2,7 @@
 // Карточка профиля игрока (модалка): рейтинг, место, бои/винрейт/фраги,
 // любимая техника. Медали добавятся, когда будет система медалей.
 import { computed } from 'vue'
-import { TANK_BY_ID, MEDALS, rankByBattles } from '../game/meta.js'
+import { TANK_BY_ID, MEDALS, rankByBattles, ratingBand } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
 import Medal from './ui/Medal.vue'
 
@@ -30,7 +30,7 @@ const medals = computed(() => {
       <div class="rank-chip pz-display">{{ rank.name }}</div>
       <div v-if="p.place" class="pz-pixel place">МЕСТО {{ p.place }} В РЕЙТИНГЕ</div>
 
-      <div class="rating-big pz-display">{{ p.rating }}<span class="unit">рейтинг</span></div>
+      <div class="rating-big pz-display" :style="{ color: ratingBand(p.rating).color }">{{ p.rating }}<span class="unit" :style="{ color: ratingBand(p.rating).color }">{{ ratingBand(p.rating).label }}</span></div>
 
       <div class="grid">
         <div class="cell"><div class="v pz-display">{{ p.battles }}</div><div class="l">боёв</div></div>
