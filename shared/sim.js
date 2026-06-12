@@ -46,6 +46,7 @@ export class BattleSim {
     this.matchTime = this.mode === 'annihilation' ? 150 : MATCH_TIME
     this.matchOver = false
     this.winner = null // 0 | 1 | null (ничья)
+    this.endReason = null // 'caps' | 'wipe' | 'score' | 'time' — почему бой кончился
     this.score = [0, 0]
     this.capTimer = 0
     this.events = [] // копятся за шаг, забираются takeEvents()
@@ -497,6 +498,7 @@ export class BattleSim {
     // вайп команды решает бой в любом режиме (взаимный вайп — по очкам/ничья)
     if (a0 === 0 || a1 === 0) {
       this.matchOver = true
+      this.endReason = 'wipe'
       this.winner = a0 === a1 ? (this.score[0] === this.score[1] ? null : this.score[0] > this.score[1] ? 0 : 1) : a0 > 0 ? 0 : 1
       return
     }
@@ -505,12 +507,30 @@ export class BattleSim {
       // вышло время — победа у команды с бо́льшим числом живых (равно — ничья)
       if (this.matchTime > 0) return
       this.matchOver = true
+      this.endReason = 'time'
       this.winner = a0 === a1 ? null : a0 > a1 ? 0 : 1
       return
+    }
+    // ЗАХВАТ ВСЕХ ТОЧЕК = победа (бой завершается красиво, а не тянется до лимита)
+    if (this.caps.length) {
+      const owners = this.caps.map((c) => c.owner)
+      if (owners.every((o) => o === 0)) {
+        this.matchOver = true
+        this.endReason = 'caps'
+        this.winner = 0
+        return
+      }
+      if (owners.every((o) => o === 1)) {
+        this.matchOver = true
+        this.endReason = 'caps'
+        this.winner = 1
+        return
+      }
     }
     const limit = this.score[0] >= SCORE_LIMIT || this.score[1] >= SCORE_LIMIT
     if (!limit && this.matchTime > 0) return
     this.matchOver = true
+    this.endReason = limit ? 'score' : 'time'
     this.winner = this.score[0] === this.score[1] ? null : this.score[0] > this.score[1] ? 0 : 1
   }
 

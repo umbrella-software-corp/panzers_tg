@@ -612,7 +612,7 @@ function roomTick(room) {
     if (room.sim.matchOver) {
       const stats = roomStats(room)
       for (const h of room.humans) {
-        send(h.ws, { type: 'match-end', winner: room.sim.winner, score: room.sim.score, stats })
+        send(h.ws, { type: 'match-end', winner: room.sim.winner, score: room.sim.score, reason: room.sim.endReason, stats })
       }
       console.log(
         `[ws] ${room.id}: конец, счёт ${room.sim.score.join(':')}, winner=${room.sim.winner}, средний тик ${(room.tickAccMs / Math.max(1, room.tickN)).toFixed(3)}мс`,

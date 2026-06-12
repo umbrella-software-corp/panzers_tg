@@ -75,7 +75,7 @@ import { TANK_CLASSES } from './config.js'
 export function combatStats(tank) {
   const s = tank.stats
   const cls = TANK_CLASSES[tank.classId] || TANK_CLASSES.medium
-  const maxSpeed = 55 + s.spd * 12
+  const maxSpeed = 42 + s.spd * 8.5 // танки тяжелее, не «гоночные» (порезано ~28%)
   return {
     ...cls, // id/label/sectorDeg/sweepPeriod/toleranceDeg/range — профиль класса
     damage: Math.round(14 + s.dmg * 4.5),

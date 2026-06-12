@@ -37,6 +37,22 @@ const ratingCol = computed(() => ratingBand(ratingNow.value).color)
 const stamp = computed(() =>
   props.state.result === 'victory' ? 'ПОБЕДА' : props.state.result === 'defeat' ? 'ПОРАЖЕНИЕ' : 'НИЧЬЯ',
 )
+// почему бой завершился — короткая строка под штампом («Задача выполнена/провалена»)
+const reasonText = computed(() => {
+  const win = props.state.result === 'victory'
+  switch (props.state.endReason) {
+    case 'caps':
+      return win ? 'Все точки захвачены — задача выполнена' : 'Враг захватил все точки'
+    case 'wipe':
+      return win ? 'Противник уничтожен — задача выполнена' : 'Взвод уничтожен'
+    case 'score':
+      return win ? 'Набран лимит очков' : 'Враг набрал лимит очков'
+    case 'time':
+      return 'Время вышло'
+    default:
+      return ''
+  }
+})
 // строка режима+счёта: захват — «счёт A:B»; уничтожение — «уничтожение · живых A:B»
 const modeScore = computed(() =>
   props.state.mode === 'annihilation'
@@ -92,6 +108,7 @@ const medals = computed(() =>
             {{ stamp }}
           </div>
         </div>
+        <div v-if="reasonText" class="reason">{{ reasonText }}</div>
 
         <!-- статы -->
         <div style="display: flex; flex-direction: column; gap: 7px; padding: 10px 4px 14px; font-size: 14px; font-weight: 500">
@@ -327,6 +344,14 @@ const medals = computed(() =>
   animation: pz-stamp 0.45s 0.15s ease both;
   -webkit-mask-image: radial-gradient(circle at 30% 60%, #000 60%, rgba(0, 0, 0, 0.72));
   mask-image: radial-gradient(circle at 30% 60%, #000 60%, rgba(0, 0, 0, 0.72));
+}
+.reason {
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #5a4a2e;
+  margin: 2px 0 0;
+  letter-spacing: 0.02em;
 }
 .cell {
   text-align: center;

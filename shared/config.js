@@ -16,8 +16,8 @@ export const TANK_CLASSES = {
     hp: 80,
     range: 560,
     vision: 520,
-    maxSpeed: 160,
-    accel: 380,
+    maxSpeed: 116,
+    accel: 300,
     turnRate: 2.6,
   },
   medium: {
@@ -31,8 +31,8 @@ export const TANK_CLASSES = {
     hp: 120,
     range: 600,
     vision: 440,
-    maxSpeed: 120,
-    accel: 270,
+    maxSpeed: 88,
+    accel: 210,
     turnRate: 1.8,
   },
   heavy: {
@@ -46,8 +46,8 @@ export const TANK_CLASSES = {
     hp: 180,
     range: 640,
     vision: 360,
-    maxSpeed: 85,
-    accel: 190,
+    maxSpeed: 62,
+    accel: 150,
     turnRate: 1.2,
   },
 }

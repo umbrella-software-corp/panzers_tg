@@ -209,6 +209,7 @@ export class NetGame {
       }
     } else if (msg.type === 'match-end') {
       this.finalStats = msg.stats || null
+      this.endReason = msg.reason || null
       if (!this.matchOver) this._finish(msg.winner)
       this._emitState()
     }
@@ -1046,9 +1047,9 @@ export class NetGame {
     if (!this.unitLabels) return
     const seen = new Set()
     for (const u of units) {
-      if (!u.alive) continue
-      // скрытый туманом враг — без имени
-      if (u.team !== this.side && this._hiddenEnemy && this._hiddenEnemy.has(u.id)) continue
+      // живого врага в тумане не подписываем; ПОДБИТЫЙ танк (обломки) — подписываем
+      // полупрозрачным ником, чтобы было видно «кто тут лёг»
+      if (u.alive && u.team !== this.side && this._hiddenEnemy && this._hiddenEnemy.has(u.id)) continue
       seen.add(u.id)
       let t = this.unitLabels.get(u.id)
       if (!t) {
@@ -1057,8 +1058,9 @@ export class NetGame {
         this.unitLabels.set(u.id, t)
       }
       t.visible = true
+      t.alpha = u.alive ? 1 : 0.42 // мёртвый — приглушённый ник над обломками
       const p = this.world.toGlobal({ x: u.x, y: u.y })
-      t.position.set(p.x, p.y - 50)
+      t.position.set(p.x, p.y - (u.alive ? 50 : 40))
     }
     for (const [id, t] of this.unitLabels) {
       if (!seen.has(id)) t.visible = false
@@ -1366,6 +1368,7 @@ export class NetGame {
       matchTime: this.cur ? this.cur.matchTime : 0,
       matchOver: this.matchOver,
       result: this.result,
+      endReason: this.endReason || null, // 'caps'|'wipe'|'score'|'time' — для экрана победы
       scoreLimit: SCORE_LIMIT,
       mode: this.cur ? this.cur.mode || this.mode : this.mode, // сервер авторитетен по режиму
       teamRed: this.side === 1,

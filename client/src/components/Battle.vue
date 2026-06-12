@@ -89,6 +89,7 @@ const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.val
 // (без второго «3-2-1»). Игрок никогда не залипает.
 const phase = ref(props.instant ? 'fighting' : 'countdown')
 const count = ref(3)
+const loading = ref(true) // лоадер до прогрузки спрайтов боя
 let countTimer = null
 
 // пауза по кнопке (поверх фазы fighting)
@@ -355,6 +356,7 @@ onMounted(async () => {
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)
   await game.mount(stage.value)
+  loading.value = false // спрайты прогружены — снимаем лоадер
   game.setMinimap(minimap.value)
   if (props.instant) {
     // авто-откат в офлайн: без отсчёта, сразу в бой
@@ -446,6 +448,13 @@ onBeforeUnmount(() => {
       </div>
 
       <canvas class="minimap" ref="minimap" width="240" height="240"></canvas>
+    </div>
+
+    <!-- инфо боя: урон / засвет / фраги (слева вверху, полупрозрачная плашка) -->
+    <div v-show="phase === 'fighting'" class="combatinfo">
+      <div class="ci-row"><span class="ci-l">УРОН</span><span class="ci-v dmg">{{ state.damageDealt }}</span></div>
+      <div class="ci-row"><span class="ci-l">ЗАСВЕТ</span><span class="ci-v">{{ state.spotted }}</span></div>
+      <div class="ci-row"><span class="ci-l">ФРАГИ</span><span class="ci-v">{{ state.kills }}</span></div>
     </div>
 
     <!-- захват базы: отсчёт 0-100 -->
@@ -546,6 +555,15 @@ onBeforeUnmount(() => {
     <transition name="fade">
       <div v-if="phase === 'result'" class="overlay result">
         <Results :state="state" :reward="reward" @rematch="rematch" @hangar="toHangar" />
+      </div>
+    </transition>
+
+    <!-- лоадер: пока грузятся спрайты — игрок заходит на готовенькое -->
+    <transition name="fade">
+      <div v-if="loading" class="overlay loader">
+        <div class="ld-spin"></div>
+        <div class="pz-display ld-text">ЗАГРУЗКА БОЯ</div>
+        <div class="ld-sub">готовим технику и поле…</div>
       </div>
     </transition>
   </div>
@@ -1100,6 +1118,66 @@ onBeforeUnmount(() => {
   color: var(--ink-dim);
   font-weight: 500;
   letter-spacing: 0.06em;
+}
+.loader {
+  z-index: 8;
+  background: #0e1116;
+}
+.ld-spin {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid rgba(242, 165, 12, 0.18);
+  border-top-color: var(--amber);
+  animation: rc-rot 0.8s linear infinite;
+}
+.ld-text {
+  margin-top: 16px;
+  font-size: 16px;
+  letter-spacing: 0.14em;
+  color: var(--amber);
+}
+.ld-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-weight: 500;
+}
+.combatinfo {
+  position: absolute;
+  top: calc(var(--safe-top) + 52px);
+  left: calc(var(--safe-left) + 12px);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.ci-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 96px;
+}
+.ci-l {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.ci-v {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ci-v.dmg {
+  color: var(--amber);
 }
 @keyframes cd-pop {
   0% {
