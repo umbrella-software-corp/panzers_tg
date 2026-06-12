@@ -230,11 +230,9 @@ const ID_RE = /^[a-z0-9_]{1,16}$/
 let nextId = 1
 const rooms = new Map()
 // ждущие комнаты — свои на каждый режим: игроки с разными режимами (захват/
-// уничтожение) НЕ попадают в одну комнату
+// уничтожение) НЕ попадают в одну комнату. PvP: комната копит до TEAM_SIZE*2 людей
+// (две команды живых), взводы держатся вместе при делении (см. assignTeams).
 const waitingRooms = { capture: null, annihilation: null }
-// комнаты взводов по токену: игроки с одним party-токеном (= id командира) попадают
-// в ОДНУ комнату → друзья гарантированно в одном бою (одна команда живых)
-const partyRooms = new Map()
 
 function newRoom() {
   const room = {
@@ -253,27 +251,35 @@ function newRoom() {
   return room
 }
 
-function getJoinRoom(party, mode) {
-  // взвод: все с одинаковым токеном — в одну комнату (своя комната на токен).
-  // Режим взвода — у его первой комнаты (командир задаёт; друзья играют в нём же).
-  if (party) {
-    const ex = partyRooms.get(party)
-    if (ex && !ex.started && ex.humans.length < TEAM_SIZE) return ex
-    const nr = newRoom()
-    nr.party = party
-    nr.mode = mode
-    partyRooms.set(party, nr)
-    return nr
-  }
-  // комната = ОДНА команда живых игроков (как обещает UI «ВАША КОМАНДА · X/7»);
-  // враг — боты. Поэтому добираем людей до TEAM_SIZE, а не до TEAM_SIZE*2.
-  // Свой пул ожидания на каждый режим — чужие режимы не сводятся вместе.
+function getJoinRoom(mode) {
+  // PvP: ВСЕ (взводы + соло) идут в ОБЩУЮ комнату на режим, до TEAM_SIZE*2 людей —
+  // чтобы живые встречали живых, а не только ботов. Взвод (один party-токен) остаётся
+  // в одной команде при делении (assignTeams в startRoom). Чужие режимы не сводятся.
   const wr = waitingRooms[mode]
-  if (wr && !wr.started && wr.humans.length < TEAM_SIZE) return wr
+  if (wr && !wr.started && wr.humans.length < TEAM_SIZE * 2) return wr
   const nr = newRoom()
   nr.mode = mode
   waitingRooms[mode] = nr
   return nr
+}
+
+// делим людей комнаты на 2 команды: взвод (один party-токен) ЦЕЛИКОМ в одну команду,
+// соло раскидываем для баланса (жадно — каждую группу в команду с меньшим числом людей,
+// не превышая TEAM_SIZE). Так друзья всегда вместе, но против живого врага, когда он есть.
+function assignTeams(humans) {
+  const groups = new Map()
+  for (const h of humans) {
+    const key = h.party || `s${h.id}` // взвод по токену, соло — уникальный ключ
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(h)
+  }
+  const count = [0, 0]
+  for (const g of [...groups.values()].sort((a, b) => b.length - a.length)) {
+    let t = count[0] <= count[1] ? 0 : 1
+    if (count[t] + g.length > TEAM_SIZE) t = 1 - t // не влезает — в другую команду
+    for (const h of g) h.team = t
+    count[t] += g.length
+  }
 }
 
 function send(ws, msg) {
@@ -299,11 +305,10 @@ function startRoom(room) {
   room.started = true
   clearTimeout(room.waitTimer)
   if (waitingRooms[room.mode] === room) waitingRooms[room.mode] = null
-  if (room.party && partyRooms.get(room.party) === room) partyRooms.delete(room.party) // токен свободен для нового взвода
 
-  // ВСЕ живые игроки комнаты — в ОДНУ команду (юг, team 0), как обещает экран
-  // поиска «ВАША КОМАНДА»: друзья всегда вместе. Враг — боты (team 1, добор в sim)
-  room.humans.forEach((h) => (h.team = 0))
+  // PvP: делим живых на 2 команды (взводы цело, соло — балансом). Каждая команда
+  // добирается ботами в sim. Соло против соло = настоящий бой человек-vs-человек.
+  assignTeams(room.humans)
   const map = randomMap()
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
@@ -326,7 +331,9 @@ function startRoom(room) {
       tickHz: TICK_HZ,
     })
   }
-  console.log(`[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», людей ${room.humans.length}, ботов ${TEAM_SIZE * 2 - room.humans.length}`)
+  console.log(
+    `[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», люди ${room.humans.filter((h) => h.team === 0).length}vs${room.humans.filter((h) => h.team === 1).length}, остальное — боты`,
+  )
 
   room.timer = setInterval(() => {
     try {
@@ -380,7 +387,6 @@ function endRoom(room) {
   clearTimeout(room.waitTimer)
   rooms.delete(room.id)
   if (waitingRooms[room.mode] === room) waitingRooms[room.mode] = null
-  if (room.party && partyRooms.get(room.party) === room) partyRooms.delete(room.party)
   // сокеты не рвём — клиент сам уходит после match-end
 }
 
@@ -424,8 +430,9 @@ wss.on('connection', (ws, req) => {
     party = null
   }
   const id = `p${nextId++}`
-  const room = getJoinRoom(party, mode)
-  const human = { id, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0 }
+  const room = getJoinRoom(mode)
+  // party-токен храним на игроке — по нему делим на команды в startRoom (взвод цело)
+  const human = { id, party, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0 }
   room.humans.push(human)
   ws.playerId = id
   ws.room = room
@@ -438,7 +445,7 @@ wss.on('connection', (ws, req) => {
     room.waitTimer = setTimeout(() => startRoom(room), WAIT_MS)
   }
   broadcastLobby(room)
-  if (room.humans.length >= TEAM_SIZE) startRoom(room) // команда живых заполнена — старт
+  if (room.humans.length >= TEAM_SIZE * 2) startRoom(room) // обе команды живых заполнены — старт
 
   ws.on('message', (raw) => {
     const now = Date.now()
