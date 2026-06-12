@@ -202,7 +202,9 @@ const MSG_RATE = 40 // сообщений/с на сокет (ввод 10Гц + 
 const MSG_BURST = 80
 const SEND_BUFFER_LIMIT = 256 * 1024 // backpressure: дальше кадры дропаем
 
-const wss = new WebSocketServer({ server: httpServer, maxPayload: 2048 })
+// perMessageDeflate выключен: сжатие мелких 60Гц-кадров копит их и добавляет
+// латентность — для риалтайма вредно (поток должен идти ровно, а не пачками)
+const wss = new WebSocketServer({ server: httpServer, maxPayload: 2048, perMessageDeflate: false })
 wss.on('error', (e) => console.error('[ws] server error:', e.message))
 
 const ipCount = new Map()
@@ -627,6 +629,9 @@ wss.on('connection', (ws, req) => {
     return
   }
   ipCount.set(ip, (ipCount.get(ip) || 0) + 1)
+  // TCP_NODELAY: слать каждый снапшот СРАЗУ, а не копить Нэйглом в пачки (иначе
+  // 60Гц поток приходит рывками раз в ~RTT → дёрг). Критично для риалтайма.
+  try { req.socket.setNoDelay(true) } catch {}
   ws.isAlive = true
   ws.on('pong', () => (ws.isAlive = true))
   ws.on('error', (e) => console.error(`[ws] socket error:`, e.message)) // без хендлера 'error' валит процесс

@@ -268,29 +268,72 @@ export class NetGame {
     }
   }
 
-  // отправка ввода: 10Гц либо сразу при заметном изменении
+  // текущий ввод игрока (джойстик/клавиши) — общий для отправки и предикта
+  _computeInput() {
+    if (this.paused) return { throttle: 0, steer: 0 }
+    const j = this.joystick
+    if (j.active) {
+      const steer = Math.abs(j.x) < 0.12 ? 0 : j.x
+      const fwd = -j.y
+      const throttle = Math.abs(fwd) < 0.12 ? 0 : Math.max(-1, Math.min(1, fwd))
+      return { throttle, steer }
+    }
+    const k = this.keys
+    return { throttle: (k.fwd ? 1 : 0) - (k.back ? 1 : 0), steer: (k.right ? 1 : 0) - (k.left ? 1 : 0) }
+  }
+
+  // отправка ввода серверу: при заметном изменении либо раз в 300мс
   _sendInput() {
     if (!this.client || this.matchOver) return
-    let steer = 0
-    let throttle = 0
-    if (!this.paused) {
-      const j = this.joystick
-      if (j.active) {
-        steer = Math.abs(j.x) < 0.12 ? 0 : j.x
-        const fwd = -j.y
-        throttle = Math.abs(fwd) < 0.12 ? 0 : Math.max(-1, Math.min(1, fwd))
-      } else {
-        const k = this.keys
-        steer = (k.right ? 1 : 0) - (k.left ? 1 : 0)
-        throttle = (k.fwd ? 1 : 0) - (k.back ? 1 : 0)
-      }
-    }
+    const { throttle, steer } = this._computeInput()
     const s = this._lastSent
     const now = performance.now()
     if (Math.abs(steer - s.steer) > 0.04 || Math.abs(throttle - s.throttle) > 0.04 || now - s.at > 300) {
       this._lastSent = { steer, throttle, at: now }
       this.client.send({ type: 'input', throttle, steer })
     }
+  }
+
+  // КЛИЕНТСКИЙ ПРЕДИКТ своего танка: интегрируем ТЕКУЩИЙ ввод локально каждый
+  // кадр (та же физика, что на сервере _stepHuman) — танк реагирует на руль
+  // МГНОВЕННО, без задержки пинга и без дрожи от рваной доставки снапшотов.
+  // Сервер авторитетен: мягко корректируем дрейф к нему, при большом расхождении
+  // (стена/респаун) — снап. Коллизии у препятствий не предсказываем — сервер
+  // поправит (игрок редко вжимается в стену, а снап ловит грубые случаи).
+  _predictOwn(dt) {
+    const srv = this._units && this.youUnit != null ? this._units.get(this.youUnit) : null
+    if (!srv || !srv.alive) {
+      this._pred = null
+      return
+    }
+    if (!this._pred || Math.hypot(this._pred.x - srv.x, this._pred.y - srv.y) > 140) {
+      this._pred = { x: srv.x, y: srv.y, hull: srv.hull, speed: srv.speed || 0 } // старт/снап
+      return
+    }
+    // мягкая коррекция к серверу (не дёргаем: малый коэф., чтобы не было резинки)
+    const corr = 0.05
+    this._pred.x += (srv.x - this._pred.x) * corr
+    this._pred.y += (srv.y - this._pred.y) * corr
+    let dh = (srv.hull - this._pred.hull) % (Math.PI * 2)
+    if (dh > Math.PI) dh -= Math.PI * 2
+    if (dh < -Math.PI) dh += Math.PI * 2
+    this._pred.hull += dh * corr
+    // интеграция ввода (как сервер: трак/мотор-криты глушат руль/газ)
+    let { throttle, steer } = this._computeInput()
+    const cr = this.you && this.you.crippled
+    if (cr && cr.tracks > 0) steer = 0
+    if (cr && cr.engine > 0) throttle = 0
+    const cls = this.cls
+    this._pred.hull += steer * cls.turnRate * dt
+    const target = cls.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
+    const da = cls.accel * dt
+    if (this._pred.speed < target) this._pred.speed = Math.min(target, this._pred.speed + da)
+    else this._pred.speed = Math.max(target, this._pred.speed - da * 1.4)
+    this._pred.x += Math.cos(this._pred.hull) * this._pred.speed * dt
+    this._pred.y += Math.sin(this._pred.hull) * this._pred.speed * dt
+    const m = 60
+    this._pred.x = Math.max(m, Math.min(this.mapSize - m, this._pred.x))
+    this._pred.y = Math.max(m, Math.min(this.mapSize - m, this._pred.y))
   }
 
   // --- pixi ---
@@ -371,7 +414,7 @@ export class NetGame {
     if (this.client && this.client.stateQueue) this.client.stateQueue.length = 0
 
     this._bindKeyboard()
-    this._inputTimer = setInterval(() => this._sendInput(), 100)
+    this._inputTimer = setInterval(() => this._sendInput(), 50) // 20Гц: сервер ближе к предикту, меньше коррекций
     this.app.ticker.add((ticker) => this._update(ticker.deltaMS / 1000))
     this._emitState()
   }
@@ -510,9 +553,9 @@ export class NetGame {
       f = span > 1e-6 ? Math.max(0, Math.min(1, (rt - a.t) / span)) : 0
     }
     return this.cur.units.map((u) => {
-      // свой танк — на сглаженной ПОСЛЕДНЕЙ позиции (без задержки): отзывчиво
-      if (u.id === this.youUnit && this._ownSmooth && u.alive) {
-        return { ...u, x: this._ownSmooth.x, y: this._ownSmooth.y, hull: this._ownSmooth.hull }
+      // свой танк — из клиентского предикта (мгновенно по вводу, без лага пинга)
+      if (u.id === this.youUnit && this._pred && u.alive) {
+        return { ...u, x: this._pred.x, y: this._pred.y, hull: this._pred.hull }
       }
       if (!haveBuf || !u.alive) return u // мало данных/обломок — последняя позиция
       const pa = a.units.get(u.id)
@@ -580,10 +623,10 @@ export class NetGame {
     const buf = this._snapBuf
     if (buf && buf.length) {
       const latest = buf[buf.length - 1].t
-      // задержка рендера: меньше = отзывчивее (руль/камера не «тормозят»), но
-      // нужен запас под джиттер сети. С полной очередью снапшотов (без дыр) 1.2
-      // тика (~60мс) хватает для гладкости и заметно отзывчивее прежних ~100мс.
-      const delay = this.tickDt * 1.2
+      // задержка рендера ЧУЖИХ танков: свой теперь предсказан (мгновенный), поэтому
+      // тут можно дать запас под рваную доставку (замер прода: p95 разрыв ~54мс) —
+      // чужие будут гладкими даже при бурстах. ~2 тика (33мс@60Гц) + очередь без дыр.
+      const delay = this.tickDt * 2
       if (this._renderT == null || this._renderT > latest || this._renderT < latest - this.tickDt * 8) {
         this._renderT = latest - delay // (ре)синхрон: старт / после столла / убегание
       } else {
@@ -593,26 +636,9 @@ export class NetGame {
       }
     }
 
-    // СВОЙ танк — без задержки интерполяции: рендерим на ПОСЛЕДНЕЙ серверной
-    // позиции, экспоненциально сглаживая шаги тика. Камера/руль реагируют сразу
-    // (нет ощущения «лага/заднего хода»), а сглаживание убирает ступеньки. Чужих
-    // оставляем на интерполяции с задержкой (там лаг незаметен, важнее гладкость).
-    const ownNow = this._units && this.youUnit != null ? this._units.get(this.youUnit) : null
-    if (ownNow && ownNow.alive) {
-      const k = 1 - Math.exp(-dt / Math.max(0.02, this.tickDt)) // постоянная ≈ шаг тика
-      if (!this._ownSmooth) this._ownSmooth = { x: ownNow.x, y: ownNow.y, hull: ownNow.hull }
-      else {
-        const s = this._ownSmooth
-        s.x += (ownNow.x - s.x) * k
-        s.y += (ownNow.y - s.y) * k
-        let d = (ownNow.hull - s.hull) % (Math.PI * 2)
-        if (d > Math.PI) d -= Math.PI * 2
-        if (d < -Math.PI) d += Math.PI * 2
-        s.hull += d * k
-      }
-    } else {
-      this._ownSmooth = null
-    }
+    // СВОЙ танк — клиентский предикт (мгновенный отклик руля, без лага пинга и
+    // без дрожи от рваной доставки снапшотов). Чужие — интерполяция с задержкой.
+    this._predictOwn(dt)
 
     // снапшоты сервера могли встать (реально мёртвый сокет/сеть) — тогда
     // _tryRecover пробует вернуться в тот же бой новым сокетом; показываем
