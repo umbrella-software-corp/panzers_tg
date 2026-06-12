@@ -72,10 +72,17 @@ export const RADIO_CRIT_MULT = 0.5
 export const CRIT_SLOTS = ['gun', 'turret', 'engine', 'tracks', 'radio']
 
 export const ENEMY_AI = {
-  vision: 620,
+  // зрение бота урезано до уровня игрока (раньше 620 — больше любого класса
+  // 360–520, поэтому бот лупил из тумана: его танк тебе даже не отрисован, а
+  // снаряды «из ниоткуда»). Теперь бот доезжает на дистанцию, где ты его видишь.
+  vision: 500, // на этой дистанции бот замечает и едет к цели
+  fireRange: 430, // СТРЕЛЯЕТ только в этом радиусе (≤ твой обзор → ты видишь стрелка)
   idealRange: 360,
   sectorHalfDeg: 26,
-  hitChance: 0.45,
+  hitChance: 0.42, // базовый шанс; дальше режется дистанцией/движением/кустом (см. sim)
+  hitFalloff: 0.5, // на максимуме fireRange шанс падает до hitChance*(1-0.5)
+  dodgeFactor: 0.4, // полный ход цели срезает шанс до hitChance*(1-0.4) — уворот работает
+  bushCover: 0.4, // цель в кусте: шанс ×0.4 (мягкое укрытие против ботов)
   radius: 18,
 }
 export const BOT_CLASS_MIX = ['light', 'medium', 'heavy', 'medium', 'light', 'medium', 'light']

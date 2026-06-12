@@ -327,9 +327,27 @@ export class BattleSim {
       b.y += Math.sin(b.hull) * move * b.botSpeed * dt
 
       const inArc = Math.abs(angleDiff(ang, b.hull)) <= (ai.sectorHalfDeg * Math.PI) / 180
-      if (inArc && b.fireCd <= 0) {
+      // СТРЕЛЯЕМ только если: цель в секторе, в радиусе огня (≤ fireRange, не на
+      // всю дальность зрения) и — для человека — бот ЗАСВЕЧЕН его командой. Иначе
+      // бот бил из тумана со своего респа, а игрок снаряды ловил «из ниоткуда».
+      const canFire =
+        inArc &&
+        b.fireCd <= 0 &&
+        bestD <= ai.fireRange &&
+        (!target.human || this._spotted[target.team].has(b.id))
+      if (canFire) {
         b.fireCd = b.stats.reload
-        const hit = Math.random() < ai.hitChance
+        // шанс попадания: база режется дистанцией, ходом цели (уворот) и кустом.
+        // Сидячая цель в упор на открытом — почти база; летящая боком вдалеке в
+        // кусте — мажем честно. Бьём по людям сложнее, чем по статичным болванкам.
+        let chance = ai.hitChance
+        chance *= 1 - ai.hitFalloff * Math.min(1, bestD / ai.fireRange)
+        const moving = Math.min(1, Math.abs(target.speed || 0) / (target.stats.maxSpeed || 120))
+        chance *= 1 - ai.dodgeFactor * moving
+        if (this.obstacles.some((o) => o.kind === 'bush' && Math.hypot(target.x - o.x, target.y - o.y) <= o.r)) {
+          chance *= ai.bushCover
+        }
+        const hit = Math.random() < chance
         let killed = false
         let dealt = 0
         if (hit) {
