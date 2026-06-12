@@ -612,6 +612,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 5px 12px;
+  align-self: center; /* по контенту и по центру — иначе на широком экране счёт уезжает к краям */
+  max-width: 100%;
 }
 .scoreplate .side {
   flex: 1;

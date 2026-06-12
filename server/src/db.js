@@ -70,6 +70,7 @@ export async function playerByRank(rank) {
     kills: s.kills || 0,
     tank: p.selectedTank || null, // id текущей машины (для спрайта)
     favoriteTank, // имя самой частой машины в истории
+    medals: p.medals || {}, // медали игрока (карточка показывает их в гриде)
     premium: (p.premiumUntil || 0) > Date.now(),
   }
 }
