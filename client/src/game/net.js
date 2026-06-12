@@ -39,27 +39,95 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
       }
     }, timeoutMs)
 
+    // диагностика онлайн-старта: следим, где встаёт поток (фриз на 0:00 у части
+    // клиентов). Логи лёгкие — только вехи + первый снапшот, не 20Гц.
+    const log = (...a) => console.log('[net]', ...a)
+
     const client = {
-      ws,
+      ws, // АКТИВНЫЙ сокет; после реконнекта указывает на новый
       youId: null,
       started: false,
+      roomId: null, // для реконнекта: куда возвращаться
+      youUnit: null, // свой юнит (возврат именно за него)
+      rkey: null, // токен возврата в этот бой
       onMessage: null, // подписка NetGame на время боя
-      onSocketClose: null, // подписка NetGame: сервер оборвал соединение (рестарт/деплой)
+      onSocketClose: null, // подписка NetGame: АКТИВНЫЙ сокет оборвался посреди боя
       send(msg) {
-        if (ws.readyState === 1) ws.send(JSON.stringify(msg))
+        if (client.ws && client.ws.readyState === 1) client.ws.send(JSON.stringify(msg))
       },
       close() {
         try {
-          ws.close()
+          client.ws && client.ws.close()
         } catch {
           /* ок */
         }
       },
+      // вернуться в ТОТ ЖЕ идущий бой новым сокетом (старый — мёртв-но-открыт на
+      // iOS, либо оборвался). Резолвится, когда сервер подтвердил возврат
+      // (match-start rejoined); реджектится по таймауту/ошибке/rejoin-fail.
+      reconnect() {
+        return new Promise((res, rej) => {
+          if (!client.roomId || !client.youUnit) return rej(new Error('нет данных для возврата'))
+          const qp = `rejoin=${encodeURIComponent(client.roomId)}&unit=${encodeURIComponent(client.youUnit)}&rkey=${encodeURIComponent(client.rkey || '')}`
+          let sock
+          try {
+            sock = new WebSocket(`${WS_URL}?${qp}`)
+          } catch (e) {
+            return rej(e)
+          }
+          let done = false
+          const to = setTimeout(() => {
+            if (done) return
+            done = true
+            try { sock.close() } catch {}
+            rej(new Error('rejoin timeout'))
+          }, 4000)
+          sock.onmessage = (e) => {
+            let m
+            try { m = JSON.parse(e.data) } catch { return }
+            if (m.type === 'rejoin-fail') {
+              if (done) return
+              done = true
+              clearTimeout(to)
+              try { sock.close() } catch {}
+              rej(new Error('rejoin-fail'))
+            } else if (m.type === 'match-start' && m.rejoined) {
+              if (done) return
+              done = true
+              clearTimeout(to)
+              const old = client.ws
+              client.ws = sock // переключаем активный сокет
+              client.roomId = m.room || client.roomId
+              if (m.rkey) client.rkey = m.rkey
+              try { if (old && old !== sock) old.close() } catch {}
+              log('reconnect: вернулись в бой ' + m.room)
+              res()
+            } else if (m.type === 'state') {
+              client.stateN = (client.stateN || 0) + 1
+              client.lastState = m
+              if (client.onMessage) client.onMessage(m)
+            } else if (m.type === 'match-end' && client.onMessage) {
+              client.onMessage(m)
+            }
+          }
+          sock.onerror = () => {
+            if (done) return
+            done = true
+            clearTimeout(to)
+            rej(new Error('rejoin error'))
+          }
+          sock.onclose = (ev) => {
+            if (!done) {
+              done = true
+              clearTimeout(to)
+              rej(new Error('rejoin closed'))
+            } else if (client.ws === sock && client.onSocketClose) {
+              client.onSocketClose(ev.code) // уже активный — настоящий обрыв, пусть NetGame решает
+            }
+          }
+        })
+      },
     }
-
-    // диагностика онлайн-старта: следим, где встаёт поток (фриз на 0:00 у части
-    // клиентов). Логи лёгкие — только вехи + первый снапшот, не 20Гц.
-    const log = (...a) => console.log('[net]', ...a)
     ws.onopen = () => {
       log('ws открыт →', WS_URL)
       client.send({ type: 'join', name, tankId, tint, skin, stats, battles })
@@ -89,7 +157,10 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
         onLobby && onLobby(msg)
       } else if (msg.type === 'match-start') {
         client.started = true
-        log('match-start получен (youUnit=' + msg.youUnit + ', map=' + msg.mapId + ')')
+        client.roomId = msg.room || client.roomId // данные для возможного реконнекта
+        client.youUnit = msg.youUnit
+        if (msg.rkey) client.rkey = msg.rkey
+        log('match-start получен (youUnit=' + msg.youUnit + ', map=' + msg.mapId + ', room=' + msg.room + ')')
         onStart && onStart(msg)
       } else if (msg.type === 'match-end' && !client.onMessage) {
         // бой кончился в окне между match-start и созданием NetGame (комната
@@ -116,8 +187,9 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
         clearTimeout(timer)
         reject(new Error('ws closed'))
       }
-      // в бою на это подписан NetGame: реагируем сразу, а не ждём 5с сторожа
-      if (client.onSocketClose) client.onSocketClose(e.code)
+      // в бою на это подписан NetGame. Но если реконнект уже увёл активный сокет
+      // на новый (client.ws !== ws) — этот close уже не наш, игнорируем.
+      if (client.ws === ws && client.onSocketClose) client.onSocketClose(e.code)
       onClose && onClose()
     }
   })

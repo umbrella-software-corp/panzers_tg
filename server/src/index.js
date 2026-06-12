@@ -345,6 +345,140 @@ function broadcastLobby(room) {
   for (const h of room.humans) send(h.ws, { type: 'lobby', players, you: h.id, startsIn })
 }
 
+// грейс перед закрытием опустевшей живой комнаты: даём игроку вернуться
+// (iOS-сокет умирает молча на старте боя — нужен запас на переподключение)
+const RECONNECT_GRACE_MS = +(process.env.RECONNECT_GRACE_MS || 30000)
+const genKey = () => Math.random().toString(36).slice(2, 10)
+
+// опустела живая комната — не убиваем сразу, ждём реконнект; вернулся игрок —
+// таймер снимаем (cancelRoomEnd при добавлении человека)
+function scheduleRoomEnd(room) {
+  if (room.endTimer || !room.started) return
+  room.endTimer = setTimeout(() => {
+    room.endTimer = null
+    if (room.humans.length === 0) {
+      console.log(`[ws] ${room.id}: никто не вернулся за ${RECONNECT_GRACE_MS}мс — закрываю`)
+      endRoom(room)
+    }
+  }, RECONNECT_GRACE_MS)
+}
+function cancelRoomEnd(room) {
+  if (room.endTimer) {
+    clearTimeout(room.endTimer)
+    room.endTimer = null
+  }
+}
+
+// общий обработчик боевого сокета (свежий вход И реконнект): ввод/огонь/пинг,
+// свой токен-бакет от флуда, корректное закрытие. Закрытие удаляет ИМЕННО этот
+// сокет (human.ws === ws): после реконнекта human.ws уже указывает на новый
+// сокет, и close мёртвого старого ничего не ломает.
+function setupBattleSocket(ws, room, human, ip) {
+  let tokens = MSG_BURST
+  let lastRefill = Date.now()
+  ws.on('message', (raw) => {
+    const now = Date.now()
+    tokens = Math.min(MSG_BURST, tokens + ((now - lastRefill) / 1000) * MSG_RATE)
+    lastRefill = now
+    if (--tokens < 0) {
+      console.log(`[ws] ${human.id}: флуд (${ip}), разрываю`)
+      ws.terminate()
+      return
+    }
+    let msg
+    try {
+      msg = JSON.parse(raw.toString())
+    } catch {
+      return
+    }
+    if (msg.type === 'name' && typeof msg.name === 'string') {
+      human.name = msg.name.slice(0, 24)
+      broadcastLobby(room)
+    } else if (msg.type === 'join') {
+      // профиль бойца: имя, машина, камуфляж и боевые статы лоадаута —
+      // всё с клиента, поэтому формат и диапазоны проверяем жёстко
+      if (typeof msg.name === 'string' && msg.name.trim()) human.name = msg.name.trim().slice(0, 24)
+      if (typeof msg.tankId === 'string' && ID_RE.test(msg.tankId)) human.tankId = msg.tankId
+      if (typeof msg.tint === 'number' && Number.isFinite(msg.tint)) human.tint = msg.tint & 0xffffff
+      if (typeof msg.skin === 'string' && ID_RE.test(msg.skin)) human.skin = msg.skin
+      if (typeof msg.battles === 'number' && Number.isFinite(msg.battles)) human.battles = Math.max(0, Math.min(1e6, msg.battles | 0))
+      human.stats = sanitizeStats(msg.stats)
+      broadcastLobby(room)
+    } else if (!room.sim) {
+      return
+    } else if (msg.type === 'input') {
+      room.sim.setInput(human.id, msg.throttle, msg.steer)
+    } else if (msg.type === 'fire') {
+      room.sim.fire(human.id)
+    } else if (msg.type === 'ping') {
+      send(ws, { type: 'pong', ts: msg.ts })
+    }
+  })
+  ws.on('close', () => {
+    const n = (ipCount.get(ip) || 1) - 1
+    if (n <= 0) ipCount.delete(ip)
+    else ipCount.set(ip, n)
+    // реконнект мог увести human на новый сокет — тогда этот close уже не наш
+    if (human.ws !== ws) return
+    console.log(`[ws] ${human.id} вышел из ${room.id}`)
+    room.humans = room.humans.filter((h) => h !== human)
+    if (room.sim) room.sim.humanLeft(human.id) // ИИ доигрывает за него
+    if (!room.started) {
+      broadcastLobby(room)
+      if (room.humans.length === 0) endRoom(room)
+    } else if (room.humans.length === 0) {
+      scheduleRoomEnd(room) // живой бой — даём шанс вернуться, не рубим сразу
+    }
+  })
+}
+
+// возврат в идущий бой по ?rejoin=<roomId>&unit=<id>&rkey=<токен>: находим живой
+// юнит, привязываем к нему новый сокет (human.ws), снапшоты возобновляются.
+function doRejoin(ws, ip, roomId, unitId, rkey) {
+  const room = rooms.get(roomId)
+  if (!room || !room.started || !room.sim || room.sim.matchOver) {
+    send(ws, { type: 'rejoin-fail' })
+    return ws.close(1000, 'no-room')
+  }
+  if (!room.rejoinKeys || room.rejoinKeys.get(unitId) !== rkey) {
+    send(ws, { type: 'rejoin-fail' })
+    return ws.close(1000, 'bad-key')
+  }
+  const unit = room.sim.byId.get(unitId)
+  if (!unit) {
+    send(ws, { type: 'rejoin-fail' })
+    return ws.close(1000, 'no-unit')
+  }
+  cancelRoomEnd(room)
+  unit.human = true
+  room.sim.byOwner.set(unit.ownerId, unit)
+  let human = room.humans.find((h) => h.id === unit.ownerId)
+  if (human) {
+    human.ws = ws // увели на новый сокет — старый close станет no-op
+  } else {
+    human = { id: unit.ownerId, party: null, name: unit.name, team: unit.team, ws, stats: unit.stats, tankId: unit.tankId, tint: unit.tint, skin: unit.skin, battles: 0, rkey }
+    room.humans.push(human)
+  }
+  ws.playerId = unit.ownerId
+  ws.room = room
+  setupBattleSocket(ws, room, human, ip)
+  send(ws, {
+    type: 'match-start',
+    rejoined: true, // клиент: это не новый бой, а возврат в текущий — не пересобирать
+    youTeam: unit.team,
+    youUnit: unit.id,
+    teamSize: TEAM_SIZE,
+    map: room.sim.mapSize,
+    mapId: room.sim.mapId,
+    mode: room.mode,
+    humans: room.humans.length,
+    tickHz: TICK_HZ,
+    room: room.id,
+    rkey,
+  })
+  console.log(`[ws] ${unit.ownerId} ВЕРНУЛСЯ в ${room.id} (юнит ${unit.id})`)
+}
+
 function startRoom(room) {
   if (room.started) return
   room.started = true
@@ -362,8 +496,13 @@ function startRoom(room) {
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
   })
 
+  // ключи реконнекта: по unitId, переживают отвал сокета (для возврата в бой)
+  room.rejoinKeys = new Map()
   for (const h of room.humans) {
     const u = room.sim.byOwner.get(h.id)
+    const rkey = genKey()
+    h.rkey = rkey
+    if (u) room.rejoinKeys.set(u.id, rkey)
     send(h.ws, {
       type: 'match-start',
       youTeam: h.team,
@@ -374,6 +513,8 @@ function startRoom(room) {
       mode: room.mode,
       humans: room.humans.length,
       tickHz: TICK_HZ,
+      room: room.id, // для реконнекта: куда возвращаться, если сокет умрёт
+      rkey, // токен возврата в этот бой за свой юнит
     })
   }
   console.log(
@@ -434,6 +575,7 @@ function roomTick(room) {
 function endRoom(room) {
   clearInterval(room.timer)
   clearTimeout(room.waitTimer)
+  clearTimeout(room.endTimer)
   rooms.delete(room.id)
   if (waitingRooms[room.mode] === room) waitingRooms[room.mode] = null
   // сокеты не рвём — клиент сам уходит после match-end
@@ -470,22 +612,30 @@ wss.on('connection', (ws, req) => {
   ws.on('pong', () => (ws.isAlive = true))
   ws.on('error', (e) => console.error(`[ws] socket error:`, e.message)) // без хендлера 'error' валит процесс
 
-  // токен-бакет на входящие: спамеру — разрыв
-  let tokens = MSG_BURST
-  let lastRefill = Date.now()
-
   // токен взвода из query (?party=<id командира>) — группирует друзей в одну
   // комнату; режим (?mode=annihilation) — какой бой искать (захват по умолчанию)
   let party = null
   let mode = 'capture'
   let squadId = null
+  let rejoinRoom = null
+  let rejoinUnit = 0
+  let rejoinKey = ''
   try {
     const q = new URL(req.url, 'http://x').searchParams
     party = (q.get('party') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
     mode = q.get('mode') === 'annihilation' ? 'annihilation' : 'capture'
     squadId = (q.get('squad') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
+    rejoinRoom = (q.get('rejoin') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16) || null
+    rejoinUnit = (q.get('unit') || '').replace(/[^0-9]/g, '').slice(0, 6) | 0
+    rejoinKey = (q.get('rkey') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16)
   } catch {
     party = null
+  }
+
+  // ===== РЕКОННЕКТ (?rejoin=<roomId>&unit=<id>&rkey=<токен>): возврат в идущий бой =====
+  if (rejoinRoom) {
+    doRejoin(ws, ip, rejoinRoom, rejoinUnit, rejoinKey)
+    return
   }
 
   // ===== режим ВЗВОД-ЛОББИ (?squad=<id командира>): состав до боя, в бой НЕ заходим =====
@@ -544,56 +694,8 @@ wss.on('connection', (ws, req) => {
   broadcastLobby(room)
   if (room.humans.length >= TEAM_SIZE * 2) startRoom(room) // обе команды живых заполнены — старт
 
-  ws.on('message', (raw) => {
-    const now = Date.now()
-    tokens = Math.min(MSG_BURST, tokens + ((now - lastRefill) / 1000) * MSG_RATE)
-    lastRefill = now
-    if (--tokens < 0) {
-      console.log(`[ws] ${id}: флуд (${ip}), разрываю`)
-      ws.terminate()
-      return
-    }
-    let msg
-    try {
-      msg = JSON.parse(raw.toString())
-    } catch {
-      return
-    }
-    if (msg.type === 'name' && typeof msg.name === 'string') {
-      human.name = msg.name.slice(0, 24)
-      broadcastLobby(room)
-    } else if (msg.type === 'join') {
-      // профиль бойца: имя, машина, камуфляж и боевые статы лоадаута —
-      // всё с клиента, поэтому формат и диапазоны проверяем жёстко
-      if (typeof msg.name === 'string' && msg.name.trim()) human.name = msg.name.trim().slice(0, 24)
-      if (typeof msg.tankId === 'string' && ID_RE.test(msg.tankId)) human.tankId = msg.tankId
-      if (typeof msg.tint === 'number' && Number.isFinite(msg.tint)) human.tint = msg.tint & 0xffffff
-      if (typeof msg.skin === 'string' && ID_RE.test(msg.skin)) human.skin = msg.skin
-      if (typeof msg.battles === 'number' && Number.isFinite(msg.battles)) human.battles = Math.max(0, Math.min(1e6, msg.battles | 0))
-      human.stats = sanitizeStats(msg.stats)
-      broadcastLobby(room)
-    } else if (!room.sim) {
-      return
-    } else if (msg.type === 'input') {
-      room.sim.setInput(id, msg.throttle, msg.steer)
-    } else if (msg.type === 'fire') {
-      room.sim.fire(id)
-    } else if (msg.type === 'ping') {
-      send(ws, { type: 'pong', ts: msg.ts })
-    }
-  })
-
-  ws.on('close', () => {
-    const n = (ipCount.get(ip) || 1) - 1
-    if (n <= 0) ipCount.delete(ip)
-    else ipCount.set(ip, n)
-    console.log(`[ws] ${id} вышел из ${room.id}`)
-    room.humans = room.humans.filter((h) => h.id !== id)
-    if (room.sim) room.sim.humanLeft(id) // ИИ доигрывает за него
-    if (!room.started) broadcastLobby(room)
-    if (!room.started && room.humans.length === 0) endRoom(room)
-    if (room.started && room.humans.length === 0) endRoom(room) // некому слать
-  })
+  // ввод/огонь/пинг + корректное закрытие (общий путь со входом-реконнектом)
+  setupBattleSocket(ws, room, human, ip)
 })
 
 // мягкое выключение (деплой делает systemctl restart): бои живут в памяти,

@@ -96,15 +96,46 @@ export class NetGame {
     // сразу проигрываем последний буферизованный (мир появляется мгновенно)
     if (client.lastState) this._onMessage(client.lastState)
     if (client.lastEnd) this._onMessage(client.lastEnd) // бой успел кончиться до подписки
-    // сервер оборвал соединение (рестарт при деплое, падение): не ждём 5с
-    // сторожа на замёрзшем кадре — сразу откатываемся в офлайн
+    // активный сокет оборвался посреди боя — НЕ сдаёмся сразу: пробуем вернуться
+    // в тот же бой (см. _tryRecover). В офлайн уходим только после исчерпания попыток.
     client.onSocketClose = (code) => {
-      if (this.matchOver || !this.onStall) return
-      console.warn(`[net] боевой сокет закрыт (code=${code}) — мгновенный откат в офлайн`)
-      const cb = this.onStall
-      this.onStall = null
-      cb()
+      if (this.matchOver) return
+      console.warn(`[net] боевой сокет закрыт (code=${code}) — пробую вернуться в бой`)
+      this._tryRecover()
     }
+  }
+
+  // вернуться в идущий бой при обрыве/мёртвом-но-открытом сокете (iOS). До 3
+  // попыток; успех — поток снапшотов возобновится; провал всех — откат в офлайн.
+  _tryRecover() {
+    if (this.matchOver || this._recoverInFlight || !this.client || !this.client.reconnect) return
+    if (this._reconnectTries >= 3) {
+      if (this.onStall) {
+        const cb = this.onStall
+        this.onStall = null
+        cb()
+      }
+      return
+    }
+    this._recoverInFlight = true
+    this._reconnectTries = (this._reconnectTries || 0) + 1
+    console.warn(`[net] попытка вернуться в бой #${this._reconnectTries}`)
+    this.client
+      .reconnect()
+      .then(() => {
+        this._recoverInFlight = false
+        this.recvAt = performance.now() // дать кадр на первые снапшоты нового сокета
+      })
+      .catch((e) => {
+        this._recoverInFlight = false
+        this._recoverCooldownUntil = performance.now() + 1200 // пауза перед следующей попыткой
+        console.warn('[net] вернуться не удалось:', e && e.message)
+        if (this._reconnectTries >= 3 && this.onStall) {
+          const cb = this.onStall
+          this.onStall = null
+          cb()
+        }
+      })
   }
 
   // совместимость с Battle: пул ботов набирает сервер
@@ -144,6 +175,7 @@ export class NetGame {
       this.prev = this.cur
       this.cur = msg
       this.recvAt = performance.now()
+      if (this._reconnectTries) this._reconnectTries = 0 // поток здоров — следующий затык получит свежие 3 попытки
       if (msg.you) this.you = msg.you
       this._units = new Map(msg.units.map((u) => [u.id, u]))
       for (const u of msg.units) this._wantTex(u.tankId, u.skin)
@@ -456,26 +488,29 @@ export class NetGame {
 
   _update(dt) {
     dt = Math.min(dt, 0.05)
-    // снапшоты сервера могли встать. На iOS WebView под нагрузкой (загрузка
-    // текстур на старте боя / просадка памяти) поток на пару секунд проседает —
-    // это НЕ повод бросать живой бой и сваливаться в офлайн с ботами. Пока сокет
-    // жив, показываем «восстанавливаем связь» и ЖДЁМ: бой идёт на сервере,
-    // снапшоты возобновятся и мы продолжим в нём. В офлайн уходим только если
-    // сокет реально мёртв (это ловит onSocketClose сразу) либо открыт-но-молчит
-    // ОЧЕНЬ долго (зависший сервер) — иначе короткий iOS-затык выкидывал к ботам.
+    // снапшоты сервера могли встать. На iOS WebView боевой сокет на старте боя
+    // нередко УМИРАЕТ молча (readyState=open, но данные не идут) — ждать
+    // бесполезно, надо ПЕРЕПОДКЛЮЧИТЬСЯ к тому же бою (_tryRecover). Показываем
+    // «восстанавливаем связь», пробуем вернуться новым сокетом; снапшоты
+    // возобновятся и продолжим в живом бою. В офлайн уходим только когда все
+    // попытки возврата исчерпаны (внутри _tryRecover) либо как крайний бэкстоп.
     if (this.recvAt && !this.matchOver) {
       const gap = performance.now() - this.recvAt
-      const open = this.client && this.client.ws && this.client.ws.readyState === 1
-      if (gap > 2500 && open) {
+      if (gap > 2500) {
         if (!this._reconnecting) {
           this._reconnecting = true
           this.onReconnecting(true)
+        }
+        // поток встал — пробуем вернуться (с паузой между попытками)
+        if (gap > 3500 && performance.now() > (this._recoverCooldownUntil || 0)) {
+          this._tryRecover()
         }
       } else if (this._reconnecting) {
         this._reconnecting = false
         this.onReconnecting(false)
       }
-      if (this.onStall && (!open || gap > 20000)) {
+      // крайний бэкстоп: если возврат недоступен и поток мёртв очень долго
+      if (this.onStall && gap > 25000) {
         const cb = this.onStall
         this.onStall = null
         cb()
