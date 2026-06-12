@@ -67,7 +67,7 @@ sqA.ws.close()
 // 2. боевые сокеты с тем же party
 const bA = await mkBattle('Commander')
 const bB = await mkBattle('Friend')
-await sleep(3600) // WAIT_MS=3000 + запас: match-start + первые снапшоты
+await sleep(5200) // WAIT_MS=3000 + ~2с боя (снапшоты 10Гц → ~20 шт)
 console.log('match-start:', bA.matchStart, bB.matchStart, '| снапшоты:', bA.states, bB.states)
 
 // 3. SIGTERM посреди боя — как systemctl restart при деплое
@@ -76,7 +76,7 @@ await sleep(1200)
 
 const ok =
   bA.matchStart && bB.matchStart &&
-  bA.states > 10 && bB.states > 10 &&
+  bA.states > 8 && bB.states > 8 &&
   !!bA.matchEnd && !!bB.matchEnd &&
   bA.closeCode === 1001 && bB.closeCode === 1001 &&
   sqB.disband === true

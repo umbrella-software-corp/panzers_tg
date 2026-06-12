@@ -186,6 +186,12 @@ const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
 const WAIT_MS = +(process.env.WAIT_MS || 8000)
 const TICK_HZ = +(process.env.TICK_HZ || 20)
 const TICK_DT = 1 / TICK_HZ
+// снапшоты шлём РЕЖЕ, чем считаем: симуляция 20Гц (отзывчивость/точность), а
+// поток клиенту 10Гц — вдвое меньше сообщений (на iOS Telegram WebView поток
+// 20Гц + Pixi-рендер забивал WebView и сокет умирал; см. миниполию: 100+/мин
+// краш). Клиент интерполирует между снапшотами по присланному snapHz.
+const SNAP_EVERY = Math.max(1, +(process.env.SNAP_EVERY || 2))
+const SNAP_HZ = TICK_HZ / SNAP_EVERY
 
 // пределы против флуда: вход больше 2КБ боевому клиенту не нужен
 const MAX_SOCKETS = +(process.env.MAX_SOCKETS || 1200)
@@ -472,7 +478,7 @@ function doRejoin(ws, ip, roomId, unitId, rkey) {
     mapId: room.sim.mapId,
     mode: room.mode,
     humans: room.humans.length,
-    tickHz: TICK_HZ,
+    tickHz: SNAP_HZ, // частота снапшотов (для интерполяции у клиента)
     room: room.id,
     rkey,
   })
@@ -512,7 +518,7 @@ function startRoom(room) {
       mapId: map.id,
       mode: room.mode,
       humans: room.humans.length,
-      tickHz: TICK_HZ,
+      tickHz: SNAP_HZ, // частота снапшотов (для интерполяции у клиента)
       room: room.id, // для реконнекта: куда возвращаться, если сокет умрёт
       rkey, // токен возврата в этот бой за свой юнит
     })
@@ -548,14 +554,25 @@ function roomStats(room) {
 function roomTick(room) {
     const t0 = process.hrtime.bigint()
     room.sim.step(TICK_DT)
-    const events = room.sim.takeEvents()
-    // сериализация один раз на команду: личная добавка подклеивается строкой
-    const teamStr = [0, 1].map((t) =>
-      JSON.stringify({ ...room.sim.snapshotForTeam(t), events: room.sim.eventsForTeam(events, t) }),
-    )
-    for (const h of room.humans) {
-      const you = JSON.stringify(room.sim.personalFor(h.id))
-      sendRaw(h.ws, teamStr[h.team].slice(0, -1) + ',"you":' + you + '}')
+    // события копим между отправками: шлём реже тика, но НИ ОДНО не теряем
+    // (выстрелы/попадания/киллы с пропущенных тиков уходят со следующим снапшотом)
+    if (!room.evBuf) room.evBuf = []
+    const ev = room.sim.takeEvents()
+    if (ev.length) room.evBuf.push(...ev)
+    room.sinceSnap = (room.sinceSnap || 0) + 1
+
+    if (room.sinceSnap >= SNAP_EVERY || room.sim.matchOver) {
+      room.sinceSnap = 0
+      const events = room.evBuf
+      room.evBuf = []
+      // сериализация один раз на команду: личная добавка подклеивается строкой
+      const teamStr = [0, 1].map((t) =>
+        JSON.stringify({ ...room.sim.snapshotForTeam(t), events: room.sim.eventsForTeam(events, t) }),
+      )
+      for (const h of room.humans) {
+        const you = JSON.stringify(room.sim.personalFor(h.id))
+        sendRaw(h.ws, teamStr[h.team].slice(0, -1) + ',"you":' + you + '}')
+      }
     }
     room.tickAccMs += Number(process.hrtime.bigint() - t0) / 1e6
     room.tickN++

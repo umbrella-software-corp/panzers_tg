@@ -7,6 +7,11 @@ import { applyCamo } from './camo.js'
 // камуфляж с узором (для скинов-оттенков и неизвестных id — null)
 const camoOf = (skinId) => (skinId && SKIN_BY_ID[skinId] ? SKIN_BY_ID[skinId].camo || null : null)
 
+// уступить поток событий: тяжёлую обработку текстур на старте боя дробим, чтобы
+// между кусками успевал отработать приём WS-снапшотов (иначе на iOS Telegram
+// WebView единый синхронный спайк забивал поток и боевой сокет умирал)
+const frameYield = () => new Promise((r) => setTimeout(r, 0))
+
 // маркер класса над танком: лёгкий ▲ / средний ◆ / тяжёлый ■
 const CLS_MARK = { light: '▲', medium: '◆', heavy: '■' }
 
@@ -293,8 +298,14 @@ export class NetGame {
     texNames.forEach((n, i) => {
       if (loaded[i].status === 'fulfilled') this.tex[n] = loaded[i].value
     })
+    // хромакей баз танков — ПО ОДНОЙ с уступкой потоку: единый синхронный кусок
+    // на старте боя блокировал главный поток (и приём снапшотов) → на iOS сокет
+    // умирал. Дробление даёт WS-сообщениям проскочить между текстурами.
     for (const k of Object.keys(this.tex)) {
-      if (k.startsWith('tank_')) this.tex[k] = this._chromaKey(this.tex[k])
+      if (k.startsWith('tank_')) {
+        this.tex[k] = this._chromaKey(this.tex[k])
+        await frameYield()
+      }
     }
     // кусты/камни/горы — AI-спрайты с вырезанным фоном (прозрачная альфа)
     if (this.playerTankId) this._wantTex(this.playerTankId, this.playerSkin)
