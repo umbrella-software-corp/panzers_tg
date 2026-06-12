@@ -489,27 +489,35 @@ export class NetGame {
   // джиттере сети (рендерим чуть в прошлом, всегда есть «следующий» снапшот).
   _lerpUnits() {
     if (!this.cur) return []
-    const buf = this._snapBuf
-    const rt = this._renderT
-    if (!buf || buf.length < 2 || rt == null) return this.cur.units // мало данных — последние позиции
-    let a = buf[0]
-    let b = buf[buf.length - 1]
-    for (let i = 0; i < buf.length; i++) {
-      if (buf[i].t <= rt) a = buf[i]
-      if (buf[i].t >= rt) { b = buf[i]; break }
-    }
-    const span = b.t - a.t
-    const f = span > 1e-6 ? Math.max(0, Math.min(1, (rt - a.t) / span)) : 0
     const lerpA = (p, q, t) => {
       let d = (q - p) % (Math.PI * 2)
       if (d > Math.PI) d -= Math.PI * 2
       if (d < -Math.PI) d += Math.PI * 2
       return p + d * t
     }
+    const buf = this._snapBuf
+    const rt = this._renderT
+    const haveBuf = buf && buf.length >= 2 && rt != null
+    let a, b, f
+    if (haveBuf) {
+      a = buf[0]
+      b = buf[buf.length - 1]
+      for (let i = 0; i < buf.length; i++) {
+        if (buf[i].t <= rt) a = buf[i]
+        if (buf[i].t >= rt) { b = buf[i]; break }
+      }
+      const span = b.t - a.t
+      f = span > 1e-6 ? Math.max(0, Math.min(1, (rt - a.t) / span)) : 0
+    }
     return this.cur.units.map((u) => {
+      // свой танк — на сглаженной ПОСЛЕДНЕЙ позиции (без задержки): отзывчиво
+      if (u.id === this.youUnit && this._ownSmooth && u.alive) {
+        return { ...u, x: this._ownSmooth.x, y: this._ownSmooth.y, hull: this._ownSmooth.hull }
+      }
+      if (!haveBuf || !u.alive) return u // мало данных/обломок — последняя позиция
       const pa = a.units.get(u.id)
       const pb = b.units.get(u.id)
-      if (!pa || !pb || !u.alive) return u
+      if (!pa || !pb) return u
       return { ...u, x: pa.x + (pb.x - pa.x) * f, y: pa.y + (pb.y - pa.y) * f, hull: lerpA(pa.hull, pb.hull, f) }
     })
   }
@@ -583,6 +591,27 @@ export class NetGame {
         const hi = latest - this.tickDt * 0.5 // оставляем «впереди» снапшот для лерпа
         if (this._renderT > hi) this._renderT = hi
       }
+    }
+
+    // СВОЙ танк — без задержки интерполяции: рендерим на ПОСЛЕДНЕЙ серверной
+    // позиции, экспоненциально сглаживая шаги тика. Камера/руль реагируют сразу
+    // (нет ощущения «лага/заднего хода»), а сглаживание убирает ступеньки. Чужих
+    // оставляем на интерполяции с задержкой (там лаг незаметен, важнее гладкость).
+    const ownNow = this._units && this.youUnit != null ? this._units.get(this.youUnit) : null
+    if (ownNow && ownNow.alive) {
+      const k = 1 - Math.exp(-dt / Math.max(0.02, this.tickDt)) // постоянная ≈ шаг тика
+      if (!this._ownSmooth) this._ownSmooth = { x: ownNow.x, y: ownNow.y, hull: ownNow.hull }
+      else {
+        const s = this._ownSmooth
+        s.x += (ownNow.x - s.x) * k
+        s.y += (ownNow.y - s.y) * k
+        let d = (ownNow.hull - s.hull) % (Math.PI * 2)
+        if (d > Math.PI) d -= Math.PI * 2
+        if (d < -Math.PI) d += Math.PI * 2
+        s.hull += d * k
+      }
+    } else {
+      this._ownSmooth = null
     }
 
     // снапшоты сервера могли встать (реально мёртвый сокет/сеть) — тогда

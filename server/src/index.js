@@ -184,12 +184,13 @@ const httpServer = http.createServer((req, res) => {
 const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
 // сколько комната ждёт живых игроков, прежде чем добрать ботов
 const WAIT_MS = +(process.env.WAIT_MS || 8000)
-const TICK_HZ = +(process.env.TICK_HZ || 20)
+// 30Гц симуляция+поток — плавнее и отзывчивее 20Гц (меньше шаг интерполяции и
+// задержка рендера). Частота НЕ была причиной iOS-проблемы (сокет тянул и 20Гц;
+// корень был в сорванном push, лечится pull-очередью в NetGame). Тюнится env'ом:
+// TICK_HZ=60 — максимум (×2 нагрузка ради малого выигрыша), TICK_HZ=20 — экономно.
+const TICK_HZ = +(process.env.TICK_HZ || 30)
 const TICK_DT = 1 / TICK_HZ
-// частота снапшотов клиенту. По умолчанию = TICK_HZ (20Гц, плавно). Низкий
-// поток НЕ был причиной iOS-заморозки (она в сорванном push, лечится pull'ом в
-// NetGame), поэтому держим полную частоту ради плавности; механизм оставлен для
-// тонкой настройки под слабые сети (SNAP_EVERY=2 → 10Гц).
+// можно слать РЕЖЕ, чем считаем (SNAP_EVERY=2 → половина потока) для слабых сетей
 const SNAP_EVERY = Math.max(1, +(process.env.SNAP_EVERY || 1))
 const SNAP_HZ = TICK_HZ / SNAP_EVERY
 
