@@ -27,6 +27,10 @@ const CAMO = {
   woodland: 'a green and brown woodland camouflage pattern with irregular disruptive blotches',
   desert: 'a tan and sand-brown desert camouflage pattern with pale ochre blotches',
   winter: 'a white and pale-grey winter camouflage pattern with snow-grey splotches',
+  // новые «прикольные» стили (фидбек игрока): ярче и интереснее плоских пятен
+  digital: 'a modern digital pixelated camouflage pattern of small grey, green and black squares (MARPAT/multicam style), crisp pixel blocks',
+  tiger: 'a bold tiger-stripe camouflage pattern with sharp jagged black and dark-green diagonal stripes over olive base, high contrast',
+  urban: 'an urban splinter camouflage pattern of sharp angular geometric shards in slate grey, charcoal black and off-white, hard-edged facets',
 }
 
 const tanks = arg === 'all' ? ALL_TANKS : [arg]
