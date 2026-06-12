@@ -178,13 +178,14 @@ export class BattleSim {
     u.shots++
 
     const lineAngle = u.hull + this._sweepOffset(u)
+    const halfEff = this._sectorHalfEff(u) // разброс: стоя уже, на ходу шире
     let best = null
     for (const e of this.units) {
       if (!e.alive || e.team === u.team) continue
       const ang = Math.atan2(e.y - u.y, e.x - u.x)
       const dist = Math.hypot(e.x - u.x, e.y - u.y)
       if (dist > u.stats.range) continue
-      if (Math.abs(angleDiff(ang, u.hull)) > u.stats.sectorHalf + 0.01) continue
+      if (Math.abs(angleDiff(ang, u.hull)) > halfEff + 0.01) continue
       if (this._lineBlocked(u.x, u.y, e.x, e.y)) continue
       const err = Math.abs(angleDiff(ang, lineAngle))
       // снаряд летит по прямой → бьёт БЛИЖАЙШЕГО на линии (а не «ровнее по углу»
@@ -515,11 +516,18 @@ export class BattleSim {
 
   // --- геометрия ---
 
+  // разброс прицела от скорости: стоя сектор сжат до 55%, на полном ходу — 100%.
+  // Делает стрельбу на ходу менее точной (как офлайн) — стимул притормозить.
+  _sectorHalfEff(u) {
+    const k = Math.min(1, Math.abs(u.speed || 0) / u.stats.maxSpeed)
+    return u.stats.sectorHalf * (0.55 + 0.45 * k)
+  }
+
   _sweepOffset(u) {
     if (u.crippled.turret > 0) return u.sweep
     const p = (this.t % u.stats.sweepPeriod) / u.stats.sweepPeriod
     const tri = p < 0.5 ? 4 * p - 1 : 3 - 4 * p
-    u.sweep = u.stats.sectorHalf * tri
+    u.sweep = this._sectorHalfEff(u) * tri
     return u.sweep
   }
 

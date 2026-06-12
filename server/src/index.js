@@ -184,6 +184,10 @@ const httpServer = http.createServer((req, res) => {
 const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
 // сколько комната ждёт живых игроков, прежде чем добрать ботов
 const WAIT_MS = +(process.env.WAIT_MS || 8000)
+// стартовый отсчёт «3-2-1»: мир на сервере застыл, пока клиент считает (Battle.vue
+// крутит 3с). Чуть больше 3с — с поправкой на пинг игрок дочитывает раньше, чем
+// боты тронутся (а не «боты поехали на цифре 3»).
+const COUNTDOWN_MS = +(process.env.COUNTDOWN_MS || 3200)
 // 60Гц симуляция+поток — максимальная плавность/отзывчивость (шаг интерп. ~16мс,
 // задержка рендера ~20мс). Частота НЕ была причиной iOS-проблемы (сокет тянул и
 // 20Гц; корень — сорванный push, лечится pull-очередью в NetGame). Это ТЕСТОВЫЙ
@@ -506,6 +510,9 @@ function startRoom(room) {
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
   })
 
+  // стартовый отсчёт: мир застыл до этого момента (см. roomTick) — синхронно с «3-2-1»
+  room.startAt = Date.now() + COUNTDOWN_MS
+
   // ключи реконнекта: по unitId, переживают отвал сокета (для возврата в бой)
   room.rejoinKeys = new Map()
   for (const h of room.humans) {
@@ -522,6 +529,7 @@ function startRoom(room) {
       mapId: map.id,
       mode: room.mode,
       humans: room.humans.length,
+      startsIn: COUNTDOWN_MS, // длительность стартового отсчёта (мир застыл столько)
       tickHz: SNAP_HZ, // частота снапшотов (для интерполяции у клиента)
       room: room.id, // для реконнекта: куда возвращаться, если сокет умрёт
       rkey, // токен возврата в этот бой за свой юнит
@@ -557,12 +565,18 @@ function roomStats(room) {
 
 function roomTick(room) {
     const t0 = process.hrtime.bigint()
-    room.sim.step(TICK_DT)
-    // события копим между отправками: шлём реже тика, но НИ ОДНО не теряем
-    // (выстрелы/попадания/киллы с пропущенных тиков уходят со следующим снапшотом)
-    if (!room.evBuf) room.evBuf = []
-    const ev = room.sim.takeEvents()
-    if (ev.length) room.evBuf.push(...ev)
+    // СТАРТОВЫЙ ОТСЧЁТ: клиент крутит «3-2-1» (Battle.vue), и пока он идёт — мир
+    // на сервере ЗАСТЫЛ (боты не едут и не стреляют, время t не идёт). Снапшоты
+    // всё равно шлём — поле видно за оверлеем отсчёта. Размораживаемся в startAt.
+    const warming = room.startAt && Date.now() < room.startAt
+    if (!warming) {
+      room.sim.step(TICK_DT)
+      // события копим между отправками: шлём реже тика, но НИ ОДНО не теряем
+      // (выстрелы/попадания/киллы с пропущенных тиков уходят со следующим снапшотом)
+      if (!room.evBuf) room.evBuf = []
+      const ev = room.sim.takeEvents()
+      if (ev.length) room.evBuf.push(...ev)
+    }
     room.sinceSnap = (room.sinceSnap || 0) + 1
 
     if (room.sinceSnap >= SNAP_EVERY || room.sim.matchOver) {

@@ -622,6 +622,16 @@ export class NetGame {
     return units.find((u) => u.id === this.youUnit) || null
   }
 
+  // разброс прицела от скорости: стоя сектор сжат до 55%, на ходу — до 100%
+  // (та же формула, что на сервере; скорость берём из предсказанного своего танка
+  // → конус «дышит» мгновенно при разгоне/торможении). Совпадает с серверным
+  // выстрелом, т.к. амплитуда у обоих почти равна (предикт держит скорость близко).
+  _sectorHalfEff() {
+    const v = this._pred ? Math.abs(this._pred.speed || 0) : 0
+    const k = Math.min(1, v / (this.cls.maxSpeed || 1))
+    return this.cls.sectorHalf * (0.55 + 0.45 * k)
+  }
+
   // линия сведения — та же формула, что на сервере (по t снапшота)
   _sweepOffset() {
     if (this.you && this.you.crippled && this.you.crippled.turret > 0) {
@@ -630,7 +640,7 @@ export class NetGame {
     const t = this.cur ? this.cur.t : 0
     const p = (t % this.cls.sweepPeriod) / this.cls.sweepPeriod
     const tri = p < 0.5 ? 4 * p - 1 : 3 - 4 * p
-    this.sweepFrozen = this.cls.sectorHalf * tri
+    this.sweepFrozen = this._sectorHalfEff() * tri
     return this.sweepFrozen
   }
 
@@ -816,7 +826,7 @@ export class NetGame {
     // сектор и линия сведения у живого своего танка
     const aliveSelf = own && own.alive
     if (aliveSelf) {
-      const half = this.cls.sectorHalf
+      const half = this._sectorHalfEff() // разброс дышит со скоростью (стоя уже, на ходу шире)
       const L = this.cls.vision // длина прицела = дальность обнаружения (совпадает с туманом)
       g.moveTo(ox, oy)
       g.arc(ox, oy, L, ohull - half, ohull + half)
