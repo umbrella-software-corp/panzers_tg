@@ -104,10 +104,11 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
               res()
             } else if (m.type === 'state') {
               client.stateN = (client.stateN || 0) + 1
-              client.lastState = m
+              client.lastState = m // NetGame тянет pull'ом из рендер-цикла
               if (client.onMessage) client.onMessage(m)
-            } else if (m.type === 'match-end' && client.onMessage) {
-              client.onMessage(m)
+            } else if (m.type === 'match-end') {
+              client.lastEnd = m // буферим — NetGame подхватит даже без push
+              if (client.onMessage) client.onMessage(m)
             }
           }
           sock.onerror = () => {
@@ -141,9 +142,10 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
       }
       if (msg.type === 'state') {
         client.stateN = (client.stateN || 0) + 1
-        client.lastState = msg // буфер: NetGame подпишется позже и сразу проиграет его
+        client.lastState = msg // буфер: NetGame ТЯНЕТ его из рендер-цикла (pull), даже если push сорвался
         if (client.stateN === 1) log('первый снапшот state получен (t=' + msg.t + ', подписчик ' + (client.onMessage ? 'есть' : 'ещё нет') + ')')
       }
+      if (msg.type === 'match-end') client.lastEnd = msg // всегда буферим — NetGame подхватит pull'ом
       if (msg.type === 'init') {
         client.youId = msg.id
         client.waitMs = msg.waitMs
@@ -162,11 +164,10 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
         if (msg.rkey) client.rkey = msg.rkey
         log('match-start получен (youUnit=' + msg.youUnit + ', map=' + msg.mapId + ', room=' + msg.room + ')')
         onStart && onStart(msg)
-      } else if (msg.type === 'match-end' && !client.onMessage) {
-        // бой кончился в окне между match-start и созданием NetGame (комната
-        // умерла на старте / сервер ушёл на рестарт) — буферизуем, как и state,
-        // иначе клиент навсегда останется с замёрзшим первым кадром
-        client.lastEnd = msg
+      } else if (msg.type === 'match-end') {
+        // уже забуферено в client.lastEnd выше (NetGame подхватит pull'ом, даже
+        // если push не дошёл) — push дублируем для мгновенности, _onMessage дедупит
+        if (client.onMessage) client.onMessage(msg)
         log('match-end получен ДО подписчика — буферизую')
       } else if (client.onMessage) {
         client.onMessage(msg)
