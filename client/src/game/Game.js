@@ -277,7 +277,7 @@ export class Game {
       resizeTo: container,
       background: 0x0e1116,
       antialias: true,
-      resolution: window.devicePixelRatio || 1,
+      resolution: Math.min(2, window.devicePixelRatio || 1), // кап 2× на retina: меньше работы GPU, ровнее кадры
       autoDensity: true,
     })
     container.appendChild(this.app.canvas)

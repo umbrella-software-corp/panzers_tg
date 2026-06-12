@@ -92,11 +92,6 @@ export class NetGame {
     this.onStall = null // связь ОКОНЧАТЕЛЬНО умерла посреди боя → Battle откатит в офлайн
     this.onReconnecting = () => {} // снапшоты просели, но сокет жив → «восстанавливаем связь» (НЕ откат)
     this._reconnecting = false
-    // диагностика приёма на iOS (временно, для отладки): снапшоты, успешные/
-    // провальные реконнекты — Battle.vue показывает на экране
-    this._seen = 0
-    this._rcOk = 0
-    this._rcFail = 0
     this.onSaved = () => {} // в PvP брони/рикошетов нет
     this._gridDrawn = false
     this._wantedTex = new Set()
@@ -134,12 +129,10 @@ export class NetGame {
       .reconnect()
       .then(() => {
         this._recoverInFlight = false
-        this._rcOk++ // диагностика: реконнект подтверждён сервером
         this.recvAt = performance.now() // дать кадр на первые снапшоты нового сокета
       })
       .catch((e) => {
         this._recoverInFlight = false
-        this._rcFail++ // диагностика: реконнект не удался
         this._recoverCooldownUntil = performance.now() + 1200 // пауза перед следующей попыткой
         console.warn('[net] вернуться не удалось:', e && e.message)
         if (this._reconnectTries >= 3 && this.onStall) {
@@ -187,7 +180,6 @@ export class NetGame {
       this.prev = this.cur
       this.cur = msg
       this.recvAt = performance.now()
-      this._seen++ // диагностика: сколько снапшотов реально дошло до рендера
       if (this._reconnectTries) this._reconnectTries = 0 // поток здоров — следующий затык получит свежие 3 попытки
       if (msg.you) this.you = msg.you
       this._units = new Map(msg.units.map((u) => [u.id, u]))
@@ -303,7 +295,10 @@ export class NetGame {
       resizeTo: container,
       background: 0x0e1116,
       antialias: true,
-      resolution: window.devicePixelRatio || 1,
+      // на retina-iPhone devicePixelRatio=3 → ×9 пикселей, fps проседает и
+      // движение дёргается. Кап до 2 почти вдвое снижает работу GPU (на телефоне
+      // 2× и 3× визуально неотличимы), кадры ровнее → плавнее.
+      resolution: Math.min(2, window.devicePixelRatio || 1),
       autoDensity: true,
     })
     container.appendChild(this.app.canvas)
@@ -552,7 +547,7 @@ export class NetGame {
     const buf = this._snapBuf
     if (buf && buf.length) {
       const latest = buf[buf.length - 1].t
-      const delay = this.tickDt * 1.5
+      const delay = this.tickDt * 2 // ~100мс буфер: запас под джиттер сети, без рывков
       if (this._renderT == null || this._renderT > latest || this._renderT < latest - this.tickDt * 8) {
         this._renderT = latest - delay // (ре)синхрон: старт / после столла / убегание
       } else {
