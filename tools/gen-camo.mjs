@@ -27,15 +27,20 @@ const CAMO = {
   woodland: 'a green and brown woodland camouflage pattern with irregular disruptive blotches',
   desert: 'a tan and sand-brown desert camouflage pattern with pale ochre blotches',
   winter: 'a white and pale-grey winter camouflage pattern with snow-grey splotches',
-  // новые «прикольные» стили (фидбек игрока): ярче и интереснее плоских пятен
-  digital: 'a modern digital pixelated camouflage pattern of small grey, green and black squares (MARPAT/multicam style), crisp pixel blocks',
-  tiger: 'a bold tiger-stripe camouflage pattern with sharp jagged black and dark-green diagonal stripes over olive base, high contrast',
-  urban: 'an urban splinter camouflage pattern of sharp angular geometric shards in slate grey, charcoal black and off-white, hard-edged facets',
+  // новые «прикольные» стили (фидбек игрока): КРУПНЫЕ органические узоры (полосы/
+  // пятна) — flux их тянет; мелкую геометрию (пиксель/осколки) сглаживает, не берём
+  tiger: 'bold high-contrast tiger-stripe camouflage — thick jagged black stripes painted over bright olive-green, large bold stripes',
+  predator: 'aggressive camouflage of large bold disruptive blotches in jet black and bright acid lime-green, very high contrast, big patches',
+  magma: 'a dark charcoal-grey base with large bold glowing molten orange and red lava blotches and cracks, high contrast, big fiery patches',
 }
 
 const tanks = arg === 'all' ? ALL_TANKS : [arg]
 const camos = camoArgs.length ? camoArgs : Object.keys(CAMO)
-const CONCURRENCY = 3
+// при балансе Replicate <$5 лимит = 6 запросов/мин, burst 1 → ставь CONCURRENCY=1
+// DELAY_MS=11000, чтобы не ловить throttle (429). По умолчанию — быстро (баланс >$5).
+const CONCURRENCY = +(process.env.CONCURRENCY || 3)
+const DELAY_MS = +(process.env.DELAY_MS || 0)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const outDir = new URL('../client/public/sprites/camo/', import.meta.url)
 await mkdir(outDir, { recursive: true })
@@ -55,12 +60,15 @@ async function gen(tankId, camoId) {
     console.log(`skip ${tankId}_${camoId} (есть)`)
     return true
   }
+  if (DELAY_MS) await sleep(DELAY_MS) // троттлинг рейт-лимита (только перед реальным запросом)
   const tankBuf = await readFile(new URL(`../client/public/sprites/tanks/${tankId}.png`, import.meta.url))
   const dataUri = `data:image/png;base64,${tankBuf.toString('base64')}`
   const prompt =
-    `Repaint only the tank's hull and turret with ${CAMO[camoId]}. ` +
-    `Keep the exact same tank shape, size, orientation and top-down camera angle. ` +
-    `Keep the solid magenta background completely unchanged. Photorealistic military vehicle.`
+    `Change ONLY the paint of the tank's hull and turret to ${CAMO[camoId]}. ` +
+    `This is a STRICT orthographic top-down plan view photographed from directly above (satellite view), ` +
+    `the gun barrel points straight down in the image. Do NOT rotate, tilt, or redraw the tank in 3D, ` +
+    `isometric or perspective — keep the exact same flat top-down angle, silhouette, size and every hatch ` +
+    `and panel in place. Keep the solid magenta background completely unchanged.`
   const res = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Prefer: 'wait=60' },

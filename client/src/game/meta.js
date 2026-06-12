@@ -195,6 +195,9 @@ export const CAMOS = [
   { id: 'woodland', name: 'Лес', short: 'ЛЕС', cost: 25 },
   { id: 'desert', name: 'Пустыня', short: 'ПУСТ', cost: 25 },
   { id: 'winter', name: 'Зима', short: 'ЗИМА', cost: 25 },
+  { id: 'tiger', name: 'Тигр', short: 'ТИГР', cost: 40 },
+  { id: 'predator', name: 'Хищник', short: 'ХИЩ', cost: 40 },
+  { id: 'magma', name: 'Магма', short: 'МАГМА', cost: 40 },
 ]
 export const CAMO_BY_ID = Object.fromEntries(CAMOS.map((c) => [c.id, c]))
 export const CAMO_IDS = CAMOS.map((c) => c.id).filter(Boolean)
