@@ -7,7 +7,9 @@ import { profile, battleEarnedMedals } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID } from '../game/meta.js'
 import PzIcon from './ui/PzIcon.vue'
 import Medal from './ui/Medal.vue'
+import MedalSheet from './MedalSheet.vue'
 
+const selMedal = ref(null) // открытая модалка медали (тап по значку)
 const props = defineProps({
   // снапшот матча из Battle: result/kills/deaths/damageDealt/accuracy/allyScore/enemyScore
   state: { type: Object, required: true },
@@ -128,7 +130,7 @@ const medals = computed(() =>
         <div v-if="medals.length" class="medals-strip">
           <div class="pz-display medals-cap">ПОЛУЧЕНЫ МЕДАЛИ</div>
           <div class="medals-row">
-            <div v-for="m in medals" :key="m.id" class="medal-item">
+            <div v-for="m in medals" :key="m.id" class="medal-item" @click="selMedal = { def: m.def, count: Math.max(1, profile.medals[m.id] || 0) }">
               <Medal :medal="m.def" :size="46" :is-new="m.isNew" />
               <div class="medal-name">{{ m.def.name }}</div>
             </div>
@@ -163,6 +165,11 @@ const medals = computed(() =>
       <button class="pz-cta pz-cta--hazard" @click="emit('rematch')">ЕЩЁ БОЙ</button>
       <button class="pz-btn2" @click="emit('hangar')">В ангар</button>
     </div>
+
+    <!-- модалка медали: что это и как получить -->
+    <transition name="pz-fade">
+      <MedalSheet v-if="selMedal" :medal="selMedal.def" :count="selMedal.count" @close="selMedal = null" />
+    </transition>
   </div>
 </template>
 
@@ -192,6 +199,8 @@ const medals = computed(() =>
   flex-direction: column;
   align-items: center;
   width: 62px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 .medal-name {
   margin-top: 5px;

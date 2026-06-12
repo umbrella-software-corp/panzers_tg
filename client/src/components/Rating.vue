@@ -12,9 +12,11 @@ import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PlayerCard from './PlayerCard.vue'
 import Medal from './ui/Medal.vue'
+import MedalSheet from './MedalSheet.vue'
 
 const emit = defineEmits(['go'])
 const tab = ref(0)
+const selMedal = ref(null) // открытая модалка медали (витрина)
 const TABS = ['ПРОФИЛЬ', 'РЕЙТИНГ', 'КЛАНЫ', 'ТУРНИРЫ']
 const renaming = ref(false)
 
@@ -216,7 +218,7 @@ const fmtTime = (t) => {
       <section v-if="tab === 0">
         <div class="pz-stencil-h">МЕДАЛИ <span style="color: var(--amber)">{{ medalsEarnedCount() }}</span><span style="color: var(--ink-faint)">/{{ medalsTotal() }}</span></div>
         <div class="medal-shelf">
-          <div v-for="m in medalShelf" :key="m.def.id" class="shelf-item" :title="m.def.desc">
+          <div v-for="m in medalShelf" :key="m.def.id" class="shelf-item" @click="haptic('select'); selMedal = m">
             <Medal :medal="m.def" :count="m.count" :size="46" :locked="m.count === 0" />
             <div class="shelf-name" :class="{ off: m.count === 0 }">{{ m.def.name }}</div>
           </div>
@@ -265,6 +267,11 @@ const fmtTime = (t) => {
     <!-- карточка профиля игрока -->
     <transition name="pz-fade">
       <PlayerCard v-if="viewing" :player="viewing" @close="viewing = null" />
+    </transition>
+
+    <!-- модалка медали: что это и как получить -->
+    <transition name="pz-fade">
+      <MedalSheet v-if="selMedal" :medal="selMedal.def" :count="selMedal.count" @close="selMedal = null" />
     </transition>
   </div>
 </template>
@@ -413,6 +420,12 @@ const fmtTime = (t) => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease;
+}
+.shelf-item:active {
+  transform: scale(0.92);
 }
 .shelf-name {
   margin-top: 5px;

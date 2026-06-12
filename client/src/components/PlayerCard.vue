@@ -1,13 +1,15 @@
 <script setup>
 // Карточка профиля игрока (модалка): рейтинг, место, бои/винрейт/фраги,
 // любимая техника. Медали добавятся, когда будет система медалей.
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { TANK_BY_ID, MEDALS, rankByBattles, ratingBand } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
 import Medal from './ui/Medal.vue'
+import MedalSheet from './MedalSheet.vue'
 
 const props = defineProps({ player: { type: Object, required: true } })
 const emit = defineEmits(['close'])
+const selMedal = ref(null) // открытая модалка медали
 const p = computed(() => props.player)
 const rank = computed(() => rankByBattles(p.value.battles))
 const winrate = computed(() => (p.value.battles ? Math.round((p.value.wins / p.value.battles) * 100) : 0))
@@ -49,11 +51,16 @@ const medals = computed(() => {
       <div class="medals">
         <div class="pz-pixel label">МЕДАЛИ <span v-if="medals.length" style="color: var(--amber)">{{ medals.length }}</span></div>
         <div v-if="medals.length" class="medal-grid">
-          <Medal v-for="m in medals" :key="m.def.id" :medal="m.def" :count="m.count" :size="42" />
+          <Medal v-for="m in medals" :key="m.def.id" :medal="m.def" :count="m.count" :size="42" style="cursor: pointer" @click="selMedal = m" />
         </div>
         <div v-else style="font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 500">пока нет — впереди бои и подвиги</div>
       </div>
     </div>
+
+    <!-- модалка медали поверх карточки -->
+    <transition name="pz-fade">
+      <MedalSheet v-if="selMedal" :medal="selMedal.def" :count="selMedal.count" @close="selMedal = null" />
+    </transition>
   </div>
 </template>
 
