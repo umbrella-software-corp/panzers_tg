@@ -1412,6 +1412,7 @@ export class Game {
       })),
       classId: this.cls.id,
       damageDealt: Math.round(this.damageDealt),
+      spotted: this.spotScored.size, // засветов за бой (для боевого рейтинга)
       damageLog: [...this.damageLog.values()]
         .map((e) => ({ ...e, dmg: Math.round(e.dmg) }))
         .sort((a, b) => b.dmg - a.dmg),

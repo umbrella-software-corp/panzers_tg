@@ -109,6 +109,16 @@ if (typeof profile.stats.sumDmg !== 'number') {
   s.expFrag = (e.frag || 1) * n
   s.wn8 = battleScore(s)
 }
+// засвет в рейтинг (добавлен позже) — досидим агрегат тем, у кого его нет ещё.
+// Ретроспективно засвет не восстановить (в истории его нет) → стартуем с 0 факта,
+// ожидаемое по числу боёв; дальше копится точно из боя.
+if (typeof profile.stats.expSpot !== 'number') {
+  const s = profile.stats
+  s.sumSpot = s.sumSpot || 0
+  const t = TANK_BY_ID[profile.selectedTank] || TANK_BY_ID.t26
+  s.expSpot = (expectedBattle(t).spot || 1) * Math.max(s.battles || 0, 1)
+  s.wn8 = battleScore(s)
+}
 if (!profile.daily || typeof profile.daily !== 'object') profile.daily = { last: '', streak: 0 }
 if (!Array.isArray(profile.history)) profile.history = [] // последние бои
 if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } // экипаж один на все танки
@@ -435,8 +445,10 @@ export function addBattleResult(result, kills = 0, extra = {}) {
   const prevWn8 = s.wn8 || 0
   s.sumDmg = (s.sumDmg || 0) + (extra.damage || 0)
   s.sumFrag = (s.sumFrag || 0) + kills
+  s.sumSpot = (s.sumSpot || 0) + (extra.spot || 0)
   s.expDmg = (s.expDmg || 0) + exp.dmg
   s.expFrag = (s.expFrag || 0) + exp.frag
+  s.expSpot = (s.expSpot || 0) + exp.spot
   s.wn8 = battleScore(s)
   s.lastWn8Delta = s.wn8 - prevWn8 // для показа изменения в донесении
   // повышение в звании: награда за каждую новую ступень (обычно одну за бой)

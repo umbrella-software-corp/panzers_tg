@@ -54,6 +54,7 @@ const state = shallowRef({
   caps: [],
   classId: DEFAULT_CLASS,
   damageDealt: 0,
+  spotted: 0,
   matchTime: 0,
   matchOver: false,
   result: null,
@@ -168,7 +169,7 @@ game.onState = (s) => {
     phase.value = 'result'
     if (!statsCounted) {
       statsCounted = true
-      addBattleResult(s.result, s.kills, { score: displayScore.value, tank: tankName.value, damage: s.damageDealt })
+      addBattleResult(s.result, s.kills, { score: displayScore.value, tank: tankName.value, damage: s.damageDealt, spot: s.spotted || 0 })
     }
   }
 }

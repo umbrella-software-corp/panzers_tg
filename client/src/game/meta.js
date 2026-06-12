@@ -248,19 +248,22 @@ export function expectedBattle(tank) {
   return {
     dmg: cs.damage * hits, // ожидаемый урон ≈ урон_выстрела × попадания (растёт с тиром)
     frag: cls === 'light' ? 0.7 : cls === 'heavy' ? 0.95 : 0.85,
+    spot: cls === 'light' ? 2.6 : cls === 'medium' ? 1.6 : 1.0, // лёгкие светят больше — им засвет важнее
   }
 }
 
-// агрегаты статистики: { battles, wins, sumDmg, sumFrag, expDmg, expFrag } → рейтинг
+// агрегаты статистики: { battles, wins, sumDmg/Frag/Spot, expDmg/Frag/Spot } → рейтинг
 export function battleScore(agg) {
   if (!agg || !agg.battles) return 0
   const rDMG = agg.expDmg > 0 ? agg.sumDmg / agg.expDmg : 0
   const rFRAG = agg.expFrag > 0 ? agg.sumFrag / agg.expFrag : 0
+  const rSPOT = agg.expSpot > 0 ? (agg.sumSpot || 0) / agg.expSpot : 0
   const rWIN = agg.wins / agg.battles / 0.5 // ожидаемый винрейт 50%
   const rDMGc = Math.max(0, (rDMG - 0.22) / (1 - 0.22))
   const rFRAGc = Math.max(0, Math.min(rDMGc + 0.2, (rFRAG - 0.12) / (1 - 0.12)))
+  const rSPOTc = Math.max(0, Math.min(rDMGc + 0.1, (rSPOT - 0.38) / (1 - 0.38)))
   const rWINc = Math.max(0, (rWIN - 0.71) / (1 - 0.71))
-  return Math.round(980 * rDMGc + 210 * rDMGc * rFRAGc + 145 * Math.min(1.8, rWINc))
+  return Math.round(980 * rDMGc + 210 * rDMGc * rFRAGc + 155 * rFRAGc * rSPOTc + 145 * Math.min(1.8, rWINc))
 }
 
 // градации рейтинга — подпись и цвет (наша шкала, откалибрована под expectedBattle)

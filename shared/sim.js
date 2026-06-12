@@ -120,6 +120,8 @@ export class BattleSim {
       damageDealt: 0,
       shots: 0,
       hits: 0,
+      spots: 0, // засветов за бой (для боевого рейтинга)
+      spotSeen: new Set(), // id врагов, чей первый засвет уже зачтён
       // боты
       botDamage: Math.round(stats.damage * BOT_DMG_MULT),
       botSpeed: stats.maxSpeed * BOT_SPEED_MULT,
@@ -445,6 +447,12 @@ export class BattleSim {
             : BOT_SPOT_VISION
           if (Math.hypot(e.x - u.x, e.y - u.y) <= vis && !this._lineBlocked(u.x, u.y, e.x, e.y)) {
             seen.add(e.id)
+            // кредит за РАЗВЕДКУ человеку (люди идут в units первыми → первый увидевший
+            // = человек, если враг вообще в чьём-то людском обзоре). Боту засвет не в зачёт.
+            if (u.human && !u.spotSeen.has(e.id)) {
+              u.spotSeen.add(e.id)
+              u.spots++
+            }
             break
           }
         }
@@ -620,6 +628,7 @@ export class BattleSim {
       shots: u.shots,
       hits: u.hits,
       damageDealt: Math.round(u.damageDealt),
+      spotted: u.spots, // засветов за бой (для боевого рейтинга)
     }
   }
 }

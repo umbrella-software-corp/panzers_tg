@@ -1065,6 +1065,7 @@ export class NetGame {
       })),
       classId: this.cls.id,
       damageDealt: you.damageDealt || 0,
+      spotted: you.spotted || 0, // засветов за бой (боевой рейтинг)
       damageLog: [...this.damageLog.values()].sort((a, b) => b.dmg - a.dmg),
       scoreboard: this._scoreboard(),
       matchTime: this.cur ? this.cur.matchTime : 0,
