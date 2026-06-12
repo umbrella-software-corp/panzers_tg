@@ -56,7 +56,9 @@ function saveKey() { localStorage.setItem('pz.adminKey', $('key').value.trim());
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
 const dt = (ts) => ts ? new Date(ts).toLocaleString('ru-RU') : '—'
 const table = (heads, rows) => rows.length
-  ? '<table><tr>' + heads.map((h) => '<th>' + h + '</th>').join('') + '</tr>' +
+  // заголовок числовой колонки тоже выравниваем вправо — чтобы «КРЕДИТЫ» стоял
+  // над числом «700», а не уезжал влево (тип берём из первой строки данных)
+  ? '<table><tr>' + heads.map((h, i) => '<th' + (typeof rows[0][i] === 'number' ? ' class="num"' : '') + '>' + h + '</th>').join('') + '</tr>' +
     rows.map((r) => '<tr>' + r.map((c) => '<td' + (typeof c === 'number' ? ' class="num"' : '') + '>' + (typeof c === 'number' ? c.toLocaleString('ru-RU') : c) + '</td>').join('') + '</tr>').join('') + '</table>'
   : '<div class="muted">пока пусто</div>'
 
