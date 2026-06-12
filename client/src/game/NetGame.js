@@ -440,9 +440,10 @@ export class NetGame {
     this.tankLayer = new Container()
     this.fxLayer = new Container()
     if (this.tex.ground) {
+      const th = this.map.theme || {}
       this.groundTile = new TilingSprite({ texture: this.tex.ground, width: this.mapSize, height: this.mapSize })
-      this.groundTile.tileScale.set(0.55)
-      if (this.map.tint) this.groundTile.tint = this.map.tint
+      this.groundTile.tileScale.set(th.groundScale || 0.55)
+      this.groundTile.tint = th.ground || this.map.tint || 0xffffff
       this.world.addChild(this.groundTile)
     }
     this.world.addChild(this.bg, this.terrLayer, this.terrain, this.markGfx, this.tankLayer, this.gfx, this.fxLayer)
@@ -1179,12 +1180,23 @@ export class NetGame {
   _drawMap() {
     const g = this.bg
     g.clear()
+    const th = this.map.theme || {}
     if (!this.groundTile) g.rect(0, 0, this.mapSize, this.mapSize).fill(0x10141b)
+    // тематический слой поверх земли: заливка (асфальт/снег — то, что тинтом по
+    // оливковой текстуре не выходит) + улицы города
+    if (th.overlay != null) g.rect(0, 0, this.mapSize, this.mapSize).fill({ color: th.overlay, alpha: th.overlayAlpha ?? 0.5 })
+    if (this.map.roads && this.map.roads.length) {
+      const c = this.mapSize / 2
+      const sc = this.mapSize / MAP_SIZE
+      for (const r of this.map.roads) {
+        g.rect(c + (r.dx - r.w / 2) * sc, c + (r.dy - r.h / 2) * sc, r.w * sc, r.h * sc).fill({ color: th.road ?? 0x555b64, alpha: 0.5 })
+      }
+    }
     const step = 80
     for (let x = 0; x <= this.mapSize; x += step) g.moveTo(x, 0).lineTo(x, this.mapSize)
     for (let y = 0; y <= this.mapSize; y += step) g.moveTo(0, y).lineTo(this.mapSize, y)
-    g.stroke({ width: 1, color: 0xffffff, alpha: 0.05 })
-    g.rect(0, 0, this.mapSize, this.mapSize).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
+    g.stroke({ width: 1, color: th.grid ?? 0xffffff, alpha: th.gridAlpha ?? 0.05 })
+    g.rect(0, 0, this.mapSize, this.mapSize).stroke({ width: 6, color: th.edge ?? 0xffb000, alpha: 0.25 })
   }
 
   _terrainPatch(texName, x, y, r) {

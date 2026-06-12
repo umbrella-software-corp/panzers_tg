@@ -9,12 +9,23 @@
 //
 // bases: [юг, dy>0; север, dy<0] — команды раздаются в Game по жребию стороны.
 // Полосы спавна (dy ≈ ±560, |dx| ≲ 450) держим свободными от непроходимого.
+//
+// theme: визуальная тема земли — чтобы карты НЕ были на одно лицо.
+//   ground      — тинт тайла земли (PIXI тинт только затемняет каналы; земля
+//                 оливковая → тёплая палитра: зелень/охра/песок)
+//   groundScale — масштаб тайла (зерно текстуры: мельче/крупнее)
+//   overlay/overlayAlpha — заливка поверх земли (серый асфальт/снег — то, что
+//                 тинтом не вышло бы, т.к. синего в текстуре почти нет)
+//   grid/gridAlpha — цвет координатной сетки;  edge — цвет рамки карты
+// roads: чисто визуальные полосы улиц (dx,dy,w,h как у стен) — рисуются поверх
+//   земли цветом theme.road, без коллизии. Дают «улочки/город».
 
 export const MAPS = [
   {
     id: 'polygon',
     name: 'Полигон',
     desc: 'лес, озеро и руины',
+    theme: { ground: 0xbecb86, groundScale: 0.55, grid: 0xffffff, gridAlpha: 0.05, edge: 0x9bbf5a },
     obstacles: [
       // — лес (северо-запад): плотный массив кустов
       { dx: -700, dy: -460, r: 96, kind: 'bush' },
@@ -77,6 +88,12 @@ export const MAPS = [
     id: 'city',
     name: 'Каменный город',
     desc: 'кварталы и баррикады',
+    theme: { ground: 0xb8bcc2, groundScale: 0.5, overlay: 0x474c54, overlayAlpha: 0.55, road: 0x595f68, grid: 0x9fb4c8, gridAlpha: 0.07, edge: 0x6f8aa8 },
+    // осевые улицы (крест через центр) — «город», а не голое поле
+    roads: [
+      { dx: 0, dy: 0, w: 180, h: 2400 },
+      { dx: 0, dy: 0, w: 2400, h: 180 },
+    ],
     obstacles: [
       // обломки на осевой улице
       { dx: 0, dy: 430, r: 70, kind: 'block' },
@@ -119,6 +136,7 @@ export const MAPS = [
     id: 'lakes',
     name: 'Озёрный край',
     desc: 'бои за переправы',
+    theme: { ground: 0xa8c87e, groundScale: 0.6, grid: 0x7fc8ff, gridAlpha: 0.06, edge: 0x37a6d6 },
     obstacles: [
       // два больших озера держат центр, проходы — по диагоналям
       { dx: -430, dy: 0, r: 200, kind: 'water' },
@@ -155,6 +173,7 @@ export const MAPS = [
     id: 'forest',
     name: 'Лесная глушь',
     desc: 'засады в зарослях',
+    theme: { ground: 0x9fb968, groundScale: 0.5, overlay: 0x223018, overlayAlpha: 0.22, grid: 0x9fffb0, gridAlpha: 0.04, edge: 0x3a8a3a },
     obstacles: [
       // северо-западный массив
       { dx: -520, dy: -380, r: 110, kind: 'bush' },
@@ -201,6 +220,7 @@ export const MAPS = [
     id: 'heights',
     name: 'Высота 203',
     desc: 'гряды холмов, тесные проходы',
+    theme: { ground: 0xcdb486, groundScale: 0.65, overlay: 0x4a3c24, overlayAlpha: 0.14, grid: 0xffffff, gridAlpha: 0.05, edge: 0xb88a44 },
     obstacles: [
       // холмистые гряды по диагоналям
       { dx: -550, dy: -300, r: 140, kind: 'hill' },
@@ -238,7 +258,7 @@ export const MAPS = [
     id: 'desert',
     name: 'Пустынный рубеж',
     desc: 'форт посреди песков',
-    tint: 0xd9bd8a, // песчаный оттенок земли
+    theme: { ground: 0xe8cf96, groundScale: 0.72, grid: 0xffe6a8, gridAlpha: 0.05, edge: 0xd6a050 },
     size: 3200, // большая открытая карта — простор для манёвра
     obstacles: [
       // скальные выходы
@@ -279,6 +299,12 @@ export const MAPS = [
     id: 'ruins',
     name: 'Разрушенный город',
     desc: 'кварталы в руинах',
+    theme: { ground: 0xc2b294, groundScale: 0.5, overlay: 0x4c463c, overlayAlpha: 0.5, road: 0x6a6256, grid: 0xc8b8a4, gridAlpha: 0.07, edge: 0x9a8a66 },
+    // разбитые улицы вдоль осей
+    roads: [
+      { dx: 0, dy: 0, w: 160, h: 2400 },
+      { dx: 0, dy: 0, w: 2400, h: 160 },
+    ],
     obstacles: [
       // зелень по углам — заросшие дворы
       { dx: -720, dy: -300, r: 90, kind: 'bush' },
@@ -324,6 +350,7 @@ export const MAPS = [
     id: 'crossing',
     name: 'Речная переправа',
     desc: 'бои за проходы',
+    theme: { ground: 0xaeb878, groundScale: 0.55, grid: 0x7fc8ff, gridAlpha: 0.06, edge: 0x4a96c6 },
     obstacles: [
       // река поперёк центра с двумя проходами (между водными массивами)
       { dx: -850, dy: 0, r: 150, kind: 'water' },
@@ -362,6 +389,7 @@ export const MAPS = [
     id: 'meadow',
     name: 'Широкое поле',
     desc: 'простор и дальний бой',
+    theme: { ground: 0xdee0a2, groundScale: 0.72, grid: 0xffffff, gridAlpha: 0.05, edge: 0xc6d45c },
     size: 3200, // большая карта — простор для манёвра (особенно «на уничтожение»)
     obstacles: [
       // редкие холмы — единственные крупные укрытия
@@ -394,6 +422,103 @@ export const MAPS = [
       { id: 'A', dx: -600, dy: 0, r: 130 },
       { id: 'B', dx: 0, dy: 0, r: 140 },
       { id: 'C', dx: 600, dy: 0, r: 130 },
+    ],
+  },
+
+  {
+    id: 'downtown',
+    name: 'Городские кварталы',
+    desc: 'тесные улицы и дома',
+    theme: { ground: 0xb0b4ba, groundScale: 0.5, overlay: 0x3f444c, overlayAlpha: 0.6, road: 0x555b64, grid: 0x9fb4c8, gridAlpha: 0.07, edge: 0x6f8aa8 },
+    // сетка улиц: крест через центр + два продольных проезда (между кварталами)
+    roads: [
+      { dx: 0, dy: 0, w: 210, h: 2400 },
+      { dx: 0, dy: 0, w: 2400, h: 210 },
+      { dx: -460, dy: 0, w: 150, h: 2400 },
+      { dx: 460, dy: 0, w: 150, h: 2400 },
+    ],
+    obstacles: [
+      // скверы и склады во дворах
+      { dx: -230, dy: -230, r: 60, kind: 'bush' },
+      { dx: 230, dy: 230, r: 60, kind: 'bush' },
+      { dx: 230, dy: -230, r: 56, kind: 'box' },
+      { dx: -230, dy: 230, r: 56, kind: 'box' },
+      // завалы на дальних флангах (за точками A/C)
+      { dx: -760, dy: 0, r: 70, kind: 'block' },
+      { dx: 760, dy: 0, r: 70, kind: 'block' },
+    ],
+    walls: [
+      // четыре угловых КВАРТАЛА по 2×2 дома — перекрёстки/проулки между ними,
+      // осевые улицы (точки A-B-C на горизонтали) держим открытыми
+      { dx: -520, dy: -400, w: 100, h: 100 },
+      { dx: -400, dy: -400, w: 100, h: 100 },
+      { dx: -520, dy: -280, w: 100, h: 100 },
+      { dx: -400, dy: -280, w: 100, h: 100 },
+      { dx: 400, dy: -400, w: 100, h: 100 },
+      { dx: 520, dy: -400, w: 100, h: 100 },
+      { dx: 400, dy: -280, w: 100, h: 100 },
+      { dx: 520, dy: -280, w: 100, h: 100 },
+      { dx: -520, dy: 280, w: 100, h: 100 },
+      { dx: -400, dy: 280, w: 100, h: 100 },
+      { dx: -520, dy: 400, w: 100, h: 100 },
+      { dx: -400, dy: 400, w: 100, h: 100 },
+      { dx: 400, dy: 280, w: 100, h: 100 },
+      { dx: 520, dy: 280, w: 100, h: 100 },
+      { dx: 400, dy: 400, w: 100, h: 100 },
+      { dx: 520, dy: 400, w: 100, h: 100 },
+      // баррикады на продольной улице у площади (разрушаемые) — N/S подход к B
+      { dx: 0, dy: -150, w: 150, h: 40, hp: 2 },
+      { dx: 0, dy: 150, w: 150, h: 40, hp: 2 },
+    ],
+    bases: [
+      { dx: 0, dy: 800, r: 160 },
+      { dx: 0, dy: -800, r: 160 },
+    ],
+    caps: [
+      { id: 'A', dx: -560, dy: 0, r: 120 },
+      { id: 'B', dx: 0, dy: 0, r: 135 },
+      { id: 'C', dx: 560, dy: 0, r: 120 },
+    ],
+  },
+
+  {
+    id: 'winter',
+    name: 'Зимний фронт',
+    desc: 'снег, лёд и сосны',
+    theme: { ground: 0xeef1f5, groundScale: 0.55, overlay: 0xe2ecf5, overlayAlpha: 0.62, grid: 0xbfd4e8, gridAlpha: 0.06, edge: 0x9fc0e0 },
+    obstacles: [
+      // снежные заносы (холмы) по диагоналям
+      { dx: -500, dy: -300, r: 120, kind: 'hill' },
+      { dx: 500, dy: 300, r: 120, kind: 'hill' },
+      { dx: -500, dy: 300, r: 100, kind: 'hill' },
+      { dx: 500, dy: -300, r: 100, kind: 'hill' },
+      // замёрзшие пруды (по льду не проехать — как вода)
+      { dx: -300, dy: 250, r: 90, kind: 'water' },
+      { dx: 300, dy: -250, r: 90, kind: 'water' },
+      // редкие сосны (укрытие)
+      { dx: -720, dy: -150, r: 80, kind: 'bush' },
+      { dx: 720, dy: 150, r: 80, kind: 'bush' },
+      { dx: -150, dy: -350, r: 70, kind: 'bush' },
+      { dx: 150, dy: 350, r: 70, kind: 'bush' },
+      // обледенелые валуны у центра
+      { dx: -250, dy: 0, r: 60, kind: 'block' },
+      { dx: 250, dy: 0, r: 60, kind: 'block' },
+    ],
+    walls: [
+      // тёплые избы (капитальные) и плетни (разрушаемые)
+      { dx: -340, dy: 430, w: 110, h: 110 },
+      { dx: 340, dy: -430, w: 110, h: 110 },
+      { dx: 0, dy: -300, w: 200, h: 40, hp: 2 },
+      { dx: 0, dy: 300, w: 200, h: 40, hp: 2 },
+    ],
+    bases: [
+      { dx: 0, dy: 800, r: 160 },
+      { dx: 0, dy: -800, r: 160 },
+    ],
+    caps: [
+      { id: 'A', dx: -560, dy: 0, r: 130 },
+      { id: 'B', dx: 0, dy: 0, r: 140 },
+      { id: 'C', dx: 560, dy: 0, r: 130 },
     ],
   },
 ]
