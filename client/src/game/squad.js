@@ -68,7 +68,14 @@ export function connectSquad(squadId, name) {
     }
   }
   sock.onclose = () => {
-    if (ws === sock) ws = null // не обнуляем уже пересозданное соединение
+    if (ws !== sock) return // уже пересозданное/закрытое нами соединение — не трогаем
+    ws = null
+    // сокет умер, а лобби считалось живым (рестарт сервера/обрыв) — выходим из
+    // взвода явно, иначе UI висит с мёртвым составом и не-работающими кнопками
+    if (squad.active) {
+      if (squad.onDisband) squad.onDisband()
+      closeSquad()
+    }
   }
   sock.onerror = () => {}
   return true

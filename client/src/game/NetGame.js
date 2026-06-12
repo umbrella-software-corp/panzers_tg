@@ -93,6 +93,16 @@ export class NetGame {
     // снапшоты, пришедшие ДО подписки (гонка матчмейкинг→бой), не теряем —
     // сразу проигрываем последний буферизованный (мир появляется мгновенно)
     if (client.lastState) this._onMessage(client.lastState)
+    if (client.lastEnd) this._onMessage(client.lastEnd) // бой успел кончиться до подписки
+    // сервер оборвал соединение (рестарт при деплое, падение): не ждём 5с
+    // сторожа на замёрзшем кадре — сразу откатываемся в офлайн
+    client.onSocketClose = (code) => {
+      if (this.matchOver || !this.onStall) return
+      console.warn(`[net] боевой сокет закрыт (code=${code}) — мгновенный откат в офлайн`)
+      const cb = this.onStall
+      this.onStall = null
+      cb()
+    }
   }
 
   // совместимость с Battle: пул ботов набирает сервер
@@ -1082,6 +1092,7 @@ export class NetGame {
     window.removeEventListener('keyup', this._onKeyUp)
     if (this.client) {
       this.client.onMessage = null
+      this.client.onSocketClose = null // сами закрываем — это не «сервер пропал»
       this.client.close()
     }
     this.app.destroy(true, { children: true })

@@ -44,6 +44,7 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
       youId: null,
       started: false,
       onMessage: null, // подписка NetGame на время боя
+      onSocketClose: null, // подписка NetGame: сервер оборвал соединение (рестарт/деплой)
       send(msg) {
         if (ws.readyState === 1) ws.send(JSON.stringify(msg))
       },
@@ -90,6 +91,12 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
         client.started = true
         log('match-start получен (youUnit=' + msg.youUnit + ', map=' + msg.mapId + ')')
         onStart && onStart(msg)
+      } else if (msg.type === 'match-end' && !client.onMessage) {
+        // бой кончился в окне между match-start и созданием NetGame (комната
+        // умерла на старте / сервер ушёл на рестарт) — буферизуем, как и state,
+        // иначе клиент навсегда останется с замёрзшим первым кадром
+        client.lastEnd = msg
+        log('match-end получен ДО подписчика — буферизую')
       } else if (client.onMessage) {
         client.onMessage(msg)
       }
@@ -109,6 +116,8 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
         clearTimeout(timer)
         reject(new Error('ws closed'))
       }
+      // в бою на это подписан NetGame: реагируем сразу, а не ждём 5с сторожа
+      if (client.onSocketClose) client.onSocketClose(e.code)
       onClose && onClose()
     }
   })

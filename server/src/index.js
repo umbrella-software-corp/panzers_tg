@@ -392,6 +392,18 @@ function startRoom(room) {
   }, 1000 / TICK_HZ)
 }
 
+function roomStats(room) {
+  return room.sim.units.map((u) => ({
+    id: u.id,
+    team: u.team,
+    name: u.name,
+    human: u.human,
+    kills: u.kills,
+    damage: Math.round(u.damageDealt),
+    alive: u.alive,
+  }))
+}
+
 function roomTick(room) {
     const t0 = process.hrtime.bigint()
     room.sim.step(TICK_DT)
@@ -408,15 +420,7 @@ function roomTick(room) {
     room.tickN++
 
     if (room.sim.matchOver) {
-      const stats = room.sim.units.map((u) => ({
-        id: u.id,
-        team: u.team,
-        name: u.name,
-        human: u.human,
-        kills: u.kills,
-        damage: Math.round(u.damageDealt),
-        alive: u.alive,
-      }))
+      const stats = roomStats(room)
       for (const h of room.humans) {
         send(h.ws, { type: 'match-end', winner: room.sim.winner, score: room.sim.score, stats })
       }
@@ -449,7 +453,14 @@ const heartbeat = setInterval(() => {
 wss.on('close', () => clearInterval(heartbeat))
 
 wss.on('connection', (ws, req) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?'
+  // x-real-ip ставит наш nginx (доверенный); клиентский x-forwarded-for — только
+  // фоллбэк без прокси. Иначе за nginx все игроки = 127.0.0.1 и MAX_PER_IP
+  // превращается в глобальный потолок сокетов на весь сервер.
+  const ip =
+    String(req.headers['x-real-ip'] || '').trim() ||
+    (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+    req.socket.remoteAddress ||
+    '?'
   if (wss.clients.size > MAX_SOCKETS || (ipCount.get(ip) || 0) >= MAX_PER_IP) {
     ws.close(1013, 'busy')
     return
@@ -584,6 +595,38 @@ wss.on('connection', (ws, req) => {
     if (room.started && room.humans.length === 0) endRoom(room) // некому слать
   })
 })
+
+// мягкое выключение (деплой делает systemctl restart): бои живут в памяти,
+// поэтому перед смертью рассылаем match-end (клиент покажет итог) и закрываем
+// сокеты кодом 1001 — иначе игроки 5с смотрят на замёрзший кадр и молча
+// проваливаются в офлайн-бой с ботами «взвод не работает»
+let shuttingDown = false
+function shutdown(sig) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[srv] ${sig}: мягкое выключение — боёв ${rooms.size}, взводов ${squads.size}`)
+  for (const room of [...rooms.values()]) {
+    if (room.sim) {
+      for (const h of room.humans) send(h.ws, { type: 'match-end', winner: null, score: room.sim.score, stats: roomStats(room) })
+    }
+    endRoom(room)
+  }
+  for (const sq of [...squads.values()]) {
+    for (const m of sq.members.values()) send(m.ws, { type: 'squad-disband' })
+  }
+  squads.clear()
+  for (const ws of wss.clients) {
+    try {
+      ws.close(1001, 'restart')
+    } catch {
+      /* уже закрыт */
+    }
+  }
+  httpServer.close(() => process.exit(0))
+  setTimeout(() => process.exit(0), 1500).unref() // сокеты не успели — всё равно выходим
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
 
 httpServer.listen(PORT, () => {
   console.log(`[srv] Panzer TG: HTTP API + WS ${TEAM_SIZE}x${TEAM_SIZE} на :${PORT} (${TICK_HZ}Hz, добор ботами через ${WAIT_MS}мс)`)

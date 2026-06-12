@@ -332,6 +332,9 @@ function startCountdown() {
       countTimer = null
       phase.value = 'fighting'
       game.setPaused(false)
+      // онлайн: match-end мог прийти ВО ВРЕМЯ отсчёта (сервер ушёл на рестарт) —
+      // onState с matchOver тогда отгейтился фазой; переигрываем состояние
+      if (isNet) game._emitState()
     }
   }, 800)
 }
