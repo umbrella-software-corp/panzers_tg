@@ -6,10 +6,12 @@ import { fileURLToPath } from 'url'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data')
 const PROFILES = path.join(ROOT, 'profiles')
+const CLANS = path.join(ROOT, 'clans')
 const PAYMENTS = path.join(ROOT, 'payments.json')
 const SETTINGS = path.join(ROOT, 'settings.json')
 
 await fs.mkdir(PROFILES, { recursive: true })
+await fs.mkdir(CLANS, { recursive: true })
 
 // настройки сервера (флаги админки: турниры вкл/выкл и т.п.)
 let settings = null
@@ -164,6 +166,60 @@ export async function listProfiles() {
   const out = await listProfilesUncached()
   profilesCache = out
   profilesCacheAt = Date.now()
+  return out
+}
+
+// ===== кланы: data/clans/<id>.json (атомарная запись, как у профилей) =====
+let clansCache = null
+let clansCacheAt = 0
+export async function loadClan(id) {
+  try {
+    return JSON.parse(await fs.readFile(path.join(CLANS, safe(id) + '.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
+const clanChain = new Map()
+export async function saveClan(id, clan) {
+  clansCache = null // инвалидируем кэш списка
+  const key = safe(id)
+  const prev = clanChain.get(key) || Promise.resolve()
+  const job = prev.then(async () => {
+    const file = path.join(CLANS, key + '.json')
+    const tmp = `${file}.${process.pid}.${++tmpSeq}.tmp`
+    await fs.writeFile(tmp, JSON.stringify(clan))
+    await fs.rename(tmp, file)
+  })
+  clanChain.set(key, job.catch(() => {}))
+  return job
+}
+export async function deleteClan(id) {
+  clansCache = null
+  try {
+    await fs.unlink(path.join(CLANS, safe(id) + '.json'))
+  } catch {
+    /* нет файла — ок */
+  }
+}
+// все кланы (кэш 5с) — для списка/таблицы кланов
+export async function listClans() {
+  if (clansCache && Date.now() - clansCacheAt < 5000) return clansCache
+  let files = []
+  try {
+    files = (await fs.readdir(CLANS)).filter((f) => f.endsWith('.json'))
+  } catch {
+    return []
+  }
+  const out = []
+  for (const f of files) {
+    try {
+      out.push(JSON.parse(await fs.readFile(path.join(CLANS, f), 'utf8')))
+    } catch {
+      /* битый файл — пропускаем */
+    }
+  }
+  clansCache = out
+  clansCacheAt = Date.now()
   return out
 }
 

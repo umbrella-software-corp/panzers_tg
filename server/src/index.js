@@ -7,6 +7,7 @@ import { BattleSim, MAP_SIZE, randomMap } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
+import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { adminPage } from './admin.js'
 
 const ADMIN_KEY = process.env.ADMIN_KEY || ''
@@ -147,6 +148,9 @@ async function handleApi(req, res) {
       referrals: Array.isArray(prev.referrals) ? prev.referrals : [],
       referralIds: Array.isArray(prev.referralIds) ? prev.referralIds : [],
       referredBy: prev.referredBy || null,
+      // членство в клане ведут только clan-эндпоинты — сейв профиля его не трогает
+      clanId: prev.clanId || null,
+      clanTag: prev.clanTag || null,
     }
     await saveProfile(user.uid, merged)
     return json(res, 200, { ok: true })
@@ -168,6 +172,28 @@ async function handleApi(req, res) {
   }
   if (req.url === '/api/products' && req.method === 'GET') {
     return json(res, 200, { products: PRODUCTS, payments: hasBot() ? 'stars' : 'dev' })
+  }
+  // ===== кланы =====
+  if (req.url === '/api/clans' && req.method === 'GET') {
+    return json(res, 200, { clans: await listClansView(30), mine: await myClan(user.uid) })
+  }
+  if (req.url === '/api/clan/create' && req.method === 'POST') {
+    const b = await readBody(req)
+    const r = await createClan(user.uid, b.name, b.tag, b.emblem)
+    return r.error ? json(res, 400, r) : json(res, 200, { clan: r })
+  }
+  if (req.url === '/api/clan/join' && req.method === 'POST') {
+    const b = await readBody(req)
+    const r = await joinClan(user.uid, b.clanId)
+    return r.error ? json(res, 400, r) : json(res, 200, { clan: r })
+  }
+  if (req.url === '/api/clan/leave' && req.method === 'POST') {
+    return json(res, 200, await leaveClan(user.uid))
+  }
+  if (req.url.startsWith('/api/clan/') && req.method === 'GET') {
+    const id = req.url.slice('/api/clan/'.length).split('?')[0]
+    const c = await getClan(id)
+    return c ? json(res, 200, { clan: c }) : json(res, 404, { error: 'not found' })
   }
   json(res, 404, { error: 'not found' })
 }

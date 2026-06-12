@@ -3,16 +3,18 @@
 // Рейтинг (таблица лидеров) / Кланы и Турниры (СКОРО). Смена имени платная.
 // Соперники пока фейковые вокруг моего рейтинга (бэкенда нет) — но
 // стабильные между заходами, чтобы таблица не скакала.
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft, playerRank } from '../store.js'
-import { RATING_RIVALS, RENAME_COST_STARS, MEDALS, ratingBand } from '../game/meta.js'
-import { apiRename, apiLeaderboard, apiPlayer } from '../api.js'
-import { haptic } from '../tg.js'
+import { RATING_RIVALS, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS } from '../game/meta.js'
+import { apiRename, apiLeaderboard, apiPlayer, apiClans, apiCreateClan, apiJoinClan, apiLeaveClan } from '../api.js'
+import { haptic, tgUserId } from '../tg.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PlayerCard from './PlayerCard.vue'
 import Medal from './ui/Medal.vue'
 import MedalSheet from './MedalSheet.vue'
+import PzIcon from './ui/PzIcon.vue'
+import ClanEmblem from './ui/ClanEmblem.vue'
 
 const emit = defineEmits(['go'])
 const tab = ref(0)
@@ -137,6 +139,97 @@ const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
 // турнир активен (вкладка ТУРНИРЫ + включён в админке)
 const tournamentLive = computed(() => tab.value === 3 && serverConfig.tournaments)
 
+// ===== кланы =====
+const clanLoading = ref(false)
+const clans = ref([]) // список кланов (таблица)
+const myClan = ref(null) // мой клан (карточка) или null
+const clanBusy = ref(false)
+const createOpen = ref(false)
+const cForm = ref({ name: '', tag: '', emblem: 'e1' })
+const myUid = computed(() => String(tgUserId() || ''))
+const clanErr = ref('')
+let clanErrTimer = null
+function showClanErr(t) {
+  clanErr.value = t
+  haptic('error')
+  clearTimeout(clanErrTimer)
+  clanErrTimer = setTimeout(() => (clanErr.value = ''), 2600)
+}
+const clanErrText = (e) =>
+  ({ 'tag taken': 'Такой тег уже занят', 'bad tag': 'Тег — 2–5 букв/цифр', 'bad name': 'Название — минимум 3 символа', 'bad emblem': 'Выбери эмблему', 'already in clan': 'Ты уже в клане', full: 'Клан заполнен', 'no profile': 'Профиль не найден' })[e] || 'Не получилось'
+
+async function loadClans() {
+  clanLoading.value = true
+  try {
+    const r = await apiClans()
+    clans.value = (r && r.clans) || []
+    myClan.value = (r && r.mine) || null
+  } catch {
+    /* офлайн — молча */
+  } finally {
+    clanLoading.value = false
+  }
+}
+watch(tab, (t) => {
+  if (t === 2) loadClans()
+})
+
+async function doCreateClan() {
+  const name = cForm.value.name.trim()
+  const tag = cForm.value.tag.trim()
+  if (name.length < 3) return showClanErr('Название — минимум 3 символа')
+  if (!/^[A-Za-zА-Яа-я0-9]{2,5}$/.test(tag)) return showClanErr('Тег — 2–5 букв/цифр')
+  clanBusy.value = true
+  try {
+    const r = await apiCreateClan(name, tag, cForm.value.emblem)
+    if (r.error) {
+      showClanErr(clanErrText(r.error))
+      return
+    }
+    haptic('success')
+    createOpen.value = false
+    cForm.value = { name: '', tag: '', emblem: 'e1' }
+    await syncProfile()
+    await loadClans()
+  } catch {
+    showClanErr('Сервер недоступен')
+  } finally {
+    clanBusy.value = false
+  }
+}
+async function doJoinClan(id) {
+  if (clanBusy.value) return
+  clanBusy.value = true
+  try {
+    const r = await apiJoinClan(id)
+    if (r.error) {
+      showClanErr(clanErrText(r.error))
+      return
+    }
+    haptic('success')
+    await syncProfile()
+    await loadClans()
+  } catch {
+    showClanErr('Сервер недоступен')
+  } finally {
+    clanBusy.value = false
+  }
+}
+async function doLeaveClan() {
+  if (clanBusy.value || !window.confirm('Выйти из клана?')) return
+  clanBusy.value = true
+  try {
+    await apiLeaveClan()
+    haptic('select')
+    await syncProfile()
+    await loadClans()
+  } catch {
+    showClanErr('Сервер недоступен')
+  } finally {
+    clanBusy.value = false
+  }
+}
+
 const RES = {
   victory: { label: 'ПОБЕДА', color: 'var(--green)' },
   draw: { label: 'НИЧЬЯ', color: 'var(--ink-dim)' },
@@ -163,17 +256,84 @@ const fmtTime = (t) => {
     </div>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
-      <!-- ===== КЛАНЫ / ТУРНИРЫ ===== -->
-      <section v-if="tab >= 2" style="flex: 1; display: flex; align-items: center; justify-content: center">
+      <!-- ===== ТУРНИРЫ (СКОРО) ===== -->
+      <section v-if="tab === 3" style="flex: 1; display: flex; align-items: center; justify-content: center">
         <div class="pz-plate pz-brackets" :style="{ '--bk': tournamentLive ? 'var(--green)' : 'var(--amber)', padding: '26px 30px', textAlign: 'center' }">
           <div class="pz-display" style="font-size: 20px; letter-spacing: 0.14em">{{ TABS[tab] }}</div>
           <div class="pz-pixel" style="font-size: 9px; margin-top: 10px" :style="{ color: tournamentLive ? 'var(--green)' : 'var(--amber)' }">
             {{ tournamentLive ? '● ИДЁТ СЕЙЧАС' : 'СКОРО' }}
           </div>
           <div style="font-size: 11.5px; color: var(--ink-dim); margin-top: 8px; font-weight: 500">
-            {{ tab === 2 ? 'Собирай взвод — клан будет его продолжением' : tournamentLive ? 'Турнир в эфире — врывайся в бой и поднимай рейтинг!' : 'Сетевые бои 7×7 уже на подходе' }}
+            {{ tournamentLive ? 'Турнир в эфире — врывайся в бой и поднимай рейтинг!' : 'На базе взводов — следующим шагом после кланов' }}
           </div>
         </div>
+      </section>
+
+      <!-- ===== КЛАНЫ ===== -->
+      <section v-if="tab === 2" class="clans">
+        <!-- я уже в клане -->
+        <template v-if="myClan">
+          <div class="pz-plate pz-brackets clan-card" style="--bk: var(--amber)">
+            <div class="clan-head">
+              <ClanEmblem :emblem="myClan.emblem" :size="54" />
+              <div style="flex: 1; min-width: 0">
+                <div class="clan-name pz-display">{{ myClan.name }} <span class="clan-tag">[{{ myClan.tag }}]</span></div>
+                <div class="clan-sub">рейтинг <b style="color: var(--amber)">{{ myClan.rating }}</b> · {{ myClan.size }}/20 бойцов</div>
+              </div>
+            </div>
+            <div class="pz-stencil-h" style="margin: 14px 0 8px">СОСТАВ</div>
+            <div class="clan-members">
+              <div v-for="m in myClan.members" :key="m.uid" class="cmem" :class="{ me: m.uid === myUid }">
+                <PzIcon v-if="m.leader" name="star" :size="12" color="var(--amber)" />
+                <span class="cmem-name">{{ m.name }}<span v-if="m.uid === myUid" style="color: var(--ink-faint)"> · ты</span></span>
+                <span class="cmem-rating pz-display">{{ m.rating }}</span>
+              </div>
+            </div>
+            <button class="pz-btn2" style="width: 100%; margin-top: 14px" :disabled="clanBusy" @click="doLeaveClan">Покинуть клан</button>
+          </div>
+        </template>
+
+        <!-- не в клане: создать + список -->
+        <template v-else>
+          <button v-if="!createOpen" class="pz-cta" style="width: 100%; gap: 8px; font-size: 14px; padding: 13px 16px" @click="haptic('select'); createOpen = true">
+            <PzIcon name="star" :size="15" color="currentColor" /> Создать клан
+          </button>
+
+          <!-- форма создания -->
+          <div v-else class="pz-plate clan-create">
+            <div class="pz-stencil-h" style="margin-bottom: 10px">НОВЫЙ КЛАН</div>
+            <input v-model="cForm.name" class="cinput" maxlength="22" placeholder="Название клана" />
+            <input v-model="cForm.tag" class="cinput" maxlength="5" placeholder="Тег · 2–5 символов (СТК)" style="margin-top: 8px; text-transform: uppercase" />
+            <div class="pz-pixel emb-label">ЭМБЛЕМА</div>
+            <div class="emblems">
+              <button v-for="e in CLAN_EMBLEMS" :key="e.id" class="emb-pick" :class="{ on: cForm.emblem === e.id }" @click="cForm.emblem = e.id">
+                <ClanEmblem :emblem="e.id" :size="40" />
+              </button>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 14px">
+              <button class="pz-btn2" style="flex: 1" @click="createOpen = false">Отмена</button>
+              <button class="pz-cta" style="flex: 1.5; padding: 11px" :disabled="clanBusy" @click="doCreateClan">Создать</button>
+            </div>
+          </div>
+
+          <!-- таблица кланов -->
+          <div class="pz-stencil-h" style="margin: 16px 0 8px">КЛАНЫ <span v-if="clans.length" style="color: var(--amber)">{{ clans.length }}</span></div>
+          <div v-if="clanLoading" class="clan-empty">загрузка…</div>
+          <div v-else-if="!clans.length" class="clan-empty">Кланов пока нет — создай первый!</div>
+          <div v-else style="display: flex; flex-direction: column; gap: 6px">
+            <div v-for="(c, i) in clans" :key="c.id" class="clan-row">
+              <span class="pz-pixel cr-place" :style="{ color: i < 3 ? 'var(--amber)' : 'var(--ink-faint)' }">{{ i + 1 }}</span>
+              <ClanEmblem :emblem="c.emblem" :size="32" />
+              <div style="flex: 1; min-width: 0">
+                <div class="cr-name">{{ c.name }} <span class="clan-tag">[{{ c.tag }}]</span></div>
+                <div class="cr-sub">{{ c.size }}/20 · рейтинг {{ c.rating }}</div>
+              </div>
+              <button class="pz-btn2 cr-join" :disabled="clanBusy" @click="doJoinClan(c.id)">Вступить</button>
+            </div>
+          </div>
+        </template>
+
+        <transition name="pz-fade"><div v-if="clanErr" class="clan-err">{{ clanErr }}</div></transition>
       </section>
 
       <!-- ===== ПРОФИЛЬ: всё про меня ===== -->
@@ -438,5 +598,163 @@ const fmtTime = (t) => {
 .shelf-name.off {
   color: var(--ink-faint);
   opacity: 0.7;
+}
+
+/* ===== кланы ===== */
+.clans {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.clan-card {
+  padding: 16px 14px 14px;
+}
+.clan-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.clan-name {
+  font-size: 17px;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clan-tag {
+  color: var(--amber);
+  font-size: 0.82em;
+}
+.clan-sub {
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  font-weight: 600;
+  margin-top: 3px;
+}
+.clan-members {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cmem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.cmem.me {
+  border-color: var(--amber);
+  background: rgba(242, 165, 12, 0.08);
+}
+.cmem-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmem-rating {
+  font-size: 13px;
+  color: var(--amber);
+}
+.clan-create {
+  padding: 14px;
+  border-radius: 12px;
+}
+.cinput {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+.cinput:focus {
+  border-color: var(--amber);
+}
+.emb-label {
+  font-size: 7px;
+  color: var(--ink-faint);
+  letter-spacing: 0.1em;
+  margin: 14px 0 7px;
+}
+.emblems {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.emb-pick {
+  display: flex;
+  justify-content: center;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.emb-pick.on {
+  border-color: var(--amber);
+  background: rgba(242, 165, 12, 0.1);
+}
+.clan-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.cr-place {
+  font-size: 10px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.cr-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-sub {
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  font-weight: 500;
+  margin-top: 1px;
+}
+.cr-join {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  font-size: 11px;
+}
+.clan-empty {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-weight: 500;
+  padding: 14px 0;
+}
+.clan-err {
+  position: sticky;
+  bottom: 6px;
+  align-self: center;
+  margin-top: 10px;
+  background: var(--bg-3, #1a1410);
+  border: 1px solid var(--red);
+  color: #ff9a8a;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
 }
 </style>

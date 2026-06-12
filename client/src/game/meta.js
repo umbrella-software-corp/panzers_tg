@@ -308,3 +308,17 @@ export const MEDALS = [
 ]
 export const MEDAL_BY_ID = Object.fromEntries(MEDALS.map((m) => [m.id, m]))
 export const MEDAL_TIER_COLOR = { bronze: '#c08349', silver: '#cfd4da', gold: '#f2a50c' }
+
+// ---------- кланы ----------
+// эмблема клана = символ + цвет (выбор из набора при создании)
+export const CLAN_EMBLEMS = [
+  { id: 'e1', sym: '★', col: '#f2a50c' },
+  { id: 'e2', sym: '⚔', col: '#cfd4da' },
+  { id: 'e3', sym: '☠', col: '#e0853c' },
+  { id: 'e4', sym: '⛨', col: '#5fd35f' },
+  { id: 'e5', sym: '✦', col: '#4aa3ff' },
+  { id: 'e6', sym: '⚡', col: '#f2c14b' },
+  { id: 'e7', sym: '♛', col: '#c64bff' },
+  { id: 'e8', sym: '◆', col: '#ff6a8a' },
+]
+export const CLAN_EMBLEM_BY_ID = Object.fromEntries(CLAN_EMBLEMS.map((e) => [e.id, e]))

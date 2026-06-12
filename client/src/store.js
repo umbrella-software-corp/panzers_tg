@@ -89,6 +89,8 @@ export const profile = reactive(
 )
 // миграции/страховки
 if (!profile.modules || typeof profile.modules !== 'object') profile.modules = {}
+if (profile.clanId === undefined) profile.clanId = null // членство в клане (ведёт сервер)
+if (profile.clanTag === undefined) profile.clanTag = null
 if (!Array.isArray(profile.party)) profile.party = []
 if (!Array.isArray(profile.referrals)) profile.referrals = []
 if (!Array.isArray(profile.claimedRef)) profile.claimedRef = []
