@@ -149,6 +149,11 @@ function clearNetWatchdog() {
   netWatchdog = null
 }
 
+// снапшоты просели, но сокет жив (короткий iOS-затык на старте боя) — показываем
+// плашку и ЖДЁМ возобновления, не сваливаясь в офлайн. Снимается, как пошли данные.
+const reconnecting = ref(false)
+if (isNet) game.onReconnecting = (on) => (reconnecting.value = on)
+
 let statsCounted = false // статистика матча банкается один раз
 game.onState = (s) => {
   // пришли данные мира — снимаем сторож «нет связи»
@@ -470,6 +475,11 @@ onBeforeUnmount(() => {
       ВЫ УНИЧТОЖЕНЫ · НАБЛЮДЕНИЕ
     </div>
 
+    <!-- связь просела (сокет жив) — ждём снапшоты, бой идёт на сервере -->
+    <div v-if="reconnecting && !state.matchOver" class="reconnect pz-display">
+      <span class="rc-spin"></span> ВОССТАНАВЛИВАЕМ СВЯЗЬ…
+    </div>
+
     <!-- зона движения: джойстик появляется под пальцем. После гибели джойстик
          водит камеру наблюдения по карте (огонь скрыт, движок панорамирует) -->
     <div
@@ -567,6 +577,39 @@ onBeforeUnmount(() => {
   z-index: 4;
   pointer-events: none;
   animation: pz-slide-up 0.3s ease;
+}
+.reconnect {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: var(--amber);
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid var(--amber);
+  border-radius: 8px;
+  padding: 9px 16px;
+  white-space: nowrap;
+  z-index: 5;
+  pointer-events: none;
+  animation: pz-pop 0.2s ease;
+}
+.rc-spin {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(242, 165, 12, 0.3);
+  border-top-color: var(--amber);
+  animation: rc-rot 0.7s linear infinite;
+}
+@keyframes rc-rot {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .stage {
   position: absolute;

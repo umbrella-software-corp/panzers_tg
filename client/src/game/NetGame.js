@@ -84,7 +84,9 @@ export class NetGame {
     this.onShot = () => {}
     this.onCrit = () => {}
     this.onKill = () => {}
-    this.onStall = null // связь встала посреди боя → Battle откатит в офлайн
+    this.onStall = null // связь ОКОНЧАТЕЛЬНО умерла посреди боя → Battle откатит в офлайн
+    this.onReconnecting = () => {} // снапшоты просели, но сокет жив → «восстанавливаем связь» (НЕ откат)
+    this._reconnecting = false
     this.onSaved = () => {} // в PvP брони/рикошетов нет
     this._gridDrawn = false
     this._wantedTex = new Set()
@@ -158,6 +160,10 @@ export class NetGame {
   _finish(winner) {
     this.matchOver = true
     this.result = winner === null ? 'draw' : winner === this.side ? 'victory' : 'defeat'
+    if (this._reconnecting) {
+      this._reconnecting = false
+      this.onReconnecting(false) // бой кончился пока «восстанавливали связь» — снять плашку
+    }
   }
 
   _onEvent(ev) {
@@ -450,13 +456,31 @@ export class NetGame {
 
   _update(dt) {
     dt = Math.min(dt, 0.05)
-    // связь встала посреди боя (снапшоты были, но не идут >5с) — откат в офлайн
-    // с ботами, чтобы не залипнуть на замёрзшем кадре
-    if (this.recvAt && !this.matchOver && this.onStall && performance.now() - this.recvAt > 5000) {
-      const cb = this.onStall
-      this.onStall = null
-      cb()
-      return
+    // снапшоты сервера могли встать. На iOS WebView под нагрузкой (загрузка
+    // текстур на старте боя / просадка памяти) поток на пару секунд проседает —
+    // это НЕ повод бросать живой бой и сваливаться в офлайн с ботами. Пока сокет
+    // жив, показываем «восстанавливаем связь» и ЖДЁМ: бой идёт на сервере,
+    // снапшоты возобновятся и мы продолжим в нём. В офлайн уходим только если
+    // сокет реально мёртв (это ловит onSocketClose сразу) либо открыт-но-молчит
+    // ОЧЕНЬ долго (зависший сервер) — иначе короткий iOS-затык выкидывал к ботам.
+    if (this.recvAt && !this.matchOver) {
+      const gap = performance.now() - this.recvAt
+      const open = this.client && this.client.ws && this.client.ws.readyState === 1
+      if (gap > 2500 && open) {
+        if (!this._reconnecting) {
+          this._reconnecting = true
+          this.onReconnecting(true)
+        }
+      } else if (this._reconnecting) {
+        this._reconnecting = false
+        this.onReconnecting(false)
+      }
+      if (this.onStall && (!open || gap > 20000)) {
+        const cb = this.onStall
+        this.onStall = null
+        cb()
+        return
+      }
     }
     this._panSpectator(dt)
     for (const s of this.shells) {
