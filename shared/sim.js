@@ -507,7 +507,9 @@ export class BattleSim {
 
   _lineBlocked(x1, y1, x2, y2) {
     for (const o of this.obstacles) {
-      if (o.kind === 'water') continue
+      // вода и КУСТЫ обзор/стрельбу не блокируют (мягкое укрытие, как офлайн):
+      // иначе сидя В кусте упираешься лучом в свой же куст и «никого не видишь»
+      if (o.kind === 'water' || o.kind === 'bush') continue
       if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
     }
     for (const w of this.walls) {

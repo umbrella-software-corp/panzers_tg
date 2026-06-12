@@ -12,6 +12,8 @@ const camoOf = (skinId) => (skinId && SKIN_BY_ID[skinId] ? SKIN_BY_ID[skinId].ca
 // WebView единый синхронный спайк забивал поток и боевой сокет умирал)
 const frameYield = () => new Promise((r) => setTimeout(r, 0))
 
+const TANK_RADIUS = 22 // как на сервере (для клиентского предикта коллизий)
+
 // маркер класса над танком: лёгкий ▲ / средний ◆ / тяжёлый ■
 const CLS_MARK = { light: '▲', medium: '◆', heavy: '■' }
 
@@ -231,15 +233,23 @@ export class NetGame {
       const shooter = this._units.get(ev.unit)
       const pal = shooter && shooter.team === this.side ? this.colors.ally : this.colors.enemy
       const col = mine ? 0xffd866 : pal.muzzle
-      const a = Math.atan2(ev.y2 - ev.y1, ev.x2 - ev.x1)
+      // выстрел ПО мне: конец трассера ведём в МОЮ предсказанную позицию (а не в
+      // серверную), чтобы попадание визуально пришло туда, где я себя вижу
+      let ex = ev.x2
+      let ey = ev.y2
+      if (ev.target === this.youUnit && this._pred) {
+        ex = this._pred.x
+        ey = this._pred.y
+      }
+      const a = Math.atan2(ey - ev.y1, ex - ev.x1)
       this.muzzles.push({ x: ev.x1 + Math.cos(a) * 40, y: ev.y1 + Math.sin(a) * 40, a, age: 0, color: col })
       this.shells.push({
         x1: ev.x1,
         y1: ev.y1,
-        x2: ev.x2,
-        y2: ev.y2,
+        x2: ex,
+        y2: ey,
         t: 0,
-        dur: Math.max(0.08, Math.hypot(ev.x2 - ev.x1, ev.y2 - ev.y1) / 1400),
+        dur: Math.max(0.08, Math.hypot(ex - ev.x1, ey - ev.y1) / 1400),
         color: col,
         boom: ev.killed ? 'big' : ev.hit ? 'hit' : 'dust',
       })
@@ -280,6 +290,89 @@ export class NetGame {
     }
     const k = this.keys
     return { throttle: (k.fwd ? 1 : 0) - (k.back ? 1 : 0), steer: (k.right ? 1 : 0) - (k.left ? 1 : 0) }
+  }
+
+  // коллизия предсказанного своего танка с препятствиями/стенами/границами —
+  // ТОЧНАЯ копия серверного _collide (кусты не блокируют), чтобы предикт НЕ
+  // расходился с сервером у стен (иначе «я не там, где меня бьют»).
+  _collidePred(p, radius) {
+    for (const o of this.obstacles) {
+      if (o.kind === 'bush') continue
+      const dx = p.x - o.x
+      const dy = p.y - o.y
+      const d = Math.hypot(dx, dy)
+      const min = o.r + radius
+      if (d < min && d > 0.0001) {
+        p.x = o.x + (dx / d) * min
+        p.y = o.y + (dy / d) * min
+      }
+    }
+    for (const w of this.walls) {
+      const minx = w.cx - w.hw
+      const maxx = w.cx + w.hw
+      const miny = w.cy - w.hh
+      const maxy = w.cy + w.hh
+      const nx = Math.max(minx, Math.min(p.x, maxx))
+      const ny = Math.max(miny, Math.min(p.y, maxy))
+      const dx = p.x - nx
+      const dy = p.y - ny
+      const d = Math.hypot(dx, dy)
+      if (d > 0.0001 && d < radius) {
+        p.x = nx + (dx / d) * radius
+        p.y = ny + (dy / d) * radius
+      } else if (d <= 0.0001) {
+        const left = p.x - minx
+        const right = maxx - p.x
+        const top = p.y - miny
+        const bottom = maxy - p.y
+        const m = Math.min(left, right, top, bottom)
+        if (m === left) p.x = minx - radius
+        else if (m === right) p.x = maxx + radius
+        else if (m === top) p.y = miny - radius
+        else p.y = maxy + radius
+      }
+    }
+    const m = 60
+    p.x = Math.max(m, Math.min(this.mapSize - m, p.x))
+    p.y = Math.max(m, Math.min(this.mapSize - m, p.y))
+  }
+
+  // КЛИЕНТСКИЙ ПРЕДИКТ своего танка «по-взрослому»: интегрируем текущий ввод
+  // локально каждый кадр ТОЙ ЖЕ физикой, что сервер (_stepHuman + _collide) →
+  // руль/камера мгновенны, движение гладкое (не зависит от рваной доставки и
+  // пинга). Сервер авторитетен: мягко корректируем дрейф (corr мал, без резинки),
+  // снап при большом расхождении (расталкивание танков/респаун). Коллизия стен
+  // ВОСПРОИЗВЕДЕНА → у стен предикт совпадает с сервером, бой честный.
+  _predictOwn(dt) {
+    const srv = this._units && this.youUnit != null ? this._units.get(this.youUnit) : null
+    if (!srv || !srv.alive) {
+      this._pred = null
+      return
+    }
+    if (!this._pred || Math.hypot(this._pred.x - srv.x, this._pred.y - srv.y) > 100) {
+      this._pred = { x: srv.x, y: srv.y, hull: srv.hull, speed: srv.speed || 0 } // старт/снап
+      return
+    }
+    const corr = 0.04 // мягкая коррекция дрейфа к серверу (без рывков)
+    this._pred.x += (srv.x - this._pred.x) * corr
+    this._pred.y += (srv.y - this._pred.y) * corr
+    let dh = (srv.hull - this._pred.hull) % (Math.PI * 2)
+    if (dh > Math.PI) dh -= Math.PI * 2
+    if (dh < -Math.PI) dh += Math.PI * 2
+    this._pred.hull += dh * corr
+    let { throttle, steer } = this._computeInput()
+    const cr = this.you && this.you.crippled
+    if (cr && cr.tracks > 0) steer = 0
+    if (cr && cr.engine > 0) throttle = 0
+    const cls = this.cls
+    this._pred.hull += steer * cls.turnRate * dt
+    const target = cls.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
+    const da = cls.accel * dt
+    if (this._pred.speed < target) this._pred.speed = Math.min(target, this._pred.speed + da)
+    else this._pred.speed = Math.max(target, this._pred.speed - da * 1.4)
+    this._pred.x += Math.cos(this._pred.hull) * this._pred.speed * dt
+    this._pred.y += Math.sin(this._pred.hull) * this._pred.speed * dt
+    this._collidePred(this._pred, TANK_RADIUS)
   }
 
   // отправка ввода серверу: при заметном изменении либо раз в 300мс
@@ -512,9 +605,9 @@ export class NetGame {
       f = span > 1e-6 ? Math.max(0, Math.min(1, (rt - a.t) / span)) : 0
     }
     return this.cur.units.map((u) => {
-      // свой танк — на сглаженной последней серверной позиции (совпадает с боёвкой)
-      if (u.id === this.youUnit && this._ownSmooth && u.alive) {
-        return { ...u, x: this._ownSmooth.x, y: this._ownSmooth.y, hull: this._ownSmooth.hull }
+      // свой танк — из клиентского предикта (мгновенно по вводу)
+      if (u.id === this.youUnit && this._pred && u.alive) {
+        return { ...u, x: this._pred.x, y: this._pred.y, hull: this._pred.hull }
       }
       if (!haveBuf || !u.alive) return u // мало данных/обломок — последняя позиция
       const pa = a.units.get(u.id)
@@ -595,26 +688,10 @@ export class NetGame {
       }
     }
 
-    // СВОЙ танк — на ПОСЛЕДНЕЙ серверной позиции (сглаживаем шаги тика). Без
-    // задержки интерполяции (отзывчиво), и СОВПАДАЕТ с серверной позицией, по
-    // которой считаются попадания — трассеры/урон приходят туда, где ты есть.
-    // (Предикт вперёд диваргировал в бою → «стреляют непонятно откуда», убран.)
-    const ownNow = this._units && this.youUnit != null ? this._units.get(this.youUnit) : null
-    if (ownNow && ownNow.alive) {
-      const k = 1 - Math.exp(-dt / Math.max(0.02, this.tickDt))
-      if (!this._ownSmooth) this._ownSmooth = { x: ownNow.x, y: ownNow.y, hull: ownNow.hull }
-      else {
-        const s = this._ownSmooth
-        s.x += (ownNow.x - s.x) * k
-        s.y += (ownNow.y - s.y) * k
-        let d = (ownNow.hull - s.hull) % (Math.PI * 2)
-        if (d > Math.PI) d -= Math.PI * 2
-        if (d < -Math.PI) d += Math.PI * 2
-        s.hull += d * k
-      }
-    } else {
-      this._ownSmooth = null
-    }
+    // СВОЙ танк — клиентский предикт (мгновенный руль/камера, гладко, независимо
+    // от пинга и рваной доставки). Коллизия стен воспроизведена → совпадает с
+    // сервером, а трассеры по мне пере-наводятся на предикт (см. _onEvent) — бой честный.
+    this._predictOwn(dt)
 
     // снапшоты сервера могли встать (реально мёртвый сокет/сеть) — тогда
     // _tryRecover пробует вернуться в тот же бой новым сокетом; показываем
