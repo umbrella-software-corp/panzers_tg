@@ -191,6 +191,12 @@ export class NetGame {
       if (this._reconnectTries) this._reconnectTries = 0 // поток здоров — следующий затык получит свежие 3 попытки
       if (msg.you) this.you = msg.you
       this._units = new Map(msg.units.map((u) => [u.id, u]))
+      // буфер позиций для интерполяции по СЕРВЕРНОМУ времени: рендерим мир чуть в
+      // прошлом и плавно лерпим между снапшотами — движение гладкое даже когда
+      // кадры проседают/сеть джиттерит (на iOS половина снапшотов терялась → дёрг)
+      if (!this._snapBuf) this._snapBuf = []
+      this._snapBuf.push({ t: msg.t || 0, units: new Map(msg.units.map((u) => [u.id, { x: u.x, y: u.y, hull: u.hull }])) })
+      if (this._snapBuf.length > 16) this._snapBuf.shift()
       for (const u of msg.units) this._wantTex(u.tankId, u.skin)
       for (const ev of msg.events || []) this._onEvent(ev)
       if (msg.matchOver && !this.matchOver) this._finish(msg.winner)
@@ -460,20 +466,33 @@ export class NetGame {
 
   // --- интерполяция ---
 
+  // позиции по часам интерполяции (this._renderT): берём два снапшота из буфера,
+  // что обрамляют renderT, и лерпим между ними. Гладко при дропах кадров и
+  // джиттере сети (рендерим чуть в прошлом, всегда есть «следующий» снапшот).
   _lerpUnits() {
     if (!this.cur) return []
-    const alpha = Math.max(0, Math.min(1, (performance.now() - this.recvAt) / (this.tickDt * 1000)))
-    const prev = this.prev ? new Map(this.prev.units.map((u) => [u.id, u])) : null
-    const lerpA = (a, b, t) => {
-      let d = (b - a) % (Math.PI * 2)
+    const buf = this._snapBuf
+    const rt = this._renderT
+    if (!buf || buf.length < 2 || rt == null) return this.cur.units // мало данных — последние позиции
+    let a = buf[0]
+    let b = buf[buf.length - 1]
+    for (let i = 0; i < buf.length; i++) {
+      if (buf[i].t <= rt) a = buf[i]
+      if (buf[i].t >= rt) { b = buf[i]; break }
+    }
+    const span = b.t - a.t
+    const f = span > 1e-6 ? Math.max(0, Math.min(1, (rt - a.t) / span)) : 0
+    const lerpA = (p, q, t) => {
+      let d = (q - p) % (Math.PI * 2)
       if (d > Math.PI) d -= Math.PI * 2
       if (d < -Math.PI) d += Math.PI * 2
-      return a + d * t
+      return p + d * t
     }
     return this.cur.units.map((u) => {
-      const p = prev && prev.get(u.id)
-      if (!p || !u.alive) return u
-      return { ...u, x: p.x + (u.x - p.x) * alpha, y: p.y + (u.y - p.y) * alpha, hull: lerpA(p.hull, u.hull, alpha) }
+      const pa = a.units.get(u.id)
+      const pb = b.units.get(u.id)
+      if (!pa || !pb || !u.alive) return u
+      return { ...u, x: pa.x + (pb.x - pa.x) * f, y: pa.y + (pb.y - pa.y) * f, hull: lerpA(pa.hull, pb.hull, f) }
     })
   }
 
@@ -525,6 +544,22 @@ export class NetGame {
     if (c && !this.matchOver) {
       if (c.lastState && c.lastState !== this.cur) this._onMessage(c.lastState)
       if (c.lastEnd) this._onMessage(c.lastEnd) // конец боя тоже тянем (push мог не дойти)
+    }
+
+    // часы интерполяции: рендерим мир с задержкой ~1.5 снапшота в СЕРВЕРНОМ
+    // времени и двигаем их реальным dt — позиции плавно лерпятся между
+    // снапшотами независимо от того, сколько кадров отрисовал телефон.
+    const buf = this._snapBuf
+    if (buf && buf.length) {
+      const latest = buf[buf.length - 1].t
+      const delay = this.tickDt * 1.5
+      if (this._renderT == null || this._renderT > latest || this._renderT < latest - this.tickDt * 8) {
+        this._renderT = latest - delay // (ре)синхрон: старт / после столла / убегание
+      } else {
+        this._renderT += dt
+        const hi = latest - this.tickDt * 0.5 // оставляем «впереди» снапшот для лерпа
+        if (this._renderT > hi) this._renderT = hi
+      }
     }
 
     // снапшоты сервера могли встать (реально мёртвый сокет/сеть) — тогда
@@ -794,7 +829,12 @@ export class NetGame {
 
     this._updateFog(own)
     this._updateLabels(units)
-    this._drawMinimap(units)
+    // миникарта — полная перерисовка canvas; 60Гц не нужно, душим до ~12Гц (разгрузка кадра на iOS)
+    const nowMs = performance.now()
+    if (nowMs - (this._lastMini || 0) > 80) {
+      this._lastMini = nowMs
+      this._drawMinimap(units)
+    }
   }
 
   // туман войны: спрайт в мире, центр на своём танке; скрывает местность вне обзора
