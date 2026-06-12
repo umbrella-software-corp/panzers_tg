@@ -133,23 +133,27 @@ export function initTelegram() {
   }
 
   tg.ready()
+  // только телефоны: на десктопе/вебе fullscreen разворачивает игру на весь
+  // монитор (раздражает) и портретная фиксация не нужна — там окно Telegram.
+  const isMobile = tg.platform === 'android' || tg.platform === 'ios'
   try {
     tg.expand()
   } catch {
     /* старые клиенты */
   }
   // на весь экран (Bot API 8.0): скрывает шапку Telegram — игра занимает дисплей.
+  // ТОЛЬКО на телефоне; на компе оставляем оконный режим (expand).
   // safe-area после этого считается через contentSafeAreaInset (apply ниже).
   try {
-    if (typeof tg.requestFullscreen === 'function' && (!tg.isVersionAtLeast || tg.isVersionAtLeast('8.0'))) {
+    if (isMobile && typeof tg.requestFullscreen === 'function' && (!tg.isVersionAtLeast || tg.isVersionAtLeast('8.0'))) {
       tg.requestFullscreen()
     }
   } catch {
     /* fullscreen не поддержан — остаёмся в expand */
   }
-  // вертикальная фиксация ориентации, если клиент умеет
+  // вертикальная фиксация ориентации (только телефоны)
   try {
-    if (typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait')
+    if (isMobile && typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait')
   } catch {
     /* не поддержано */
   }
