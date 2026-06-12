@@ -92,6 +92,11 @@ export class NetGame {
     this.onStall = null // связь ОКОНЧАТЕЛЬНО умерла посреди боя → Battle откатит в офлайн
     this.onReconnecting = () => {} // снапшоты просели, но сокет жив → «восстанавливаем связь» (НЕ откат)
     this._reconnecting = false
+    // диагностика приёма на iOS (временно, для отладки): снапшоты, успешные/
+    // провальные реконнекты — Battle.vue показывает на экране
+    this._seen = 0
+    this._rcOk = 0
+    this._rcFail = 0
     this.onSaved = () => {} // в PvP брони/рикошетов нет
     this._gridDrawn = false
     this._wantedTex = new Set()
@@ -129,10 +134,12 @@ export class NetGame {
       .reconnect()
       .then(() => {
         this._recoverInFlight = false
+        this._rcOk++ // диагностика: реконнект подтверждён сервером
         this.recvAt = performance.now() // дать кадр на первые снапшоты нового сокета
       })
       .catch((e) => {
         this._recoverInFlight = false
+        this._rcFail++ // диагностика: реконнект не удался
         this._recoverCooldownUntil = performance.now() + 1200 // пауза перед следующей попыткой
         console.warn('[net] вернуться не удалось:', e && e.message)
         if (this._reconnectTries >= 3 && this.onStall) {
@@ -180,6 +187,7 @@ export class NetGame {
       this.prev = this.cur
       this.cur = msg
       this.recvAt = performance.now()
+      this._seen++ // диагностика: сколько снапшотов реально дошло до рендера
       if (this._reconnectTries) this._reconnectTries = 0 // поток здоров — следующий затык получит свежие 3 попытки
       if (msg.you) this.you = msg.you
       this._units = new Map(msg.units.map((u) => [u.id, u]))

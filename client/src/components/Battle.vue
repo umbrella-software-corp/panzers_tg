@@ -154,6 +154,20 @@ function clearNetWatchdog() {
 const reconnecting = ref(false)
 if (isNet) game.onReconnecting = (on) => (reconnecting.value = on)
 
+// ВРЕМЕННАЯ диагностика приёма сокета на iOS (отладка «бой замерзает»): живые
+// счётчики на экране — чтобы по видео с телефона точно понять, где встаёт поток.
+const netDbg = ref('')
+let netDbgTimer = null
+const RS = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED']
+function pollNetDbg() {
+  if (!isNet || !game) return
+  const c = game.client || {}
+  const ws = c.ws
+  const gapS = game.recvAt ? ((performance.now() - game.recvAt) / 1000).toFixed(1) : '—'
+  const fps = game.app && game.app.ticker ? Math.round(game.app.ticker.FPS) : '—'
+  netDbg.value = `ws:${ws ? RS[ws.readyState] || ws.readyState : '—'} rx:${c.stateN || 0} seen:${game._seen || 0} gap:${gapS}s rc:${game._reconnectTries || 0} ok:${game._rcOk || 0} fail:${game._rcFail || 0} fps:${fps}`
+}
+
 let statsCounted = false // статистика матча банкается один раз
 game.onState = (s) => {
   // пришли данные мира — снимаем сторож «нет связи»
@@ -378,6 +392,7 @@ onMounted(async () => {
       console.warn('[battle] онлайн-бой: связь встала посреди боя — откат в офлайн с ботами')
       emit('netfail')
     }
+    netDbgTimer = setInterval(pollNetDbg, 250) // ВРЕМЕННО: диагностика приёма
   }
 })
 // диагностика прода: состояние боя доступно из консоли (window.__pz)
@@ -386,6 +401,7 @@ onBeforeUnmount(() => {
   clearTimeout(toastTimer)
   clearInterval(countTimer)
   clearTimeout(shakeTimer)
+  clearInterval(netDbgTimer)
   clearNetWatchdog()
   game.destroy()
 })
@@ -394,6 +410,9 @@ onBeforeUnmount(() => {
 <template>
   <div class="root" :class="{ shaken: shaking }" :style="{ '--team': teamCol, '--foe': foeCol }">
     <div class="stage" ref="stage"></div>
+
+    <!-- ВРЕМЕННАЯ диагностика приёма сокета (отладка iOS-заморозки) -->
+    <div v-if="netDbg" class="netdbg">{{ netDbg }}</div>
 
     <!-- ===== верхний HUD ===== -->
     <div class="top">
@@ -614,6 +633,25 @@ onBeforeUnmount(() => {
 .stage {
   position: absolute;
   inset: 0;
+}
+/* ВРЕМЕННАЯ диагностика приёма сокета — заметная полоса для видео с телефона */
+.netdbg {
+  position: absolute;
+  top: calc(var(--safe-top) + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #00ff6a;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(0, 255, 106, 0.5);
+  border-radius: 5px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* ===== верхний HUD ===== */
