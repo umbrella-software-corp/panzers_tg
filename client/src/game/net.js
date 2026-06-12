@@ -50,6 +50,8 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
       roomId: null, // для реконнекта: куда возвращаться
       youUnit: null, // свой юнит (возврат именно за него)
       rkey: null, // токен возврата в этот бой
+      stateQueue: [], // ВСЕ принятые снапшоты (NetGame сливает очередь каждый кадр);
+      // на мобиле снапшоты приходят бурстами — одиночный lastState терял промежуточные
       onMessage: null, // подписка NetGame на время боя
       onSocketClose: null, // подписка NetGame: АКТИВНЫЙ сокет оборвался посреди боя
       send(msg) {
@@ -104,7 +106,9 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
               res()
             } else if (m.type === 'state') {
               client.stateN = (client.stateN || 0) + 1
-              client.lastState = m // NetGame тянет pull'ом из рендер-цикла
+              client.lastState = m
+              client.stateQueue.push(m) // в очередь — NetGame сольёт по порядку (t-дедуп снимет двойную с push)
+              if (client.stateQueue.length > 64) client.stateQueue.shift()
               if (client.onMessage) client.onMessage(m)
             } else if (m.type === 'match-end') {
               client.lastEnd = m // буферим — NetGame подхватит даже без push
@@ -142,7 +146,9 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
       }
       if (msg.type === 'state') {
         client.stateN = (client.stateN || 0) + 1
-        client.lastState = msg // буфер: NetGame ТЯНЕТ его из рендер-цикла (pull), даже если push сорвался
+        client.lastState = msg // последний — для мгновенного показа мира при подписке NetGame
+        client.stateQueue.push(msg) // очередь — NetGame сольёт ВСЕ по порядку (без потери промежуточных)
+        if (client.stateQueue.length > 64) client.stateQueue.shift() // кэп: фоновая вкладка с замёрзшим rAF не копит бесконечно
         if (client.stateN === 1) log('первый снапшот state получен (t=' + msg.t + ', подписчик ' + (client.onMessage ? 'есть' : 'ещё нет') + ')')
       }
       if (msg.type === 'match-end') client.lastEnd = msg // всегда буферим — NetGame подхватит pull'ом

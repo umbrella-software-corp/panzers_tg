@@ -177,6 +177,11 @@ export class NetGame {
 
   _onMessage(msg) {
     if (msg.type === 'state') {
+      // t-дедуп: один и тот же снапшот может прийти и push'ем (client.onMessage),
+      // и из очереди (слив в _update) — обрабатываем строго по разу, по серверному
+      // времени t. Иначе двойная обработка раздувала бы _snapBuf/события.
+      if (msg.t != null && this._lastProcT != null && msg.t <= this._lastProcT) return
+      this._lastProcT = msg.t
       this.prev = this.cur
       this.cur = msg
       this.recvAt = performance.now()
@@ -325,6 +330,11 @@ export class NetGame {
     }
     // кусты/камни/горы — AI-спрайты с вырезанным фоном (прозрачная альфа)
     if (this.playerTankId) this._wantTex(this.playerTankId, this.playerSkin)
+    // снапшоты, пришедшие ДО mount (гонка матчмейкинг→бой), просили текстуры,
+    // когда this.tex ещё не было → их пропустили. Теперь tex готов — печём
+    // реальные машины ВСЕХ уже видимых юнитов (свои/тиммейты/засвеченные враги),
+    // иначе тиммейт ждал бы СЛЕДУЮЩЕГО снапшота и до него рисовался фолбэком.
+    if (this.cur) for (const u of this.cur.units) this._wantTex(u.tankId, u.skin)
 
     this.world = new Container()
     this.bg = new Graphics()
@@ -354,6 +364,11 @@ export class NetGame {
     this.labels = new Container()
     this.app.stage.addChild(this.labels)
     this.unitLabels = new Map()
+
+    // снапшоты, накопившиеся в очереди ПОКА грузился mount, сбрасываем: мир уже
+    // показан (lastState в конструкторе), а слив пачки тут выстрелил бы кучей
+    // старых событий (взрывы) разом. Тикер дальше сливает только свежие.
+    if (this.client && this.client.stateQueue) this.client.stateQueue.length = 0
 
     this._bindKeyboard()
     this._inputTimer = setInterval(() => this._sendInput(), 100)
@@ -424,6 +439,14 @@ export class NetGame {
   // ленивые текстуры реальных машин игроков (+вариант с узором камуфляжа)
   _wantTex(tankId, skinId = null) {
     if (!tankId) return
+    // this.tex появляется только в mount(); если снапшот пришёл РАНЬШЕ (гонка
+    // матчмейкинг→бой: NetGame создаётся, _onMessage(lastState) бежит в
+    // конструкторе ДО mount), печь некуда — НЕ помечаем ключ загруженным, иначе
+    // повторный вызов после mount уйдёт в short-circuit и текстура тиммейта
+    // (его реальная машина) НИКОГДА не запечётся → он рисуется фолбэк-спрайтом
+    // класса. Свой танк спасал отдельный _wantTex в mount с другим ключом —
+    // тиммейту такого спасения нет. Пускаем печь только когда tex готов.
+    if (!this.tex) return
     const key = this._tankTexKey(tankId, skinId)
     if (this._wantedTex.has(key)) return
     this._wantedTex.add(key)
@@ -528,16 +551,18 @@ export class NetGame {
 
   _update(dt) {
     dt = Math.min(dt, 0.05)
-    // ТЯНЕМ последний снапшот из сетевого буфера. net.js пишет client.lastState
-    // на КАЖДЫЙ принятый state — даже если push client.onMessage по какой-то
-    // причине не доходит (диагностика на iOS показала rx растёт, а seen стоял на
-    // 1: сокет принимает, но проброс срывался). Pull в рендер-цикле гарантирует,
-    // что рендер получает данные, пока сокет вообще что-то принимает. Дедуп — по
-    // ссылке (lastState !== this.cur), так что с работающим push нет двойной
-    // обработки. Дешёво: lastState читаем, _onMessage отработает лишь на новом.
+    // СЛИВАЕМ всю очередь принятых снапшотов (net.js пишет КАЖДЫЙ state в
+    // client.stateQueue). Раньше тянули только последний lastState — на мобиле
+    // снапшоты приходят бурстами (несколько за кадр), и промежуточные терялись →
+    // дыры в буфере интерполяции → дёрг. Теперь обрабатываем ВСЕ по порядку
+    // (push на iOS не доходит — pull-очередь гарантия). t-дедуп в _onMessage
+    // снимает двойную обработку, если push всё же сработал.
     const c = this.client
     if (c && !this.matchOver) {
-      if (c.lastState && c.lastState !== this.cur) this._onMessage(c.lastState)
+      if (c.stateQueue && c.stateQueue.length) {
+        for (const m of c.stateQueue) this._onMessage(m)
+        c.stateQueue.length = 0
+      }
       if (c.lastEnd) this._onMessage(c.lastEnd) // конец боя тоже тянем (push мог не дойти)
     }
 
@@ -547,7 +572,10 @@ export class NetGame {
     const buf = this._snapBuf
     if (buf && buf.length) {
       const latest = buf[buf.length - 1].t
-      const delay = this.tickDt * 2 // ~100мс буфер: запас под джиттер сети, без рывков
+      // задержка рендера: меньше = отзывчивее (руль/камера не «тормозят»), но
+      // нужен запас под джиттер сети. С полной очередью снапшотов (без дыр) 1.2
+      // тика (~60мс) хватает для гладкости и заметно отзывчивее прежних ~100мс.
+      const delay = this.tickDt * 1.2
       if (this._renderT == null || this._renderT > latest || this._renderT < latest - this.tickDt * 8) {
         this._renderT = latest - delay // (ре)синхрон: старт / после столла / убегание
       } else {
