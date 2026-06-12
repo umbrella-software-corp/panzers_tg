@@ -129,9 +129,14 @@ onUnmounted(() => clearTimeout(toastTimer))
             </div>
           </div>
 
-          <!-- моя готовность -->
+          <!-- командир один: подсказка как затащить друга (частый затык — кеш/открытая игра) -->
+          <p v-if="isLeader && squad.members.length < 2" class="hint" style="margin: 10px 0 0; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(0,0,0,.25)">
+            Ждём друга. Он должен <b>полностью закрыть игру</b> (смахнуть в Telegram) и открыть её <b>по твоей ссылке</b> — тогда появится здесь. Если игра у него уже открыта — по ссылке не зайдёт.
+          </p>
+
+          <!-- моя готовность: лейбл по ДЕЙСТВИЮ (зелёный = уже готов) -->
           <button class="ready-toggle" :class="{ on: myReady() }" @click="toggleReady">
-            {{ myReady() ? '✓ Я ГОТОВ' : 'ОТМЕТИТЬ ГОТОВНОСТЬ' }}
+            {{ myReady() ? 'ОТМЕНИТЬ ГОТОВНОСТЬ' : 'ГОТОВ' }}
           </button>
 
           <!-- командир: позвать ещё + старт; участник — подсказка -->
