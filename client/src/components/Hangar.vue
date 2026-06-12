@@ -367,6 +367,7 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
   padding: 7px 14px;
   font-size: 13px;
   flex-shrink: 0;
+  width: auto; /* .pz-cta даёт width:100% → кнопка распиралась на всю ширину; тут — по контенту */
 }
 .camo-cell {
   position: relative;
