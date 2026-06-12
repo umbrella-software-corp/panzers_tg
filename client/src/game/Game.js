@@ -1558,10 +1558,7 @@ export class Game {
       const isAlly = b.team === TEAM.ALLY
       if (!isAlly && !b.spotted) continue
       const teamCol = isAlly ? this.colors.ally : this.colors.enemy
-      // командный «пятак» ПОД танком (markGfx) — свой/чужой читается без перекраски
-      // машины: реальные модели остаются в собственном камуфляже (tint 0xffffff)
-      mg.ellipse(b.x, b.y + 8, 30, 12).fill({ color: teamCol.hp, alpha: 0.16 })
-      mg.ellipse(b.x, b.y + 8, 30, 12).stroke({ width: 2.5, color: teamCol.hp, alpha: 0.75 })
+      // «пятак» под танком убран по фидбеку: команду и так видно по цвету ника и HP-бара
       // классовый фоллбэк-спрайт уже окрашен в текстуре под команду; реальный — нет
       if (useSpr && placeSpr(b.id, b.x, b.y, b.hull, 0xffffff)) {
         if (b.flash > 0) g.circle(b.x, b.y, 30).fill({ color: 0xffffff, alpha: 0.45 })

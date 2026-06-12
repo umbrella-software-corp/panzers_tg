@@ -614,12 +614,7 @@ export class NetGame {
       }
 
       const flash = this.flash.get(u.id) > 0
-      // командный «пятак» ПОД чужими/союзными танками (свой танк — это ты, не нужен):
-      // свой/чужой читается без перекраски машины — модель в собственном камуфляже
-      if (!isSelf) {
-        mg.ellipse(u.x, u.y + 8, 30, 12).fill({ color: pal.hp, alpha: 0.16 })
-        mg.ellipse(u.x, u.y + 8, 30, 12).stroke({ width: 2.5, color: pal.hp, alpha: 0.75 })
-      }
+      // «пятак» под танком убран по фидбеку: команду видно по цвету ника и HP-бара
       if (spr) {
         spr.visible = true
         spr.position.set(u.x, u.y)

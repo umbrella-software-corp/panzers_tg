@@ -210,7 +210,7 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
       >
         <span class="pz-pixel" style="font-size: 8px" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">{{ t.tier }}</span>
         <TankImg :tank-id="t.id" :size="42" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)' }" />
-        <span class="pz-display" style="font-size: 12.5px; white-space: nowrap">{{ t.name }}</span>
+        <span class="pz-display" style="font-size: 10px; line-height: 1.05; text-align: center; white-space: normal; word-break: break-word; height: 23px; display: flex; align-items: center; justify-content: center; overflow: hidden">{{ t.name }}</span>
         <span style="height: 14px; display: flex; align-items: center" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">
           <PzIcon :name="isOwned(t.id) ? 'star' : 'lock'" :size="11" :color="t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)'" />
         </span>
