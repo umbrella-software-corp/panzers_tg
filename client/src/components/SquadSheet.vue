@@ -7,7 +7,7 @@ import { ref, computed, onUnmounted } from 'vue'
 import { profile, claimRefMilestone } from '../store.js'
 import { REF_MILESTONES } from '../game/meta.js'
 import { tgUserId, inviteLink, shareLink } from '../tg.js'
-import { squad, connectSquad, squadSetReady, squadLaunch, closeSquad, isSquadLeader, myReady, allReady } from '../game/squad.js'
+import { squad, connectSquad, squadSetReady, squadLaunch, closeSquad, isSquadLeader, myReady, allReady, myTankCompatible, squadTierOk, memberTierBad } from '../game/squad.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -46,10 +46,15 @@ function inviteMore() {
   afterShare(shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG!'))
 }
 function toggleReady() {
+  // готовлюсь, но техника не в пределах ±1 уровня — не даём встать в готовность
+  if (!myReady() && !myTankCompatible()) {
+    showToast('Смените технику — взвод только в пределах ±1 уровня')
+    return
+  }
   squadSetReady(!myReady())
 }
 function launch() {
-  if (!isLeader.value || !allReady()) return
+  if (!isLeader.value || !allReady() || !squadTierOk()) return
   squadLaunch(profile.battleMode) // сервер пнёт всех → App.onLaunch → в бой с party=squadId
   emit('close')
 }
@@ -74,7 +79,13 @@ function claim(i) {
 
 const needWord = (n) => (n === 1 ? 'друг' : n < 5 ? 'друга' : 'друзей')
 
-onUnmounted(() => clearTimeout(toastTimer))
+// сервер отклонил старт (разный уровень техники) — показываем тостом
+squad.onWarn = (reason) => showToast(reason === 'tier' ? 'Разный уровень техники — нужен ±1' : 'Действие отклонено')
+
+onUnmounted(() => {
+  clearTimeout(toastTimer)
+  squad.onWarn = null
+})
 </script>
 
 <template>
@@ -119,9 +130,15 @@ onUnmounted(() => clearTimeout(toastTimer))
             <div v-for="i in 3" :key="i" class="squad-slot" :class="{ filled: !!squad.members[i - 1], ready: squad.members[i - 1] && squad.members[i - 1].ready, me: squad.members[i - 1] && String(squad.members[i - 1].id) === String(myId) }">
               <template v-if="squad.members[i - 1]">
                 <span class="sl-dot" :class="{ ready: squad.members[i - 1].ready }"></span>
-                <div class="sl-name">
-                  <PzIcon v-if="squad.members[i - 1].leader" name="star" :size="11" color="var(--amber)" />
-                  {{ squad.members[i - 1].name }}<span v-if="String(squad.members[i - 1].id) === String(myId)" style="color: var(--ink-faint); font-weight: 600"> · ты</span>
+                <div class="sl-info">
+                  <div class="sl-name">
+                    <PzIcon v-if="squad.members[i - 1].leader" name="star" :size="11" color="var(--amber)" />
+                    {{ squad.members[i - 1].name }}<span v-if="String(squad.members[i - 1].id) === String(myId)" style="color: var(--ink-faint); font-weight: 600"> · ты</span>
+                  </div>
+                  <div class="sl-tank" :class="{ bad: memberTierBad(squad.members[i - 1]) }">
+                    <template v-if="squad.members[i - 1].tank">{{ squad.members[i - 1].tank.name }} · ур.{{ squad.members[i - 1].tank.tier }}</template>
+                    <template v-else>выбирает технику…</template>
+                  </div>
                 </div>
                 <span class="sl-state" :class="{ ready: squad.members[i - 1].ready }">{{ squad.members[i - 1].ready ? 'ГОТОВ' : 'ждёт' }}</span>
               </template>
@@ -141,8 +158,8 @@ onUnmounted(() => clearTimeout(toastTimer))
 
           <!-- командир: позвать ещё + старт; участник — подсказка -->
           <button v-if="isLeader && !squad.full" class="pz-btn2" style="width: 100%; margin-top: 8px" @click="inviteMore">Позвать ещё друга</button>
-          <button v-if="isLeader" class="pz-cta pz-cta--hazard" style="width: 100%; margin-top: 8px; padding: 13px" :disabled="!allReady()" :style="{ opacity: allReady() ? 1 : 0.5 }" @click="launch">
-            {{ allReady() ? `В БОЙ ×${squad.members.length}` : 'ЖДЁМ ГОТОВНОСТИ ВСЕХ' }}
+          <button v-if="isLeader" class="pz-cta pz-cta--hazard" style="width: 100%; margin-top: 8px; padding: 13px" :disabled="!allReady() || !squadTierOk()" :style="{ opacity: allReady() && squadTierOk() ? 1 : 0.5 }" @click="launch">
+            {{ !squadTierOk() ? 'РАЗНЫЙ УРОВЕНЬ ТЕХНИКИ' : allReady() ? `В БОЙ ×${squad.members.length}` : 'ЖДЁМ ГОТОВНОСТИ ВСЕХ' }}
           </button>
           <div v-else class="hint" style="text-align: center; margin-top: 10px">Командир запустит бой, когда все готовы</div>
 
@@ -309,8 +326,14 @@ onUnmounted(() => clearTimeout(toastTimer))
   background: var(--green);
   box-shadow: 0 0 8px var(--green);
 }
-.sl-name {
+.sl-info {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sl-name {
   min-width: 0;
   font-size: 13.5px;
   font-weight: 600;
@@ -320,6 +343,17 @@ onUnmounted(() => clearTimeout(toastTimer))
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sl-tank {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-tank.bad {
+  color: #ff6a5a;
 }
 .sl-state {
   font-size: 10px;

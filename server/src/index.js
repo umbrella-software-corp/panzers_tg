@@ -252,17 +252,26 @@ const waitingRooms = { capture: null, annihilation: null }
 // squadId = tg-id командира. Участники держат WS в режиме лобби (?squad=<id>).
 // Командир жмёт «старт» → всем squad-launch → каждый заходит в бой с party=squadId
 // (готовая группировка assignTeams сводит их в одну команду).
-const squads = new Map() // squadId -> { id, members: Map(memberId -> {id, name, ready, ws}) }
+const squads = new Map() // squadId -> { id, members: Map(memberId -> {id, name, ready, ws, tank}) }
 const SQUAD_MAX = 3 // командир + 2
+const MAX_TIER_SPREAD = 1 // взвод только в пределах ±1 уровня техники
+
+// техника участника от клиента: { id, tier, name } — чистим перед хранением
+function sanitizeTank(t) {
+  if (!t || typeof t !== 'object') return null
+  const tier = Math.round(+t.tier || 0)
+  if (!(tier >= 1 && tier <= 10)) return null
+  return { id: String(t.id || '').slice(0, 16), tier, name: String(t.name || '').slice(0, 24) }
+}
 
 function squadRoster(sq) {
-  return [...sq.members.values()].map((m) => ({ id: m.id, name: m.name, ready: m.ready, leader: m.id === sq.id }))
+  return [...sq.members.values()].map((m) => ({ id: m.id, name: m.name, ready: m.ready, leader: m.id === sq.id, tank: m.tank || null }))
 }
 function broadcastSquad(sq) {
   const members = squadRoster(sq)
   for (const m of sq.members.values()) send(m.ws, { type: 'squad', squadId: sq.id, members })
 }
-function squadJoin(squadId, memberId, name, ws) {
+function squadJoin(squadId, memberId, name, tank, ws) {
   let sq = squads.get(squadId)
   if (!sq) {
     sq = { id: squadId, members: new Map() }
@@ -272,10 +281,15 @@ function squadJoin(squadId, memberId, name, ws) {
     send(ws, { type: 'squad-full' })
     return
   }
-  sq.members.set(memberId, { id: memberId, name: (name || 'Боец').slice(0, 24), ready: false, ws })
+  sq.members.set(memberId, { id: memberId, name: (name || 'Боец').slice(0, 24), ready: false, ws, tank: sanitizeTank(tank) })
   ws.squad = sq
   ws.squadMemberId = memberId
   broadcastSquad(sq)
+}
+// разброс уровней техники во взводе превышает допустимый ±1?
+function squadTierBad(sq) {
+  const tiers = [...sq.members.values()].map((m) => m.tank && m.tank.tier).filter((t) => t != null)
+  return tiers.length >= 2 && Math.max(...tiers) - Math.min(...tiers) > MAX_TIER_SPREAD
 }
 function squadLeave(ws) {
   const sq = ws.squad
@@ -692,7 +706,14 @@ wss.on('connection', (ws, req) => {
         return
       }
       if (m.type === 'squad-join' && m.id) {
-        squadJoin(squadId, String(m.id).replace(/[^0-9]/g, '').slice(0, 20), m.name, ws)
+        squadJoin(squadId, String(m.id).replace(/[^0-9]/g, '').slice(0, 20), m.name, m.tank, ws)
+      } else if (m.type === 'squad-tank') {
+        // сменил технику в ангаре, пока во взводе — обновляем уровень для проверки
+        const me = ws.squad && ws.squad.members.get(ws.squadMemberId)
+        if (me) {
+          me.tank = sanitizeTank(m.tank)
+          broadcastSquad(ws.squad)
+        }
       } else if (m.type === 'ready') {
         const me = ws.squad && ws.squad.members.get(ws.squadMemberId)
         if (me) {
@@ -700,6 +721,11 @@ wss.on('connection', (ws, req) => {
           broadcastSquad(ws.squad)
         }
       } else if (m.type === 'launch' && ws.squad && ws.squadMemberId === ws.squad.id) {
+        // гейт уровня: разная техника (> ±1) — старт запрещён (страховка к UI-блоку)
+        if (squadTierBad(ws.squad)) {
+          send(ws, { type: 'squad-warn', reason: 'tier' })
+          return
+        }
         // только командир стартует — всем участникам команда зайти в бой
         const lmode = m.mode === 'annihilation' ? 'annihilation' : 'capture'
         for (const mem of ws.squad.members.values()) send(mem.ws, { type: 'squad-launch', squadId: ws.squad.id, mode: lmode })

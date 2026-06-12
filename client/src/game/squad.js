@@ -1,8 +1,16 @@
 // Клиент взвод-лобби: WS-соединение в режиме лобби (до боя), реалтайм состав +
 // готовность. Командир жмёт старт → onLaunch у всех участников → каждый заходит в
 // бой с party=squadId (сервер сводит одинаковые токены в одну команду).
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import { tgUserId } from '../tg.js'
+import { profile, selectedTank } from '../store.js'
+
+export const MAX_TIER_SPREAD = 1 // взвод только в пределах ±1 уровня техники
+// моя текущая техника для взвода: { id, tier, name }
+function tankInfo() {
+  const t = selectedTank()
+  return t ? { id: t.id, tier: t.tier, name: t.name } : null
+}
 
 const WS_URL =
   import.meta.env.VITE_WS_URL ||
@@ -18,6 +26,7 @@ export const squad = reactive({
   full: false, // взвод полон (3/3)
   onLaunch: null, // колбэк App: старт боя с party=squadId
   onDisband: null, // колбэк: командир распустил
+  onWarn: null, // колбэк UI: сервер отклонил действие (напр. разный уровень техники)
 })
 
 export const inSquad = () => squad.active
@@ -27,6 +36,30 @@ export const myReady = () => {
   return me ? me.ready : false
 }
 export const allReady = () => squad.members.length > 0 && squad.members.every((m) => m.ready)
+
+// --- проверка уровней техники (взвод только в пределах ±1) ---
+const myTier = () => {
+  const t = selectedTank()
+  return t ? t.tier : null
+}
+// моя техника совместима со всеми остальными (в пределах ±1 уровня)?
+export function myTankCompatible() {
+  const mt = myTier()
+  if (mt == null) return true
+  const me = String(tgUserId())
+  return squad.members.every((m) => String(m.id) === me || !m.tank || Math.abs(m.tank.tier - mt) <= MAX_TIER_SPREAD)
+}
+// весь взвод в пределах ±1 уровня?
+export function squadTierOk() {
+  const tiers = squad.members.map((m) => m.tank && m.tank.tier).filter((t) => t != null)
+  if (tiers.length < 2) return true
+  return Math.max(...tiers) - Math.min(...tiers) <= MAX_TIER_SPREAD
+}
+// у конкретного участника техника выбивается из диапазона (для подсветки)?
+export function memberTierBad(m) {
+  if (!m || !m.tank) return false
+  return squad.members.some((o) => o.tank && String(o.id) !== String(m.id) && Math.abs(o.tank.tier - m.tank.tier) > MAX_TIER_SPREAD)
+}
 
 let ws = null
 
@@ -47,7 +80,7 @@ export function connectSquad(squadId, name) {
     return false
   }
   ws = sock // WS держим в модуле, НЕ в реактивном объекте (Vue не должен его проксировать)
-  sock.onopen = () => sock.send(JSON.stringify({ type: 'squad-join', id: me, name: name || 'Боец' }))
+  sock.onopen = () => sock.send(JSON.stringify({ type: 'squad-join', id: me, name: name || 'Боец', tank: tankInfo() }))
   sock.onmessage = (e) => {
     let m
     try {
@@ -62,6 +95,8 @@ export function connectSquad(squadId, name) {
       squad.full = true
     } else if (m.type === 'squad-launch') {
       if (squad.onLaunch) squad.onLaunch(m) // App: setPartyToken + в бой
+    } else if (m.type === 'squad-warn') {
+      if (squad.onWarn) squad.onWarn(m.reason)
     } else if (m.type === 'squad-disband') {
       if (squad.onDisband) squad.onDisband()
       closeSquad()
@@ -84,6 +119,18 @@ export function connectSquad(squadId, name) {
 export function squadSetReady(ready) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'ready', ready: !!ready }))
 }
+
+// отправить серверу свою текущую технику (для проверки уровней)
+export function squadSetTank() {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'squad-tank', tank: tankInfo() }))
+}
+// сменил танк в ангаре, пока во взводе → шлём обновление (уровни пересчитаются у всех)
+watch(
+  () => profile.selectedTank,
+  () => {
+    if (squad.active) squadSetTank()
+  },
+)
 
 export function squadLaunch(mode) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'launch', mode }))
