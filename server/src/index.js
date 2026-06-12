@@ -234,6 +234,51 @@ const rooms = new Map()
 // (две команды живых), взводы держатся вместе при делении (см. assignTeams).
 const waitingRooms = { capture: null, annihilation: null }
 
+// ---------- взвод-лобби (до боя): реалтайм состав + готовность ----------
+// squadId = tg-id командира. Участники держат WS в режиме лобби (?squad=<id>).
+// Командир жмёт «старт» → всем squad-launch → каждый заходит в бой с party=squadId
+// (готовая группировка assignTeams сводит их в одну команду).
+const squads = new Map() // squadId -> { id, members: Map(memberId -> {id, name, ready, ws}) }
+const SQUAD_MAX = 3 // командир + 2
+
+function squadRoster(sq) {
+  return [...sq.members.values()].map((m) => ({ id: m.id, name: m.name, ready: m.ready, leader: m.id === sq.id }))
+}
+function broadcastSquad(sq) {
+  const members = squadRoster(sq)
+  for (const m of sq.members.values()) send(m.ws, { type: 'squad', squadId: sq.id, members })
+}
+function squadJoin(squadId, memberId, name, ws) {
+  let sq = squads.get(squadId)
+  if (!sq) {
+    sq = { id: squadId, members: new Map() }
+    squads.set(squadId, sq)
+  }
+  if (!sq.members.has(memberId) && sq.members.size >= SQUAD_MAX) {
+    send(ws, { type: 'squad-full' })
+    return
+  }
+  sq.members.set(memberId, { id: memberId, name: (name || 'Боец').slice(0, 24), ready: false, ws })
+  ws.squad = sq
+  ws.squadMemberId = memberId
+  broadcastSquad(sq)
+}
+function squadLeave(ws) {
+  const sq = ws.squad
+  if (!sq) return
+  ws.squad = null
+  sq.members.delete(ws.squadMemberId)
+  // командир ушёл → взвод распускаем (всем squad-disband)
+  if (ws.squadMemberId === sq.id) {
+    for (const m of sq.members.values()) send(m.ws, { type: 'squad-disband' })
+    squads.delete(sq.id)
+  } else if (sq.members.size === 0) {
+    squads.delete(sq.id)
+  } else {
+    broadcastSquad(sq)
+  }
+}
+
 function newRoom() {
   const room = {
     id: `r${nextId++}`,
@@ -422,13 +467,54 @@ wss.on('connection', (ws, req) => {
   // комнату; режим (?mode=annihilation) — какой бой искать (захват по умолчанию)
   let party = null
   let mode = 'capture'
+  let squadId = null
   try {
     const q = new URL(req.url, 'http://x').searchParams
     party = (q.get('party') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
     mode = q.get('mode') === 'annihilation' ? 'annihilation' : 'capture'
+    squadId = (q.get('squad') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
   } catch {
     party = null
   }
+
+  // ===== режим ВЗВОД-ЛОББИ (?squad=<id командира>): состав до боя, в бой НЕ заходим =====
+  if (squadId) {
+    let tk = MSG_BURST
+    let lr = Date.now()
+    ws.on('message', (raw) => {
+      const now = Date.now()
+      tk = Math.min(MSG_BURST, tk + ((now - lr) / 1000) * MSG_RATE)
+      lr = now
+      if (--tk < 0) return ws.terminate()
+      let m
+      try {
+        m = JSON.parse(raw.toString())
+      } catch {
+        return
+      }
+      if (m.type === 'squad-join' && m.id) {
+        squadJoin(squadId, String(m.id).replace(/[^0-9]/g, '').slice(0, 20), m.name, ws)
+      } else if (m.type === 'ready') {
+        const me = ws.squad && ws.squad.members.get(ws.squadMemberId)
+        if (me) {
+          me.ready = !!m.ready
+          broadcastSquad(ws.squad)
+        }
+      } else if (m.type === 'launch' && ws.squad && ws.squadMemberId === ws.squad.id) {
+        // только командир стартует — всем участникам команда зайти в бой
+        const lmode = m.mode === 'annihilation' ? 'annihilation' : 'capture'
+        for (const mem of ws.squad.members.values()) send(mem.ws, { type: 'squad-launch', squadId: ws.squad.id, mode: lmode })
+      }
+    })
+    ws.on('close', () => {
+      const n = (ipCount.get(ip) || 1) - 1
+      if (n <= 0) ipCount.delete(ip)
+      else ipCount.set(ip, n)
+      squadLeave(ws)
+    })
+    return
+  }
+
   const id = `p${nextId++}`
   const room = getJoinRoom(mode)
   // party-токен храним на игроке — по нему делим на команды в startRoom (взвод цело)
