@@ -99,6 +99,8 @@ export class Game {
 
     // карта боя и жребий стороны: 0 — юг (синие), 1 — север (красные)
     this.map = MAP_BY_ID[opts.mapId] || MAPS[0]
+    this.mapSize = this.map.size || MAP_SIZE // размер карты (большие — больше места)
+    this.mapScale = this.mapSize / MAP_SIZE // растяжение координат фич/спавнов
     // режим боя: 'capture' — захват точек до лимита; 'annihilation' — до последнего танка
     this.mode = opts.mode === 'annihilation' ? 'annihilation' : 'capture'
     this.side = opts.side === 1 ? 1 : 0
@@ -107,7 +109,7 @@ export class Game {
       ? { ally: TEAM_PALETTE.blue, enemy: TEAM_PALETTE.red }
       : { ally: TEAM_PALETTE.red, enemy: TEAM_PALETTE.blue }
 
-    this.tank = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 + 700 * this.ySign }
+    this.tank = { x: this.mapSize / 2, y: this.mapSize / 2 + 700 * this.mapScale * this.ySign }
     this.hullAngle = (-Math.PI / 2) * this.ySign
     this.speed = 0
     this.joystick = { x: 0, y: 0, active: false }
@@ -121,11 +123,12 @@ export class Game {
     this.revealT = 0 // >0 — игрок недавно стрелял, маскировка кустом снята (видят боты)
     this.ammoMult = 1 // 1 = обычный снаряд, GOLD_AMMO_MULT = голдовый
 
-    const c = MAP_SIZE / 2
-    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
+    const c = this.mapSize / 2
+    const sc = this.mapScale // координаты фич растягиваем под размер карты
+    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx * sc, y: c + o.dy * sc, r: o.r, kind: o.kind }))
     this.walls = this.map.walls.map((w) => ({
-      cx: c + w.dx,
-      cy: c + w.dy,
+      cx: c + w.dx * sc,
+      cy: c + w.dy * sc,
       hw: w.w / 2,
       hh: w.h / 2,
       hp: w.hp || Infinity,
@@ -134,15 +137,15 @@ export class Game {
     // базы: [юг, север] из карты; своя — на нашей стороне жребия
     this.bases = this.map.bases.map((b, i) => ({
       team: i === this.side ? TEAM.ALLY : TEAM.ENEMY,
-      x: c + b.dx,
-      y: c + b.dy,
+      x: c + b.dx * sc,
+      y: c + b.dy * sc,
       r: b.r,
       progress: 0,
     }))
     this.caps = this.map.caps.map((p) => ({
       id: p.id,
-      x: c + p.dx,
-      y: c + p.dy,
+      x: c + p.dx * sc,
+      y: c + p.dy * sc,
       r: p.r,
       owner: null, // null | 0 (союз) | 1 (враг)
       capper: null, // кто сейчас захватывает
@@ -201,10 +204,12 @@ export class Game {
   }
 
   _spawnPoint(team, i, n) {
-    // союзники на нашей половине (жребий стороны), враги напротив; разносим по горизонтали
-    const c = MAP_SIZE / 2
-    const spread = ((i - (n - 1) / 2) / Math.max(1, n)) * 900
-    const y = team === TEAM.ALLY ? c + 560 * this.ySign : c - 560 * this.ySign
+    // союзники на нашей половине (жребий стороны), враги напротив; разносим по горизонтали.
+    // Спавны растягиваем под размер карты (большие карты — команды дальше друг от друга)
+    const c = this.mapSize / 2
+    const sc = this.mapScale
+    const spread = ((i - (n - 1) / 2) / Math.max(1, n)) * 900 * sc
+    const y = team === TEAM.ALLY ? c + 560 * sc * this.ySign : c - 560 * sc * this.ySign
     return { x: c + spread, y }
   }
 
@@ -326,7 +331,7 @@ export class Game {
     this.tankLayer = new Container() // спрайты танков под HUD-графикой (hp-бары и т.п.)
     this.fxLayer = new Container() // аддитивные вспышки взрывов поверх всего
     if (this.tex.ground) {
-      this.groundTile = new TilingSprite({ texture: this.tex.ground, width: MAP_SIZE, height: MAP_SIZE })
+      this.groundTile = new TilingSprite({ texture: this.tex.ground, width: this.mapSize, height: this.mapSize })
       this.groundTile.tileScale.set(0.55)
       if (this.map.tint) this.groundTile.tint = this.map.tint // характер местности карты
       this.world.addChild(this.groundTile)
@@ -766,8 +771,8 @@ export class Game {
       }
     }
     const m = 60
-    pos.x = Math.max(m, Math.min(MAP_SIZE - m, pos.x))
-    pos.y = Math.max(m, Math.min(MAP_SIZE - m, pos.y))
+    pos.x = Math.max(m, Math.min(this.mapSize - m, pos.x))
+    pos.y = Math.max(m, Math.min(this.mapSize - m, pos.y))
   }
 
   // состояние воды под танком: 'deep' — глубина (топит), 'shallow' — брод (тормозит),
@@ -1088,8 +1093,8 @@ export class Game {
       const j = this.joystick
       if (j.active && !this.paused) {
         const sp = 700 // px/сек
-        this.specCam.x = Math.max(0, Math.min(MAP_SIZE, this.specCam.x + j.x * sp * dt))
-        this.specCam.y = Math.max(0, Math.min(MAP_SIZE, this.specCam.y + j.y * sp * dt))
+        this.specCam.x = Math.max(0, Math.min(this.mapSize, this.specCam.x + j.x * sp * dt))
+        this.specCam.y = Math.max(0, Math.min(this.mapSize, this.specCam.y + j.y * sp * dt))
       }
       return
     }
@@ -1217,7 +1222,7 @@ export class Game {
     } else {
       // нет видимого врага и тревоги — к объективу: открытая точка / защита своей базы
       const goal = this._botGoal(b)
-      const c = MAP_SIZE / 2
+      const c = this.mapSize / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
       const diff = angleDiff(a, b.hull)
@@ -1722,7 +1727,7 @@ export class Game {
     const ctx = this.minimapCtx
     if (!ctx) return
     const S = this.minimap.width
-    const k = S / MAP_SIZE
+    const k = S / this.mapSize
     ctx.clearRect(0, 0, S, S)
     ctx.fillStyle = '#0c0f14'
     ctx.fillRect(0, 0, S, S)
@@ -1822,12 +1827,12 @@ export class Game {
   _drawMap() {
     const g = this.bg
     g.clear()
-    if (!this.groundTile) g.rect(0, 0, MAP_SIZE, MAP_SIZE).fill(0x10141b)
+    if (!this.groundTile) g.rect(0, 0, this.mapSize, this.mapSize).fill(0x10141b)
     const step = 80
-    for (let x = 0; x <= MAP_SIZE; x += step) g.moveTo(x, 0).lineTo(x, MAP_SIZE)
-    for (let y = 0; y <= MAP_SIZE; y += step) g.moveTo(0, y).lineTo(MAP_SIZE, y)
+    for (let x = 0; x <= this.mapSize; x += step) g.moveTo(x, 0).lineTo(x, this.mapSize)
+    for (let y = 0; y <= this.mapSize; y += step) g.moveTo(0, y).lineTo(this.mapSize, y)
     g.stroke({ width: 1, color: 0xffffff, alpha: 0.05 })
-    g.rect(0, 0, MAP_SIZE, MAP_SIZE).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
+    g.rect(0, 0, this.mapSize, this.mapSize).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
   }
 
   // круглый текстурный участок местности (лес/камень/вода) с маской

@@ -36,6 +36,7 @@ export class BattleSim {
     this.teamSize = teamSize
     this.map = MAP_BY_ID[mapId] || MAPS[0]
     this.mapId = this.map.id
+    this.mapSize = this.map.size || MAP_SIZE // размер карты (большие карты — больше места)
     // режим боя: 'capture' — захват точек до лимита очков; 'annihilation' —
     // бой до последнего танка (точки выключены, победа по вайпу/живым на таймауте)
     this.mode = mode === 'annihilation' ? 'annihilation' : 'capture'
@@ -48,16 +49,19 @@ export class BattleSim {
     this.capTimer = 0
     this.events = [] // копятся за шаг, забираются takeEvents()
 
-    const c = MAP_SIZE / 2
-    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
+    const c = this.mapSize / 2
+    // координаты фич/спавнов растягиваем на размер карты (большие карты —
+    // фичи разнесены шире, а не кучкуются в центре с пустыми краями)
+    const sc = this.mapSize / MAP_SIZE
+    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx * sc, y: c + o.dy * sc, r: o.r, kind: o.kind }))
     // в PvP все стены капитальные (разрушаемость — клиентская фича PvE)
-    this.walls = this.map.walls.map((w) => ({ cx: c + w.dx, cy: c + w.dy, hw: w.w / 2, hh: w.h / 2 }))
+    this.walls = this.map.walls.map((w) => ({ cx: c + w.dx * sc, cy: c + w.dy * sc, hw: w.w / 2, hh: w.h / 2 }))
     // базы карты: [юг, север] — команда 0 всегда юг, команда 1 — север
-    this.bases = this.map.bases.map((b, i) => ({ team: i, x: c + b.dx, y: c + b.dy, r: b.r }))
+    this.bases = this.map.bases.map((b, i) => ({ team: i, x: c + b.dx * sc, y: c + b.dy * sc, r: b.r }))
     this.caps = this.map.caps.map((p) => ({
       id: p.id,
-      x: c + p.dx,
-      y: c + p.dy,
+      x: c + p.dx * sc,
+      y: c + p.dy * sc,
       r: p.r,
       owner: null,
       capper: null,
@@ -91,8 +95,9 @@ export class BattleSim {
         : TANK_CLASSES[DEFAULT_CLASS]
       : TANK_CLASSES[BOT_CLASS_MIX[slot % BOT_CLASS_MIX.length]]
     const stats = classToRadians(cls)
-    const spread = ((slot - (this.teamSize - 1) / 2) / Math.max(1, this.teamSize)) * 1000
-    const c = MAP_SIZE / 2
+    const sc = this.mapSize / MAP_SIZE // спавны тоже растягиваем под размер карты
+    const spread = ((slot - (this.teamSize - 1) / 2) / Math.max(1, this.teamSize)) * 1000 * sc
+    const c = this.mapSize / 2
     return {
       id,
       team,
@@ -106,7 +111,7 @@ export class BattleSim {
       classId: stats.id,
       stats,
       x: c + spread,
-      y: team === 0 ? c + 560 : c - 560,
+      y: team === 0 ? c + 560 * sc : c - 560 * sc,
       hull: team === 0 ? -Math.PI / 2 : Math.PI / 2,
       speed: 0,
       hp: stats.hp,
@@ -354,7 +359,7 @@ export class BattleSim {
           goal = enemies[b.id % Math.min(enemies.length, 3)]
         }
       }
-      const c = MAP_SIZE / 2
+      const c = this.mapSize / 2
       let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
       const diff = angleDiff(a, b.hull)
@@ -572,8 +577,8 @@ export class BattleSim {
       }
     }
     const m = 60
-    pos.x = Math.max(m, Math.min(MAP_SIZE - m, pos.x))
-    pos.y = Math.max(m, Math.min(MAP_SIZE - m, pos.y))
+    pos.x = Math.max(m, Math.min(this.mapSize - m, pos.x))
+    pos.y = Math.max(m, Math.min(this.mapSize - m, pos.y))
   }
 
   // --- снапшоты ---

@@ -319,7 +319,7 @@ function startRoom(room) {
       youTeam: h.team,
       youUnit: u ? u.id : null,
       teamSize: TEAM_SIZE,
-      map: MAP_SIZE,
+      map: room.sim.mapSize, // размер карты (большие карты — больше места)
       mapId: map.id,
       mode: room.mode,
       humans: room.humans.length,

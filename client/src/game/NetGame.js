@@ -28,6 +28,7 @@ export class NetGame {
     this.app = new Application()
     this.client = client
     this.map = MAP_BY_ID[mapId] || MAPS[0]
+    this.mapSize = this.map.size || MAP_SIZE // размер карты (большие — больше места)
     this.mode = mode === 'annihilation' ? 'annihilation' : 'capture'
     this.side = side === 1 ? 1 : 0
     this.youUnit = youUnit
@@ -69,12 +70,13 @@ export class NetGame {
     this.hurtFlash = 0
     this.sweepFrozen = null
 
-    // статика карты
-    const c = MAP_SIZE / 2
-    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx, y: c + o.dy, r: o.r, kind: o.kind }))
-    this.walls = this.map.walls.map((w) => ({ cx: c + w.dx, cy: c + w.dy, hw: w.w / 2, hh: w.h / 2 }))
-    this.bases = this.map.bases.map((b, i) => ({ team: i, x: c + b.dx, y: c + b.dy, r: b.r }))
-    this.capPos = Object.fromEntries(this.map.caps.map((p) => [p.id, { x: c + p.dx, y: c + p.dy, r: p.r }]))
+    // статика карты (координаты растягиваем под размер карты — как на сервере)
+    const c = this.mapSize / 2
+    const sc = this.mapSize / MAP_SIZE
+    this.obstacles = this.map.obstacles.map((o) => ({ x: c + o.dx * sc, y: c + o.dy * sc, r: o.r, kind: o.kind }))
+    this.walls = this.map.walls.map((w) => ({ cx: c + w.dx * sc, cy: c + w.dy * sc, hw: w.w / 2, hh: w.h / 2 }))
+    this.bases = this.map.bases.map((b, i) => ({ team: i, x: c + b.dx * sc, y: c + b.dy * sc, r: b.r }))
+    this.capPos = Object.fromEntries(this.map.caps.map((p) => [p.id, { x: c + p.dx * sc, y: c + p.dy * sc, r: p.r }]))
 
     this.minimap = null
     this.minimapCtx = null
@@ -258,7 +260,7 @@ export class NetGame {
     this.tankLayer = new Container()
     this.fxLayer = new Container()
     if (this.tex.ground) {
-      this.groundTile = new TilingSprite({ texture: this.tex.ground, width: MAP_SIZE, height: MAP_SIZE })
+      this.groundTile = new TilingSprite({ texture: this.tex.ground, width: this.mapSize, height: this.mapSize })
       this.groundTile.tileScale.set(0.55)
       if (this.map.tint) this.groundTile.tint = this.map.tint
       this.world.addChild(this.groundTile)
@@ -431,8 +433,8 @@ export class NetGame {
     const j = this.joystick
     if (j.active && !this.paused) {
       const sp = 700 // px/сек
-      this.specCam.x = Math.max(0, Math.min(MAP_SIZE, this.specCam.x + j.x * sp * dt))
-      this.specCam.y = Math.max(0, Math.min(MAP_SIZE, this.specCam.y + j.y * sp * dt))
+      this.specCam.x = Math.max(0, Math.min(this.mapSize, this.specCam.x + j.x * sp * dt))
+      this.specCam.y = Math.max(0, Math.min(this.mapSize, this.specCam.y + j.y * sp * dt))
     }
   }
 
@@ -505,8 +507,8 @@ export class NetGame {
     const units = this._lerpUnits()
     const own = this._own(units)
     const dead = !!(own && !own.alive)
-    const ox = own ? own.x : MAP_SIZE / 2
-    const oy = own ? own.y : MAP_SIZE / 2
+    const ox = own ? own.x : this.mapSize / 2
+    const oy = own ? own.y : this.mapSize / 2
     const ohull = own ? own.hull : (-Math.PI / 2) * (this.side === 0 ? 1 : -1)
 
     // жив — камера следует за танком (танк смотрит вверх); мёртв — свободная
@@ -812,7 +814,7 @@ export class NetGame {
     const ctx = this.minimapCtx
     if (!ctx) return
     const S = this.minimap.width
-    const k = S / MAP_SIZE
+    const k = S / this.mapSize
     ctx.clearRect(0, 0, S, S)
     ctx.fillStyle = '#0c0f14'
     ctx.fillRect(0, 0, S, S)
@@ -906,12 +908,12 @@ export class NetGame {
   _drawMap() {
     const g = this.bg
     g.clear()
-    if (!this.groundTile) g.rect(0, 0, MAP_SIZE, MAP_SIZE).fill(0x10141b)
+    if (!this.groundTile) g.rect(0, 0, this.mapSize, this.mapSize).fill(0x10141b)
     const step = 80
-    for (let x = 0; x <= MAP_SIZE; x += step) g.moveTo(x, 0).lineTo(x, MAP_SIZE)
-    for (let y = 0; y <= MAP_SIZE; y += step) g.moveTo(0, y).lineTo(MAP_SIZE, y)
+    for (let x = 0; x <= this.mapSize; x += step) g.moveTo(x, 0).lineTo(x, this.mapSize)
+    for (let y = 0; y <= this.mapSize; y += step) g.moveTo(0, y).lineTo(this.mapSize, y)
     g.stroke({ width: 1, color: 0xffffff, alpha: 0.05 })
-    g.rect(0, 0, MAP_SIZE, MAP_SIZE).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
+    g.rect(0, 0, this.mapSize, this.mapSize).stroke({ width: 6, color: 0xffb000, alpha: 0.25 })
   }
 
   _terrainPatch(texName, x, y, r) {
