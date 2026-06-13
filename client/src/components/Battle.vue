@@ -83,6 +83,41 @@ const displayScore = computed(() =>
 )
 const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
+// баннер конца боя: ПОЧЕМУ бой кончился (причина крупно) + исход — перед донесением
+const endBanner = computed(() => {
+  const r = state.value.result // 'victory'|'defeat'|'draw'
+  const reason = state.value.endReason
+  const win = r === 'victory'
+  const resWord = win ? 'ПОБЕДА' : r === 'defeat' ? 'ПОРАЖЕНИЕ' : 'НИЧЬЯ'
+  const color = reason === 'aborted' ? 'var(--amber)' : win ? 'var(--green)' : r === 'defeat' ? 'var(--red)' : 'var(--amber)'
+  let title = resWord
+  let sub = ''
+  switch (reason) {
+    case 'caps':
+      title = win ? 'ТОЧКИ ЗАХВАЧЕНЫ' : 'ТОЧКИ ПОТЕРЯНЫ'
+      sub = win ? 'ЗАДАЧА ВЫПОЛНЕНА · ' + resWord : resWord
+      break
+    case 'wipe':
+      title = win ? 'ПРОТИВНИК УНИЧТОЖЕН' : 'ВЗВОД УНИЧТОЖЕН'
+      sub = win ? 'ЗАДАЧА ВЫПОЛНЕНА · ' + resWord : resWord
+      break
+    case 'score':
+      title = win ? 'ЛИМИТ ОЧКОВ ВЗЯТ' : 'ВРАГ НАБРАЛ ЛИМИТ'
+      sub = resWord
+      break
+    case 'time':
+      title = 'ВРЕМЯ ВЫШЛО'
+      sub = resWord
+      break
+    case 'aborted':
+      title = 'БОЙ ПРЕРВАН'
+      sub = 'сервер обновляется'
+      break
+    default:
+      title = resWord
+  }
+  return { title, sub, color }
+})
 // причина смерти для экрана смерти: «Уничтожил: <ник> · <класс> · удар <сторона>»
 const deathCause = computed(() => {
   const d = state.value.deathInfo
@@ -99,6 +134,7 @@ const count = ref(3)
 const loading = ref(true) // лоадер до прогрузки спрайтов боя
 const deathDismissed = ref(false) // игрок закрыл экран смерти и ушёл в наблюдение
 let countTimer = null
+let endTimer = null // пауза на баннер «почему бой кончился» перед донесением
 
 // пауза по кнопке (поверх фазы fighting)
 const paused = ref(false)
@@ -183,7 +219,14 @@ game.onState = (s) => {
   prevDeaths = s.deaths
   state.value = s
   if (s.matchOver && phase.value === 'fighting') {
-    phase.value = 'result'
+    // сперва БАННЕР «почему бой кончился» (чтобы не вываливать модалку резко),
+    // через ~1.8с — итоговое донесение
+    phase.value = 'ending'
+    haptic(s.result === 'victory' ? 'success' : s.result === 'defeat' ? 'error' : 'warning')
+    clearTimeout(endTimer)
+    endTimer = setTimeout(() => {
+      if (phase.value === 'ending') phase.value = 'result'
+    }, 1800)
     if (!statsCounted) {
       statsCounted = true
       addBattleResult(s.result, s.kills, { score: displayScore.value, tank: tankName.value, damage: s.damageDealt, spot: s.spotted || 0 })
@@ -404,6 +447,7 @@ onBeforeUnmount(() => {
   clearTimeout(toastTimer)
   clearInterval(countTimer)
   clearTimeout(shakeTimer)
+  clearTimeout(endTimer)
   clearNetWatchdog()
   game.destroy()
 })
@@ -586,6 +630,14 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- БАННЕР КОНЦА БОЯ: причина крупно, ПЕРЕД донесением (не вываливаем модалку резко) -->
+    <transition name="fade">
+      <div v-if="phase === 'ending'" class="overlay endbanner">
+        <div class="eb-title pz-display" :style="{ color: endBanner.color }">{{ endBanner.title }}</div>
+        <div v-if="endBanner.sub" class="eb-sub pz-display">{{ endBanner.sub }}</div>
+      </div>
+    </transition>
+
     <!-- результат: боевое донесение -->
     <transition name="fade">
       <div v-if="phase === 'result'" class="overlay result">
@@ -641,6 +693,27 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 9px;
   margin-top: 18px;
+}
+.endbanner {
+  z-index: 7;
+  pointer-events: none;
+  background: radial-gradient(60% 45% at 50% 45%, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.25));
+}
+.eb-title {
+  font-size: 34px;
+  letter-spacing: 0.1em;
+  text-align: center;
+  padding: 0 18px;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
+  animation: cd-pop 0.5s ease-out;
+}
+.eb-sub {
+  margin-top: 8px;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: var(--ink-dim);
+  text-align: center;
+  animation: pz-slide-up 0.4s ease 0.15s both;
 }
 .obs-chip {
   position: absolute;

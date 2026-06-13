@@ -600,7 +600,7 @@ function startRoom(room) {
     } catch (e) {
       // комната не должна ронять процесс с остальными боями
       console.error(`[ws] ${room.id}: tick error, закрываю комнату`, e)
-      for (const h of room.humans) send(h.ws, { type: 'match-end', winner: null, score: room.sim ? room.sim.score : [0, 0], stats: [] })
+      for (const h of room.humans) send(h.ws, { type: 'match-end', winner: null, reason: 'aborted', score: room.sim ? room.sim.score : [0, 0], stats: [] })
       endRoom(room)
     }
   }, 1000 / TICK_HZ)
@@ -816,7 +816,7 @@ function shutdown(sig) {
   console.log(`[srv] ${sig}: мягкое выключение — боёв ${rooms.size}, взводов ${squads.size}`)
   for (const room of [...rooms.values()]) {
     if (room.sim) {
-      for (const h of room.humans) send(h.ws, { type: 'match-end', winner: null, score: room.sim.score, stats: roomStats(room) })
+      for (const h of room.humans) send(h.ws, { type: 'match-end', winner: null, reason: 'aborted', score: room.sim.score, stats: roomStats(room) })
     }
     endRoom(room)
   }

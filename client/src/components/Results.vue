@@ -48,7 +48,9 @@ const reasonText = computed(() => {
     case 'score':
       return win ? 'Набран лимит очков' : 'Враг набрал лимит очков'
     case 'time':
-      return 'Время вышло'
+      return win ? 'Время вышло — победа по очкам' : 'Время вышло'
+    case 'aborted':
+      return 'Бой прерван — сервер обновлялся'
     default:
       return ''
   }
