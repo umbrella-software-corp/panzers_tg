@@ -8,6 +8,10 @@
 //   4. Разработчик отвечает РЕПЛАЕМ на пересланное сообщение в группе.
 //   5. Бот читает tgId из заголовка реплая и copyMessage'ит ответ игроку в личку.
 //
+// Настройка группы: добавь бота в группу разработчиков и напиши там /here
+// (только админ группы) — бот запомнит её (перекрывает env SUPPORT_CHAT_ID,
+// без правки .env и редеплоя). /chatid — узнать id любого чата.
+//
 // Без БД и без второго процесса: запускается из основного сервера (index.js),
 // long-polling своим токеном независимо от игрового бота. Если SUPPORT_BOT_TOKEN
 // не задан — модуль молча выключен (dev/без саппорта).
@@ -15,31 +19,43 @@ import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
-// номера тикетов: один тикет на игрока (как в МиниПолии). Лёгкий JSON-файл,
-// маршрут ответа всё равно по tgId из заголовка — номер только для читаемости.
+// Хранилище: номера тикетов (один на игрока, как в МиниПолии) + назначенная
+// группа (команда /here). Маршрут ответа — по tgId из заголовка; номер для
+// читаемости. group из /here ПЕРЕКРЫВАЕТ env SUPPORT_CHAT_ID — настройка без
+// правки .env и редеплоя.
 const STORE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'support.json')
-let store = { next: 1, users: {} }
+let store = { next: 1, users: {}, group: null }
 let storeLoaded = false
-async function ticketFor(uid) {
-  if (!storeLoaded) {
-    storeLoaded = true
-    try {
-      store = JSON.parse(await fs.readFile(STORE, 'utf8'))
-    } catch {
-      /* нет файла — дефолт */
-    }
+async function loadStore() {
+  if (storeLoaded) return
+  storeLoaded = true
+  try {
+    store = { next: 1, users: {}, group: null, ...JSON.parse(await fs.readFile(STORE, 'utf8')) }
+  } catch {
+    /* нет файла — дефолт */
   }
+}
+async function saveStore() {
+  try {
+    await fs.mkdir(path.dirname(STORE), { recursive: true })
+    await fs.writeFile(STORE, JSON.stringify(store))
+  } catch (e) {
+    console.error('[support] не сохранил store:', e.message)
+  }
+}
+async function ticketFor(uid) {
+  await loadStore()
   const key = String(uid)
   if (!store.users[key]) {
     store.users[key] = store.next++
-    try {
-      await fs.mkdir(path.dirname(STORE), { recursive: true })
-      await fs.writeFile(STORE, JSON.stringify(store))
-    } catch (e) {
-      console.error('[support] не сохранил тикет:', e.message)
-    }
+    await saveStore()
   }
   return store.users[key]
+}
+async function setGroup(chatId) {
+  await loadStore()
+  store.group = chatId
+  await saveStore()
 }
 
 const TOKEN = process.env.SUPPORT_BOT_TOKEN || ''
@@ -58,17 +74,23 @@ const api = (method, body) =>
 // tgId игрока вытаскиваем из заголовка пересланного сообщения — он и есть адрес ответа
 const TGID_RE = /tgId=(\d+)/
 
+const envGroup = Number(GROUP_RAW)
+// действующая группа тикетов: назначенная через /here ПЕРЕКРЫВАЕТ env SUPPORT_CHAT_ID
+function effectiveGroup() {
+  if (Number.isFinite(store.group) && store.group !== 0) return store.group
+  if (Number.isFinite(envGroup) && envGroup !== 0) return envGroup
+  return null
+}
+
 export function startSupportBot() {
   if (!TOKEN) {
     console.log('[support] SUPPORT_BOT_TOKEN не задан — саппорт-бот выключен')
     return
   }
-  const groupId = Number(GROUP_RAW)
-  const hasGroup = Number.isFinite(groupId) && groupId !== 0
-  if (!hasGroup) {
-    console.log('[support] SUPPORT_CHAT_ID не задан/не число — бот примет /chatid в группе, но пересылать ещё некуда')
-  }
-
+  loadStore().then(() => {
+    const g = effectiveGroup()
+    console.log(g ? `[support] саппорт-бот запущен, группа = ${g}` : '[support] саппорт-бот запущен; группа не задана — добавь бота в группу и напиши там /here')
+  })
   let offset = 0
   const tick = async () => {
     try {
@@ -76,7 +98,7 @@ export function startSupportBot() {
       if (res.ok) {
         for (const u of res.result) {
           offset = u.update_id + 1
-          await handle(u, groupId, hasGroup).catch((e) => console.error('[support] handle', e.message))
+          await handle(u).catch((e) => console.error('[support] handle', e.message))
         }
       }
     } catch (e) {
@@ -85,32 +107,49 @@ export function startSupportBot() {
     setTimeout(tick, 1000)
   }
   tick()
-  console.log(`[support] саппорт-бот запущен${hasGroup ? `, группа = ${groupId}` : ''}`)
 }
 
-async function handle(u, groupId, hasGroup) {
+async function handle(u) {
   const msg = u.message
   if (!msg || !msg.from || msg.from.is_bot) return
   const chat = msg.chat
   const text = typeof msg.text === 'string' ? msg.text : ''
+  const group = effectiveGroup()
 
-  // /chatid — в любом чате сообщает его id (нужно один раз, чтобы узнать
-  // SUPPORT_CHAT_ID группы: добавь бота в группу, напиши /chatid)
+  // /chatid — id любого чата (для справки)
   if (text.startsWith('/chatid')) {
     await api('sendMessage', { chat_id: chat.id, text: `chat.id = ${chat.id}\ntype = ${chat.type}` })
     return
   }
 
+  // /here — назначить ЭТУ группу местом тикетов (только админ группы). Перекрывает
+  // env SUPPORT_CHAT_ID и сохраняется в файл — настройка без правки .env и редеплоя.
+  if (text.startsWith('/here') || text.startsWith('/setgroup')) {
+    if (chat.type !== 'group' && chat.type !== 'supergroup') {
+      await api('sendMessage', { chat_id: chat.id, text: 'Команду /here пиши В ГРУППЕ разработчиков — туда пойдут тикеты игроков.' })
+      return
+    }
+    const mem = await api('getChatMember', { chat_id: chat.id, user_id: msg.from.id })
+    const admin = mem.ok && (mem.result.status === 'creator' || mem.result.status === 'administrator')
+    if (!admin) {
+      await api('sendMessage', { chat_id: chat.id, text: 'Назначить группу для тикетов может только её админ.' })
+      return
+    }
+    await setGroup(chat.id)
+    await api('sendMessage', { chat_id: chat.id, text: `✅ Готово — тикеты игроков теперь идут СЮДА (chat.id=${chat.id}). Отвечайте на них реплаем — ответ уйдёт игроку.` })
+    return
+  }
+
   // ответ из группы разработчиков (реплай на пересланное сообщение) → игроку
-  if (hasGroup && chat.id === groupId) {
+  if (group !== null && chat.id === group) {
     const reply = msg.reply_to_message
     if (!reply) return // не реплай — это заметка разработчика, игнор
     const m = (reply.text || reply.caption || '').match(TGID_RE)
     if (!m) return
     const userId = Number(m[1])
-    const r = await api('copyMessage', { chat_id: userId, from_chat_id: groupId, message_id: msg.message_id })
+    const r = await api('copyMessage', { chat_id: userId, from_chat_id: group, message_id: msg.message_id })
     if (!r.ok) {
-      await api('sendMessage', { chat_id: groupId, text: `⚠️ Не доставил ответ игроку ${userId}: ${r.description || '?'}`, reply_to_message_id: msg.message_id })
+      await api('sendMessage', { chat_id: group, text: `⚠️ Не доставил ответ игроку ${userId}: ${r.description || '?'}`, reply_to_message_id: msg.message_id })
     }
     return
   }
@@ -126,8 +165,8 @@ async function handle(u, groupId, hasGroup) {
     return
   }
 
-  if (!hasGroup) {
-    await api('sendMessage', { chat_id: chat.id, text: 'Поддержка временно не настроена — напишите чуть позже.' })
+  if (group === null) {
+    await api('sendMessage', { chat_id: chat.id, text: 'Поддержка ещё настраивается — напиши чуть позже.' })
     return
   }
 
@@ -138,20 +177,20 @@ async function handle(u, groupId, hasGroup) {
   const header = `📩 Тикет #${ticket} | ${who} | tgId=${from.id}`
   let r
   if (text) {
-    r = await api('sendMessage', { chat_id: groupId, text: `${header}\n\n${text}` })
+    r = await api('sendMessage', { chat_id: group, text: `${header}\n\n${text}` })
   } else if (msg.sticker || msg.dice || msg.location || msg.contact) {
     // эти типы не принимают caption — заголовок шлём отдельно, затем сам контент
-    r = await api('sendMessage', { chat_id: groupId, text: header })
-    if (r && r.ok) await api('copyMessage', { chat_id: groupId, from_chat_id: chat.id, message_id: msg.message_id })
+    r = await api('sendMessage', { chat_id: group, text: header })
+    if (r && r.ok) await api('copyMessage', { chat_id: group, from_chat_id: chat.id, message_id: msg.message_id })
   } else {
     // фото/видео/голос/документ — copyMessage с заголовком в подпись
     const cap = typeof msg.caption === 'string' && msg.caption ? `${header}\n\n${msg.caption}` : header
-    r = await api('copyMessage', { chat_id: groupId, from_chat_id: chat.id, message_id: msg.message_id, caption: cap })
+    r = await api('copyMessage', { chat_id: group, from_chat_id: chat.id, message_id: msg.message_id, caption: cap })
   }
   // НЕ врём «передали», если пересылка в группу не прошла. Чаще всего причина —
-  // неверный SUPPORT_CHAT_ID: добавь бота в нужную группу и напиши там /chatid.
+  // не та группа: добавь бота в нужную группу и напиши там /here.
   if (!r || r.ok === false) {
-    console.error(`[support] НЕ доставлено в группу chat_id=${groupId}: ${(r && r.description) || 'нет ответа'} — проверь SUPPORT_CHAT_ID (напиши /chatid в группе)`)
+    console.error(`[support] НЕ доставлено в группу chat_id=${group}: ${(r && r.description) || 'нет ответа'} — проверь группу (добавь бота туда и напиши /here)`)
     await api('sendMessage', { chat_id: chat.id, text: 'Пока не получилось передать сообщение — уже разбираемся. Напиши ещё раз чуть позже.' })
     return
   }
