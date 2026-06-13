@@ -273,13 +273,13 @@ export class Game {
   }
 
   async mount(container) {
-    // AA включаем только где нет даунскейл-сглаживания (ПК, dpr 1). На retina
-    // (dpr ≥ 2, рендер 2×) даунскейл 2×→1× сглаживает сам — MSAA лишний, выключаем.
+    // antialias ВКЛ везде: резолюция капнута на 2×, телефоны 2–3× → даунскейла,
+    // который сгладил бы сам, нет → без MSAA «лесенка». Гладкая картинка важнее.
     const _dpr = window.devicePixelRatio || 1
     await this.app.init({
       resizeTo: container,
       background: 0x0e1116,
-      antialias: _dpr < 2,
+      antialias: true,
       powerPreference: 'high-performance',
       resolution: Math.min(2, _dpr), // кап 2× на retina: меньше работы GPU, ровнее кадры
       autoDensity: true,

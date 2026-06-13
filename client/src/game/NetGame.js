@@ -413,14 +413,14 @@ export class NetGame {
   // --- pixi ---
 
   async mount(container) {
-    // AA включаем там, где НЕТ даунскейл-сглаживания и есть запас GPU — это ПК
-    // (dpr 1, рендер 1×). На retina/телефоне (dpr ≥ 2, рендер 2×) браузер сам
-    // даунскейлит 2×→1× и сглаживает — MSAA там лишний и дорогой, выключаем.
+    // antialias ВКЛ везде: резолюция капнута на 2×, а телефоны 2–3× → даунскейла,
+    // который сгладил бы сам, НЕТ (на 3× вообще апскейл = мыло). Без MSAA на мобиле
+    // края «лесенкой». Гладкая картинка важнее, прицел/мир уже плавные по _renderT.
     const _dpr = window.devicePixelRatio || 1
     await this.app.init({
       resizeTo: container,
       background: 0x0e1116,
-      antialias: _dpr < 2,
+      antialias: true,
       powerPreference: 'high-performance',
       // на retina-iPhone devicePixelRatio=3 → ×9 пикселей, fps проседает и
       // движение дёргается. Кап до 2 почти вдвое снижает работу GPU (на телефоне
