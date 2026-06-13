@@ -416,7 +416,11 @@ export class NetGame {
     await this.app.init({
       resizeTo: container,
       background: 0x0e1116,
-      antialias: true,
+      // MSAA на мобильном GPU дорогой; при resolution 2× браузер даунскейлит
+      // 2×→1× и сам сглаживает — antialias off даёт почти ту же картинку без
+      // затрат MSAA (заметный прирост fps на телефоне).
+      antialias: false,
+      powerPreference: 'high-performance',
       // на retina-iPhone devicePixelRatio=3 → ×9 пикселей, fps проседает и
       // движение дёргается. Кап до 2 почти вдвое снижает работу GPU (на телефоне
       // 2× и 3× визуально неотличимы), кадры ровнее → плавнее.

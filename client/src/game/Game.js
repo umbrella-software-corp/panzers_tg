@@ -276,7 +276,10 @@ export class Game {
     await this.app.init({
       resizeTo: container,
       background: 0x0e1116,
-      antialias: true,
+      // antialias off: при resolution 2× даунскейл браузера сглаживает сам, а
+      // MSAA на мобиле дорогой → заметный прирост fps почти без потери картинки
+      antialias: false,
+      powerPreference: 'high-performance',
       resolution: Math.min(2, window.devicePixelRatio || 1), // кап 2× на retina: меньше работы GPU, ровнее кадры
       autoDensity: true,
     })
