@@ -406,12 +406,15 @@ function sendRaw(ws, str) {
   if (ws.readyState === ws.OPEN && ws.bufferedAmount < SEND_BUFFER_LIMIT) ws.send(str)
 }
 
-// лобби ожидающим: кто уже в комнате (живые игроки видны в матчмейкинге)
+// лобби ожидающим: кто уже в комнате + НА КАКОЙ стороне. Команды раздаём уже
+// здесь (а не только в startRoom) — чтобы матчмейкинг показывал РЕАЛЬНЫЙ состав
+// 7×7: живые на своих сторонах, боты добьют пустые слоты (все живые → ботов нет).
 function broadcastLobby(room) {
   if (room.started) return
-  const players = room.humans.map((h) => ({ id: h.id, name: h.name, battles: h.battles || 0 }))
+  assignTeams(room.humans)
+  const players = room.humans.map((h) => ({ id: h.id, name: h.name, battles: h.battles || 0, team: h.team }))
   const startsIn = Math.max(0, room.deadline ? room.deadline - Date.now() : WAIT_MS)
-  for (const h of room.humans) send(h.ws, { type: 'lobby', players, you: h.id, startsIn })
+  for (const h of room.humans) send(h.ws, { type: 'lobby', players, you: h.id, yourTeam: h.team, teamSize: TEAM_SIZE, startsIn })
 }
 
 // грейс перед закрытием опустевшей живой комнаты: даём игроку вернуться
