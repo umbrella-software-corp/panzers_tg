@@ -33,9 +33,11 @@ onMounted(async () => {
   loadConfig() // флаг турниров и пр. (не блокируем старт)
   // взвод-лобби: командир жмёт старт → все участники сюда → в бой с party=squadId
   squad.onLaunch = (m) => {
+    // взвод НЕ закрываем — он живёт через бои: сыграли, вернулись в ангар,
+    // командир снова жмёт «В БОЙ» тем же составом. party-токен чистится только
+    // при реальном выходе из взвода (closeSquad → clearParty).
     setPartyToken(m.squadId, String(m.squadId) === String(tgUserId()))
     if (m.mode) setBattleMode(m.mode)
-    closeSquad()
     play()
   }
   squad.onDisband = () => {} // UI взвода сам покажет роспуск

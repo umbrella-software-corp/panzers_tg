@@ -3,7 +3,7 @@
 // бой с party=squadId (сервер сводит одинаковые токены в одну команду).
 import { reactive, watch } from 'vue'
 import { tgUserId } from '../tg.js'
-import { profile, selectedTank } from '../store.js'
+import { profile, selectedTank, clearParty } from '../store.js'
 
 export const MAX_TIER_SPREAD = 1 // взвод только в пределах ±1 уровня техники
 // моя текущая техника для взвода: { id, tier, name }
@@ -149,4 +149,5 @@ export function closeSquad() {
   squad.squadId = null
   squad.members = []
   squad.full = false
+  clearParty() // вышли из взвода → больше не в party (следующий бой — соло)
 }
