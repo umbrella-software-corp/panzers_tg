@@ -151,12 +151,9 @@ export function initTelegram() {
   } catch {
     /* fullscreen не поддержан — остаёмся в expand */
   }
-  // вертикальная фиксация ориентации (только телефоны)
-  try {
-    if (isMobile && typeof tg.lockOrientation === 'function') tg.lockOrientation('portrait')
-  } catch {
-    /* не поддержано */
-  }
+  // ориентацию НЕ фиксируем: повернуть телефон можно. вертикальный вид держит
+  // CSS-замок #app (портретная колонка по центру) — даже в ландшафте контент
+  // остаётся вертикальным. основной режим вертикальный, но поворот не запрещён.
   // свайп вниз не должен сворачивать игру (особенно в бою — джойстик/огонь)
   try {
     if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes()
