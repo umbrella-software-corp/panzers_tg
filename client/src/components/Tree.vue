@@ -25,7 +25,9 @@ import PzIcon from './ui/PzIcon.vue'
 const emit = defineEmits(['go'])
 
 const tanks = computed(() => tanksOfNation(profile.nation))
-const sel = ref(null)
+// пришли из ангара по «ОТКРЫТЬ ТАНК» (выбран закрытый) → сразу раскрываем его
+// чеклист; иначе обычный просмотр ветки без выбора
+const sel = ref(profile.selectedTank && !isOwned(profile.selectedTank) ? profile.selectedTank : null)
 const modTab = ref('gun')
 const flash = ref(false)
 const selected = computed(() => tanks.value.find((t) => t.id === sel.value))

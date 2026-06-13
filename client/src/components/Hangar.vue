@@ -246,8 +246,11 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
         </span>
         ВЗВОД
       </button>
-      <button class="pz-cta pz-cta--hazard playbtn" :disabled="locked" @click="emit('play')">
-        <template v-if="locked">ИССЛЕДУЙ В РАЗВИТИИ</template>
+      <button class="pz-cta pz-cta--hazard playbtn" @click="locked ? emit('go', 'tree') : emit('play')">
+        <span v-if="locked" class="play-stack">
+          <span class="play-main">ОТКРЫТЬ ТАНК ▸</span>
+          <span class="play-sub">в «Развитии»</span>
+        </span>
         <span v-else class="play-stack">
           <span class="play-main">В БОЙ<template v-if="inParty"> · ВЗВОД</template></span>
           <span class="play-sub">▸ {{ tank.name }}</span>
