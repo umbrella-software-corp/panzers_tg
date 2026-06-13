@@ -102,6 +102,10 @@ export const BOT_TANK_IDS = {
 export const BOT_DMG_MULT = 0.45
 export const BOT_SPEED_MULT = 0.85
 export const BOT_SPOT_VISION = 480 // вклад бота в засвет для команды
+// демаскировка выстрелом: стреляешь → тебя видно врагу N сек, даже из тумана/
+// издалека (muzzle flash выдаёт). Симметрично людям и ботам. Создаёт риск
+// стрельбы из засады — основа честного засвета. ЧИСЛО ПОДКРУТИТЬ ПЛЕЙТЕСТОМ.
+export const FIRE_REVEAL_SEC = 4
 export const TANK_RADIUS = 22
 
 export const BOT_NAMES = {

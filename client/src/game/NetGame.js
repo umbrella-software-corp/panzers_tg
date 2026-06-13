@@ -866,6 +866,10 @@ export class NetGame {
     if (aliveSelf) {
       const half = this._sectorHalfEff() // разброс дышит со скоростью (стоя уже, на ходу шире)
       const L = this.cls.vision // длина прицела = дальность обнаружения (совпадает с туманом)
+      // КОЛЬЦО ОБЗОРА — полный радиус личного засвета (где я вижу/могу быть полезен,
+      // совпадает с туманом). РАСКРЫТ выстрелом → кольцо краснеет: ты демаскирован.
+      const litSelf = !!(this.you && this.you.firedReveal)
+      g.circle(ox, oy, L).stroke({ width: litSelf ? 2.5 : 1.5, color: litSelf ? 0xff4b33 : 0xf2a50c, alpha: litSelf ? 0.5 : 0.14 })
       g.moveTo(ox, oy)
       g.arc(ox, oy, L, ohull - half, ohull + half)
       g.lineTo(ox, oy)
@@ -1378,6 +1382,7 @@ export class NetGame {
       blocked: 0, // брони в PvP пока нет
       deaths: this.deaths,
       revealed: !!(you && you.revealed), // засвечен ли я врагом сейчас (чип «скрыт/виден»)
+      firedReveal: !!(you && you.firedReveal), // РАСКРЫТ собственным выстрелом (чип, кольцо)
       deathInfo: this._deathInfo || null, // кем и откуда меня убили (экран смерти)
       shots,
       hits: you.hits || 0,

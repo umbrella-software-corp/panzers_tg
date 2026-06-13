@@ -22,6 +22,7 @@ import {
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
   BOT_SPOT_VISION,
+  FIRE_REVEAL_SEC,
   TANK_RADIUS,
   BOT_NAMES,
   classToRadians,
@@ -137,6 +138,7 @@ export class BattleSim {
       hits: 0,
       spots: 0, // засветов за бой (для боевого рейтинга)
       spotSeen: new Set(), // id врагов, чей первый засвет уже зачтён
+      revealT: 0, // сек демаскировки выстрелом: пока >0 — видно врагу из тумана
       // боты
       botDamage: Math.round(stats.damage * BOT_DMG_MULT),
       botSpeed: stats.maxSpeed * BOT_SPEED_MULT,
@@ -180,6 +182,7 @@ export class BattleSim {
     }
     u.reload = u.stats.reload
     u.shots++
+    u.revealT = FIRE_REVEAL_SEC // выстрел демаскирует: теперь видно врагу из тумана
 
     const lineAngle = u.hull + this._sweepOffset(u)
     const halfEff = this._sectorHalfEff(u) // разброс: стоя уже, на ходу шире
@@ -265,6 +268,7 @@ export class BattleSim {
 
     for (const u of this.units) {
       if (!u.alive) continue
+      if (u.revealT > 0) u.revealT = Math.max(0, u.revealT - dt) // тает демаскировка выстрелом
       if (u.human) this._stepHuman(u, dt)
       else this._stepBot(u, dt)
     }
@@ -344,6 +348,7 @@ export class BattleSim {
         (!target.human || (this.t >= ai.graceSec && this._spotted[target.team].has(b.id)))
       if (canFire) {
         b.fireCd = b.stats.reload
+        b.revealT = FIRE_REVEAL_SEC // бот тоже демаскируется выстрелом (симметрия)
         // шанс попадания: база режется дистанцией, ходом цели (уворот) и кустом.
         // Сидячая цель в упор на открытом — почти база; летящая боком вдалеке в
         // кусте — мажем честно. Бьём по людям сложнее, чем по статичным болванкам.
@@ -487,6 +492,9 @@ export class BattleSim {
       const seen = new Set()
       for (const e of this.units) {
         if (!e.alive || e.team === team) continue
+        // демаскировка выстрелом: стрелявший враг виден этой команде из тумана,
+        // без кредита за разведку (он сам себя выдал, его никто не «засветил»)
+        if (e.revealT > 0) seen.add(e.id)
         for (const u of this.units) {
           if (!u.alive || u.team !== team) continue
           const vis = u.human
@@ -712,6 +720,9 @@ export class BattleSim {
       // ЗАСВЕЧЕН ли я сейчас врагом (видит ли меня команда противника) — для
       // чипа «скрыт/виден»: игрок понимает, прилетит сейчас или он в тумане.
       revealed: this._spotted[1 - u.team].has(u.id),
+      // РАСКРЫТ ли я собственным выстрелом (демаскировка тикает) — для третьего
+      // состояния чипа: отличаем «меня засекли по обзору» от «я сам себя выдал».
+      firedReveal: u.revealT > 0,
     }
   }
 }

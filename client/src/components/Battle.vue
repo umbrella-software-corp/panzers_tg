@@ -57,6 +57,8 @@ const state = shallowRef({
   classId: DEFAULT_CLASS,
   damageDealt: 0,
   spotted: 0,
+  revealed: false, // видит ли меня враг (засвет по обзору)
+  firedReveal: false, // демаскирован собственным выстрелом
   matchTime: 0,
   matchOver: false,
   result: null,
@@ -85,6 +87,10 @@ const displayScore = computed(() =>
 )
 const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
+// засвет игрока, 3 состояния: РАСКРЫТ (сам себя выдал выстрелом) → ЗАСВЕЧЕН (враг
+// видит по обзору) → СКРЫТ (в тумане). Выстрел приоритетнее — он самый срочный.
+const spotState = computed(() => (state.value.firedReveal ? 'revealed' : state.value.revealed ? 'spotted' : 'hidden'))
+const spotLabel = computed(() => ({ hidden: '○ СКРЫТ', spotted: '◐ ЗАСВЕЧЕН', revealed: '● РАСКРЫТ' })[spotState.value])
 // баннер конца боя: ПОЧЕМУ бой кончился (причина крупно) + исход — перед донесением
 const endBanner = computed(() => {
   const r = state.value.result // 'victory'|'defeat'|'draw'
@@ -677,9 +683,9 @@ onBeforeUnmount(() => {
           <span class="pz-display hp-text">{{ tankName }} · {{ state.playerHp }} HP</span>
         </div>
 
-        <!-- засвет: понимаю, видит меня враг или я в тумане (прилетит или нет) -->
-        <div v-show="isNet && phase === 'fighting' && state.playerHp > 0" class="spotchip" :class="{ lit: state.revealed }">
-          {{ state.revealed ? '● ВИДЕН ВРАГУ' : '○ В ТЕНИ' }}
+        <!-- засвет: СКРЫТ (в тумане) / ЗАСВЕЧЕН (враг видит) / РАСКРЫТ (выстрел выдал) -->
+        <div v-show="isNet && phase === 'fighting' && state.playerHp > 0" class="spotchip" :class="spotState">
+          {{ spotLabel }}
         </div>
 
         <!-- индикаторы модулей: краснеют с отсчётом починки при крите -->
@@ -957,15 +963,29 @@ onBeforeUnmount(() => {
   letter-spacing: 0.08em;
   padding: 3px 11px;
   border-radius: 11px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+/* СКРЫТ — в тени, зелёный (безопасно) */
+.spotchip.hidden {
   color: #7fd06a;
   background: rgba(95, 211, 95, 0.1);
   border: 1px solid rgba(95, 211, 95, 0.4);
 }
-.spotchip.lit {
+/* ЗАСВЕЧЕН — враг видит по обзору, янтарь (внимание) */
+.spotchip.spotted {
+  color: var(--amber-hi);
+  background: rgba(242, 165, 12, 0.14);
+  border: 1px solid rgba(242, 165, 12, 0.55);
+}
+/* РАСКРЫТ — сам себя выдал выстрелом, красный мигающий (опасно) */
+.spotchip.revealed {
   color: #ff8a7a;
-  background: rgba(226, 75, 74, 0.14);
-  border-color: rgba(226, 75, 74, 0.55);
-  animation: pz-blink 1.3s linear infinite;
+  background: rgba(226, 75, 74, 0.16);
+  border: 1px solid rgba(226, 75, 74, 0.6);
+  animation: pz-blink 1.1s linear infinite;
 }
 .reconnect {
   position: absolute;
