@@ -47,7 +47,7 @@ grep -q '^AMPLITUDE_API_KEY=' server/.env 2>/dev/null || echo 'AMPLITUDE_API_KEY
 echo "== 4/6 зависимости и сборка клиента =="
 pnpm install --silent
 # VITE_AMPLITUDE_API_KEY — ПУБЛИЧНЫЙ ключ Amplitude (попадает в клиент-бандл, не секрет).
-(cd client && VITE_API_URL="https://$DOMAIN" VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 pnpm build)
+(cd client && VITE_API_URL="https://$DOMAIN" VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 VITE_AMPLITUDE_PROXY="https://$DOMAIN/amp/2/httpapi" pnpm build)
 
 echo "== 5/6 systemd + nginx =="
 cp deploy/panzers.service /etc/systemd/system/panzers.service

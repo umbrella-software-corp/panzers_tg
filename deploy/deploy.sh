@@ -36,7 +36,7 @@ grep -q '^AMPLITUDE_API_KEY=' $DIR/server/.env || echo 'AMPLITUDE_API_KEY=c25c3c
 echo "== 4/6 зависимости и сборка клиента =="
 # VITE_AMPLITUDE_API_KEY — ПУБЛИЧНЫЙ ключ Amplitude (он и так в бандле, не секрет).
 # Дублируем тут, чтобы прод-сборка получила его даже без rsync'нутого client/.env.local.
-$SSH "cd $DIR && pnpm install --silent && cd client && VITE_API_URL=https://panzertg.online VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 pnpm build"
+$SSH "cd $DIR && pnpm install --silent && cd client && VITE_API_URL=https://panzertg.online VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 VITE_AMPLITUDE_PROXY=https://panzertg.online/amp/2/httpapi pnpm build"
 
 echo "== 5/6 systemd + nginx =="
 $SSH "cp $DIR/deploy/panzers.service /etc/systemd/system/panzers.service

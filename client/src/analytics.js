@@ -51,7 +51,13 @@ export function initAnalytics() {
   const key = import.meta.env.VITE_AMPLITUDE_API_KEY
   if (!key) return // ключ не задан — трекинг молча выключен (dev/локалка)
 
+  // first-party прокси: блокировщики трекеров (EasyPrivacy и пр.) режут прямой
+  // api2.amplitude.com → шлём события на свой домен (nginx /amp/ проксирует туда).
+  // В dev переменная не задана → SDK бьёт напрямую (локально блокировщиков нет).
+  const serverUrl = import.meta.env.VITE_AMPLITUDE_PROXY || undefined
+
   amplitude.init(key, undefined, {
+    serverUrl,
     defaultTracking: {
       sessions: true,
       pageViews: false,
