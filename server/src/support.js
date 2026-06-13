@@ -3,13 +3,44 @@
 //   1. Игрок жмёт кнопку «Поддержка» в ангаре → открывается личка этого бота.
 //   2. Пишет сообщение (текст/фото/видео/голос/документ).
 //   3. Бот пересылает его в группу разработчиков (SUPPORT_CHAT_ID) с заголовком
-//      «📩 @user | tgId=<id>». tgId в заголовке = ключ для ответа (БД не нужна).
+//      «📩 Тикет #N | @user | tgId=<id>». tgId в заголовке = ключ для ответа
+//      (БД не нужна; номер тикета — для читаемости, один на игрока).
 //   4. Разработчик отвечает РЕПЛАЕМ на пересланное сообщение в группе.
 //   5. Бот читает tgId из заголовка реплая и copyMessage'ит ответ игроку в личку.
 //
 // Без БД и без второго процесса: запускается из основного сервера (index.js),
 // long-polling своим токеном независимо от игрового бота. Если SUPPORT_BOT_TOKEN
 // не задан — модуль молча выключен (dev/без саппорта).
+import fs from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+// номера тикетов: один тикет на игрока (как в МиниПолии). Лёгкий JSON-файл,
+// маршрут ответа всё равно по tgId из заголовка — номер только для читаемости.
+const STORE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'support.json')
+let store = { next: 1, users: {} }
+let storeLoaded = false
+async function ticketFor(uid) {
+  if (!storeLoaded) {
+    storeLoaded = true
+    try {
+      store = JSON.parse(await fs.readFile(STORE, 'utf8'))
+    } catch {
+      /* нет файла — дефолт */
+    }
+  }
+  const key = String(uid)
+  if (!store.users[key]) {
+    store.users[key] = store.next++
+    try {
+      await fs.mkdir(path.dirname(STORE), { recursive: true })
+      await fs.writeFile(STORE, JSON.stringify(store))
+    } catch (e) {
+      console.error('[support] не сохранил тикет:', e.message)
+    }
+  }
+  return store.users[key]
+}
 
 const TOKEN = process.env.SUPPORT_BOT_TOKEN || ''
 const GROUP_RAW = process.env.SUPPORT_CHAT_ID || '' // id группы разработчиков (число; супергруппа: -100…)
@@ -103,23 +134,26 @@ async function handle(u, groupId, hasGroup) {
   // сообщение игрока → в группу разработчиков с заголовком (tgId = ключ ответа)
   const from = msg.from
   const who = from.username ? '@' + from.username : from.first_name || '—'
-  const header = `📩 ${who} | tgId=${from.id}`
-  try {
-    if (text) {
-      await api('sendMessage', { chat_id: groupId, text: `${header}\n\n${text}` })
-    } else if (msg.sticker || msg.dice || msg.location || msg.contact) {
-      // эти типы не принимают caption — заголовок шлём отдельно, затем сам контент
-      await api('sendMessage', { chat_id: groupId, text: header })
-      await api('copyMessage', { chat_id: groupId, from_chat_id: chat.id, message_id: msg.message_id })
-    } else {
-      // фото/видео/голос/документ — copyMessage с заголовком в подпись
-      const cap = typeof msg.caption === 'string' && msg.caption ? `${header}\n\n${msg.caption}` : header
-      await api('copyMessage', { chat_id: groupId, from_chat_id: chat.id, message_id: msg.message_id, caption: cap })
-    }
-  } catch (e) {
-    console.error('[support] forward', e.message)
-    await api('sendMessage', { chat_id: chat.id, text: 'Не удалось передать сообщение — попробуйте ещё раз через минуту.' })
+  const ticket = await ticketFor(from.id)
+  const header = `📩 Тикет #${ticket} | ${who} | tgId=${from.id}`
+  let r
+  if (text) {
+    r = await api('sendMessage', { chat_id: groupId, text: `${header}\n\n${text}` })
+  } else if (msg.sticker || msg.dice || msg.location || msg.contact) {
+    // эти типы не принимают caption — заголовок шлём отдельно, затем сам контент
+    r = await api('sendMessage', { chat_id: groupId, text: header })
+    if (r && r.ok) await api('copyMessage', { chat_id: groupId, from_chat_id: chat.id, message_id: msg.message_id })
+  } else {
+    // фото/видео/голос/документ — copyMessage с заголовком в подпись
+    const cap = typeof msg.caption === 'string' && msg.caption ? `${header}\n\n${msg.caption}` : header
+    r = await api('copyMessage', { chat_id: groupId, from_chat_id: chat.id, message_id: msg.message_id, caption: cap })
+  }
+  // НЕ врём «передали», если пересылка в группу не прошла. Чаще всего причина —
+  // неверный SUPPORT_CHAT_ID: добавь бота в нужную группу и напиши там /chatid.
+  if (!r || r.ok === false) {
+    console.error(`[support] НЕ доставлено в группу chat_id=${groupId}: ${(r && r.description) || 'нет ответа'} — проверь SUPPORT_CHAT_ID (напиши /chatid в группе)`)
+    await api('sendMessage', { chat_id: chat.id, text: 'Пока не получилось передать сообщение — уже разбираемся. Напиши ещё раз чуть позже.' })
     return
   }
-  await api('sendMessage', { chat_id: chat.id, text: '✅ Передали разработчику — ответим здесь.' })
+  await api('sendMessage', { chat_id: chat.id, text: `✅ Тикет #${ticket} передан разработчику — ответим здесь.` })
 }
