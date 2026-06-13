@@ -468,17 +468,17 @@ onBeforeUnmount(() => {
              по центру независимо от ширины счёта (5 vs 11) -->
         <div class="scoreplate">
           <div class="side left">
-            <span v-if="!annihilation" class="pz-pixel num ally">{{ state.allyScore }}</span>
             <span class="dmnds">
               <i v-for="i in 7" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
             </span>
+            <span v-if="!annihilation" class="pz-pixel num ally">{{ state.allyScore }}</span>
           </div>
           <span class="pz-display timer" :class="{ low: state.matchTime <= 60 }">⏱ {{ fmtTime(state.matchTime) }}</span>
           <div class="side right">
+            <span v-if="!annihilation" class="pz-pixel num enemy">{{ state.enemyScore }}</span>
             <span class="dmnds">
               <i v-for="i in 7" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
             </span>
-            <span v-if="!annihilation" class="pz-pixel num enemy">{{ state.enemyScore }}</span>
           </div>
         </div>
         <!-- режим «на уничтожение»: метка вместо точек захвата -->
@@ -837,20 +837,27 @@ onBeforeUnmount(() => {
 .scoreplate {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
-  padding: 5px 12px;
+  padding: 5px 10px;
   align-self: center; /* по контенту и по центру — иначе на широком экране счёт уезжает к краям */
   max-width: 100%;
+  overflow: hidden; /* числа теперь у таймера (внутри) и не сжимаются; если узко — */
+  /* подрезается крайний ромбик по скруглению, а не выезжает цифра счёта за край */
 }
 .scoreplate .side {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
+}
+/* числа счёта не сжимаются: при нехватке места отдаём пиксели зазорам, а не
+   выдавливаем цифры за скруглённый край плашки */
+.scoreplate .num {
+  flex-shrink: 0;
 }
 .scoreplate .side.left {
   justify-content: flex-end;
@@ -938,11 +945,11 @@ onBeforeUnmount(() => {
 }
 .dmnds {
   display: flex;
-  gap: 3px;
+  gap: 2px;
 }
 .dmnds .d {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 1px;
   transform: rotate(45deg);
   background: rgba(255, 255, 255, 0.12);
