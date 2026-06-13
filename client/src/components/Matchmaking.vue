@@ -6,6 +6,7 @@ import { profile, loadoutStats, party } from '../store.js'
 import { TANK_BY_ID, MAX_TIER, SKIN_BY_ID, rankByBattles } from '../game/meta.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { connectMatch } from '../game/net.js'
+import { track } from '../analytics.js'
 import TankTopDown from './ui/TankTopDown.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -63,6 +64,11 @@ let tries = 0
 const MAX_TRIES = 4 // столько раз пробуем подключиться, потом — кнопки
 const failed = ref(false) // сервер недоступен после всех попыток → Повторить/В ангар
 
+// телеметрия поиска: сколько искали и видели ли лобби (для воронок Amplitude)
+const searchStartedAt = performance.now()
+let lobbyTracked = false
+const searchMs = () => Math.round(performance.now() - searchStartedAt)
+
 // онлайн-онли: НИКАКОГО офлайна. Параметры подключения к поиску боя.
 function connectParams() {
   return {
@@ -82,6 +88,19 @@ function connectParams() {
       myTeam.value = msg.players.filter((p) => p.team === msg.yourTeam && p.id !== msg.you).map(ally)
       foeTeam.value = msg.players.filter((p) => p.team !== msg.yourTeam).map(ally)
       botsEtaOnline.value = Math.max(0, Math.ceil(msg.startsIn / 1000))
+      if (!lobbyTracked) {
+        lobbyTracked = true
+        track('matchmaking_lobby_seen', {
+          live_total: liveTotal.value,
+          ally_live: myTeam.value.length,
+          enemy_live: foeTeam.value.length,
+          bot_total_estimated: botTotal.value,
+          starts_in_ms: msg.startsIn,
+          team_size: teamSize.value,
+          party_present: !!party.token,
+          battle_mode: profile.battleMode,
+        })
+      }
     },
     onStart: (msg) => {
       phase.value = 'go' // боты добиваются автоматически через teamSlots (фаза не search)
@@ -92,8 +111,27 @@ function connectParams() {
         if (gone) return
         if (client && client.stateN >= 1 && client.ws.readyState === 1) {
           gone = true
-          emit('battle', { client, mapId: msg.mapId, side: msg.youTeam, youUnit: msg.youUnit, tickHz: msg.tickHz, mode: msg.mode })
+          const humans = msg.humans || liveTotal.value
+          track('matchmaking_matched', {
+            room_id: msg.room || null,
+            map_id: msg.mapId,
+            mode: msg.mode,
+            humans,
+            bots_estimated: Math.max(0, teamSize.value * 2 - humans),
+            search_ms: searchMs(),
+            party_present: !!party.token,
+            state_snapshot_received: client.stateN >= 1,
+          })
+          // room/humans едут в Battle.vue: battle_id для боевых событий и оценка ботов
+          emit('battle', { client, mapId: msg.mapId, side: msg.youTeam, youUnit: msg.youUnit, tickHz: msg.tickHz, mode: msg.mode, room: msg.room || null, humans })
         } else if (Date.now() >= deadline) {
+          track('matchmaking_connection_failed', {
+            reason: 'no_state_snapshot_before_deadline',
+            search_ms: searchMs(),
+            had_lobby: lobbyTracked,
+            state_snapshot_received: false,
+            party_present: !!party.token,
+          })
           phase.value = 'search'
           retry() // мир не пришёл — переподключаемся
         } else {
@@ -116,6 +154,11 @@ async function search() {
     client = await connectMatch(connectParams())
     online.value = true
   } catch {
+    track('matchmaking_connection_failed', {
+      reason: 'connect_rejected',
+      search_ms: searchMs(),
+      try_n: tries + 1,
+    })
     retry()
   }
 }
@@ -133,6 +176,15 @@ function retry() {
   }
   tries++
   if (tries >= MAX_TRIES) {
+    // онлайн-онли: офлайн-фоллбэка НЕТ — терминальное «сервер недоступен» с кнопками
+    track('matchmaking_failed', {
+      reason: 'no_connection_after_max_tries',
+      tries,
+      search_ms: searchMs(),
+      had_lobby: lobbyTracked,
+      battle_mode: profile.battleMode,
+      party_present: !!party.token,
+    })
     failed.value = true
     online.value = false
     return
@@ -150,6 +202,12 @@ function retryNow() {
 }
 
 onMounted(() => {
+  track('matchmaking_started', {
+    battle_mode: profile.battleMode,
+    party_present: !!party.token,
+    tank_id: profile.selectedTank,
+    tank_tier: (TANK_BY_ID[profile.selectedTank] || {}).tier || null,
+  })
   tick = setInterval(() => secs.value++, 1000)
   search()
 })
@@ -161,6 +219,14 @@ onUnmounted(() => {
 })
 
 function cancel() {
+  track('matchmaking_cancelled', {
+    search_ms: searchMs(),
+    live_total_last: liveTotal.value,
+    ally_live: myTeam.value.length,
+    enemy_live: foeTeam.value.length,
+    status: phase.value,
+    online: online.value,
+  })
   if (client) client.close()
   emit('cancel')
 }

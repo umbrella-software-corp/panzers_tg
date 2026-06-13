@@ -3,6 +3,7 @@
 // кредиты/жетоны. Ротация задач — по дате, общая для всех (meta.tasksOfDay).
 import { computed, ref } from 'vue'
 import { dailyTasksList, claimTask } from '../store.js'
+import { track } from '../analytics.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -10,7 +11,16 @@ const bump = ref(0)
 const tasks = computed(() => (bump.value, dailyTasksList()))
 
 function claim(t) {
-  if (claimTask(t.id)) bump.value++
+  if (claimTask(t.id)) {
+    track('task_reward_claimed', {
+      task_id: t.id,
+      goal: t.goal,
+      progress: t.progress,
+      credits: t.credits || 0,
+      tokens: t.tokens || 0,
+    })
+    bump.value++
+  }
 }
 </script>
 

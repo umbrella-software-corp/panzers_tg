@@ -4,6 +4,7 @@
 import { computed, ref } from 'vue'
 import { profile, claimDaily } from '../store.js'
 import { DAILY_REWARDS } from '../game/meta.js'
+import { track } from '../analytics.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -18,6 +19,12 @@ const claimed = ref(null)
 
 function claim() {
   claimed.value = claimDaily()
+  track('daily_reward_claimed', {
+    streak_day: claimed.value?.day || null,
+    credits: claimed.value?.reward?.credits || 0,
+    tokens: claimed.value?.reward?.tokens || 0,
+    gold: claimed.value?.reward?.gold || 0,
+  })
   setTimeout(() => emit('close'), 1100)
 }
 

@@ -2,7 +2,7 @@
 // Прокачка (порт TreeScreen): вертикальная ветка нации с пунктирной осью,
 // исследование танков (пред. куплен + его топ-модули 5/5), док выбранной
 // машины — табы 5 слотов модулей × 3 уровня, апгрейд за кредиты.
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   profile,
   setNation,
@@ -16,6 +16,7 @@ import {
   prevTank,
 } from '../store.js'
 import { tanksOfNation, MODULE_DEFS, moduleCost, modsMaxedCount } from '../game/meta.js'
+import { track } from '../analytics.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -62,6 +63,10 @@ const gotoStep = computed(() => {
 })
 // перейти к пред. танку: раскрыть его док (там либо его модули, либо его чеклист)
 function goToStep(id) {
+  track('unlock_goto_step_clicked', {
+    step_tank_id: id,
+    from_tank_id: selected.value?.id || null,
+  })
   sel.value = id
   modTab.value = 'gun'
 }
@@ -71,6 +76,14 @@ function pickNation(n) {
   setNation(n)
 }
 function toggle(t) {
+  track('tank_node_selected', {
+    tank_id: t.id,
+    tank_tier: t.tier,
+    tank_class: t.cls,
+    owned: isOwned(t.id),
+    can_unlock: canUnlock(t),
+    unlock_reason: unlockReason(t),
+  })
   sel.value = sel.value === t.id ? null : t.id
   modTab.value = 'gun'
 }
@@ -79,11 +92,45 @@ function shake() {
   setTimeout(() => (flash.value = false), 600)
 }
 function research(t) {
-  if (buyTank(t)) selectTank(t.id)
-  else shake()
+  track('research_clicked', {
+    tank_id: t.id,
+    tank_tier: t.tier,
+    can_unlock: canUnlock(t),
+    unlock_reason: unlockReason(t),
+    credits: profile.credits,
+    cost: t.cost || 0,
+  })
+  if (buyTank(t)) {
+    track('tank_unlocked', {
+      tank_id: t.id,
+      tank_tier: t.tier,
+      cost: t.cost || 0,
+      credits_after: profile.credits,
+    })
+    selectTank(t.id)
+  } else {
+    shake()
+  }
 }
 function buyModule(modId) {
-  if (!upgradeModule(sel.value, modId)) shake()
+  const before = tankModLevel(sel.value, modId)
+  track('module_upgrade_clicked', {
+    tank_id: sel.value,
+    module: modId,
+    level_before: before,
+    credits: profile.credits,
+  })
+  if (upgradeModule(sel.value, modId)) {
+    track('module_upgraded', {
+      tank_id: sel.value,
+      module: modId,
+      level_before: before,
+      level_after: tankModLevel(sel.value, modId),
+      credits_after: profile.credits,
+    })
+  } else {
+    shake()
+  }
 }
 function pickInHangar() {
   selectTank(sel.value)
@@ -96,6 +143,27 @@ function diamondColor(tankId, modId) {
   if (lvl === 2) return 'rgba(242,165,12,.47)'
   return 'rgba(255,255,255,.14)'
 }
+
+onMounted(() => {
+  track('tree_viewed', {
+    selected_tank: profile.selectedTank,
+    owned_tanks_count: profile.owned?.length || 0,
+    credits: profile.credits || 0,
+  })
+})
+// раскрыли чеклист некупленной машины — что нужно для исследования
+watch(selected, (t) => {
+  if (!t || isOwned(t.id)) return
+  const prev = prevTank(t)
+  track('unlock_checklist_viewed', {
+    tank_id: t.id,
+    tank_tier: t.tier,
+    prev_owned: prev ? isOwned(prev.id) : true,
+    top_modules_done: prev ? maxedCount(prev.id) : null,
+    credits_enough: profile.credits >= (t.cost || 0),
+    unlock_reason: unlockReason(t),
+  })
+})
 </script>
 
 <template>

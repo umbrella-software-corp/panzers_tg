@@ -1,11 +1,12 @@
 <script setup>
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
 import { haptic, openSupport } from '../tg.js'
+import { track } from '../analytics.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -22,8 +23,57 @@ const tasksOpen = ref(false)
 // режим боя: захват точек / на уничтожение (персистится в профиле)
 function pickMode(m) {
   if (profile.battleMode === m) return
+  track('battle_mode_selected', {
+    mode_from: profile.battleMode,
+    mode_to: m,
+    tank_id: profile.selectedTank,
+  })
   setBattleMode(m)
   haptic('select')
+}
+
+// открытие шторок/саппорта с трекингом (для воронок «до первого боя»)
+function openTasksSheet() {
+  track('tasks_opened', {
+    from_screen: 'hangar',
+    before_first_battle: (profile.stats?.battles || 0) === 0,
+    claimable: tasksClaimable(),
+  })
+  tasksOpen.value = true
+}
+function openSquadSheet() {
+  track('squad_opened', {
+    from_screen: 'hangar',
+    referrals_count: profile.referrals?.length || 0,
+    in_squad: inParty.value,
+  })
+  squadOpen.value = true
+}
+function openSupportTracked() {
+  track('support_opened', {
+    from_screen: 'hangar',
+    before_first_battle: (profile.stats?.battles || 0) === 0,
+  })
+  haptic('light')
+  openSupport()
+}
+// выбор танка в карусели ангара (+ отдельное событие на тап по запертому)
+function selectTankTracked(t) {
+  track('hangar_tank_selected', {
+    tank_id: t.id,
+    tank_tier: t.tier,
+    tank_class: t.cls,
+    owned: isOwned(t.id),
+    locked: !isOwned(t.id),
+  })
+  if (!isOwned(t.id)) {
+    track('locked_tank_clicked', {
+      tank_id: t.id,
+      tank_tier: t.tier,
+      tank_class: t.cls,
+    })
+  }
+  selectTank(t.id)
 }
 
 const tank = computed(() => TANK_BY_ID[profile.selectedTank] || tanksOfNation(profile.nation)[0])
@@ -79,6 +129,17 @@ function buyPreview() {
 }
 // смена танка — сбрасываем примерку (камуфляжи у каждого танка свои)
 watch(() => tank.value.id, () => (previewCamo.value = null))
+
+onMounted(() => {
+  track('hangar_viewed', {
+    selected_tank: profile.selectedTank,
+    tank_tier: tank.value?.tier || null,
+    tank_class: tank.value?.cls || null,
+    battle_mode: profile.battleMode,
+    battles_count: profile.stats?.battles || 0,
+    party_present: !!party.token,
+  })
+})
 </script>
 
 <template>
@@ -125,7 +186,7 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
       <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
       <div style="display: flex; align-items: center; gap: 8px">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
-        <button class="support-btn" title="Поддержка" aria-label="Поддержка" @click="haptic('light'); openSupport()">
+        <button class="support-btn" title="Поддержка" aria-label="Поддержка" @click="openSupportTracked">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
             <rect x="2.5" y="13" width="4" height="6" rx="1.6" />
@@ -153,7 +214,7 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
           <span>ЭКИПАЖ {{ crewLevel() }} ▸</span>
           <i class="bar"><b :style="{ width: crewProgress() * 100 + '%' }"></b></i>
         </button>
-        <button class="pz-btn2" style="padding: 8px 12px; font-size: 11.5px" :style="{ borderColor: ttx ? 'var(--amber)' : 'var(--line-strong)', color: ttx ? 'var(--amber)' : 'var(--ink)' }" @click="ttx = !ttx">
+        <button class="pz-btn2" style="padding: 8px 12px; font-size: 11.5px" :style="{ borderColor: ttx ? 'var(--amber)' : 'var(--line-strong)', color: ttx ? 'var(--amber)' : 'var(--ink)' }" @click="track('ttx_opened', { tank_id: tank.id, open_to: !ttx }); ttx = !ttx">
           ТТХ {{ ttx ? '▾' : '▸' }}
         </button>
       </div>
@@ -216,7 +277,7 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
           cursor: 'pointer',
           color: !isOwned(t.id) ? 'var(--ink-faint)' : 'var(--ink)',
         }"
-        @click="selectTank(t.id)"
+        @click="selectTankTracked(t)"
       >
         <span class="pz-pixel" style="font-size: 8px" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">{{ t.tier }}</span>
         <TankImg :tank-id="t.id" :size="42" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)' }" />
@@ -241,14 +302,14 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
 
     <!-- CTA -->
     <div style="padding: 8px 14px 4px; flex-shrink: 0; display: flex; gap: 8px">
-      <button class="pz-btn2 squad-btn tasks-btn" @click="tasksOpen = true">
+      <button class="pz-btn2 squad-btn tasks-btn" @click="openTasksSheet">
         <span style="position: relative">
           <PzIcon name="tasks" :size="18" />
           <i v-if="tasksClaimable() > 0" class="task-dot"></i>
         </span>
         ЗАДАЧИ
       </button>
-      <button class="pz-btn2 squad-btn" @click="squadOpen = true">
+      <button class="pz-btn2 squad-btn" @click="openSquadSheet">
         <span class="dots">
           <span class="slot you"><PzIcon name="star" :size="7" color="var(--amber)" /></span>
           <span class="slot" :class="{ filled: inParty }"></span>

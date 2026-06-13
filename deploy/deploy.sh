@@ -33,7 +33,9 @@ $SSH "if [ ! -s $DIR/server/.env ]; then
 fi"
 
 echo "== 4/6 зависимости и сборка клиента =="
-$SSH "cd $DIR && pnpm install --silent && cd client && VITE_API_URL=https://panzertg.online pnpm build"
+# VITE_AMPLITUDE_API_KEY — ПУБЛИЧНЫЙ ключ Amplitude (он и так в бандле, не секрет).
+# Дублируем тут, чтобы прод-сборка получила его даже без rsync'нутого client/.env.local.
+$SSH "cd $DIR && pnpm install --silent && cd client && VITE_API_URL=https://panzertg.online VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 pnpm build"
 
 echo "== 5/6 systemd + nginx =="
 $SSH "cp $DIR/deploy/panzers.service /etc/systemd/system/panzers.service

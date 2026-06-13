@@ -8,6 +8,7 @@ import { profile, claimRefMilestone, selectTank, selectedTank } from '../store.j
 import { REF_MILESTONES, TANK_BY_ID } from '../game/meta.js'
 import { tgUserId, inviteLink, shareLink } from '../tg.js'
 import { squad, connectSquad, squadSetReady, squadLaunch, closeSquad, isSquadLeader, myReady, allReady, myTankCompatible, squadTierOk, memberTierBad, tierFitsSquad } from '../game/squad.js'
+import { track } from '../analytics.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -54,11 +55,23 @@ function afterShare(kind) {
 function createSquad() {
   if (!myId.value) return showToast('Взвод доступен только в Telegram')
   connectSquad(myId.value, profile.name)
-  afterShare(shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG — вместе в один бой!'))
+  track('squad_create_clicked', {
+    tank_id: profile.selectedTank,
+    tank_tier: selectedTank()?.tier || null,
+  })
+  const shareResult = shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG — вместе в один бой!')
+  track('squad_share_attempted', { share_result: shareResult, kind: 'squad' })
+  afterShare(shareResult)
 }
 function inviteMore() {
   if (!myId.value) return
-  afterShare(shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG!'))
+  const shareResult = shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG!')
+  track('squad_share_attempted', {
+    share_result: shareResult,
+    kind: 'squad_more',
+    members_count: squad.members.length,
+  })
+  afterShare(shareResult)
 }
 function toggleReady() {
   // готовлюсь, но техника не в пределах ±1 уровня — открываем пикер смены танка
@@ -67,10 +80,22 @@ function toggleReady() {
     picker.value = true
     return
   }
+  track('squad_ready_clicked', {
+    ready_to: !myReady(),
+    members_count: squad.members.length,
+    tank_compatible: myTankCompatible(),
+    tier_ok: squadTierOk(),
+  })
   squadSetReady(!myReady())
 }
 function launch() {
   if (!isLeader.value || !allReady() || !squadTierOk()) return
+  track('squad_launch_clicked', {
+    members_count: squad.members.length,
+    ready_count: squad.members.filter((m) => m.ready).length,
+    tier_ok: squadTierOk(),
+    mode: profile.battleMode,
+  })
   squadLaunch(profile.battleMode) // сервер пнёт всех → App.onLaunch → в бой с party=squadId
   emit('close')
 }
@@ -82,12 +107,24 @@ function leaveSquad() {
 // постоянная реф-ссылка: кто зайдёт по ней — засчитается тебе в рекруты на сервере
 function inviteFriend() {
   if (!myId.value) return showToast('Приглашение доступно только в Telegram')
-  afterShare(shareLink(inviteLink(`ref_${myId.value}`), 'Залетай в Panzer TG — танковые бои в Telegram!'))
+  const shareResult = shareLink(inviteLink(`ref_${myId.value}`), 'Залетай в Panzer TG — танковые бои в Telegram!')
+  track('invite_friend_clicked', {
+    share_result: shareResult,
+    referrals_count: profile.referrals.length,
+  })
+  afterShare(shareResult)
 }
 
 function claim(i) {
   const r = claimRefMilestone(i)
   if (!r) return
+  track('invite_reward_claimed', {
+    milestone: i,
+    referrals_count: profile.referrals.length,
+    credits: r.credits || 0,
+    tokens: r.tokens || 0,
+    camo: r.camo ? true : false,
+  })
   // оф-ящик с дропом камуфляжа — показываем что именно выпало
   if (r.camo) showToast(`🎁 Камуфляж «${r.camo.name}» на ${r.camo.tankName} +${r.credits} кр`)
   else showToast(`${REF_MILESTONES[i].label} — получено!`)

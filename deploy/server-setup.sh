@@ -44,7 +44,8 @@ fi
 
 echo "== 4/6 зависимости и сборка клиента =="
 pnpm install --silent
-(cd client && VITE_API_URL="https://$DOMAIN" pnpm build)
+# VITE_AMPLITUDE_API_KEY — ПУБЛИЧНЫЙ ключ Amplitude (попадает в клиент-бандл, не секрет).
+(cd client && VITE_API_URL="https://$DOMAIN" VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 pnpm build)
 
 echo "== 5/6 systemd + nginx =="
 cp deploy/panzers.service /etc/systemd/system/panzers.service

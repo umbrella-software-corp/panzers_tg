@@ -10,9 +10,10 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
-import { profile, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode } from './store.js'
+import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode } from './store.js'
 import { randomMap } from './game/maps.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
+import { track, trackScreen, setAnalyticsUserId, identifyUser } from './analytics.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
 const screen = ref('hangar')
@@ -34,6 +35,20 @@ onMounted(async () => {
   await syncProfile() // офлайн — молча остаёмся на локальном кеше
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)
+  // профиль загружен — связываем юзера и шлём срез прогрессии в Amplitude
+  setAnalyticsUserId(tgUserId() ? `tg_${tgUserId()}` : null)
+  identifyUser({
+    battles_count: profile.stats?.battles || 0,
+    owned_tanks_count: Array.isArray(profile.owned) ? profile.owned.length : 0,
+    selected_tank: profile.selectedTank,
+    battle_mode: profile.battleMode,
+  })
+  track('profile_loaded', {
+    battles_count: profile.stats?.battles || 0,
+    owned_tanks_count: Array.isArray(profile.owned) ? profile.owned.length : 0,
+    selected_tank: profile.selectedTank,
+    battle_mode: profile.battleMode,
+  })
   // взвод-лобби: командир жмёт старт → все участники сюда → в бой с party=squadId
   squad.onLaunch = (m) => {
     // взвод НЕ закрываем — он живёт через бои: сыграли, вернулись в ангар,
@@ -45,7 +60,13 @@ onMounted(async () => {
   }
   squad.onDisband = () => {} // UI взвода сам покажет роспуск
   handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
-  if (dailyAvailable()) daily.value = true
+  if (dailyAvailable()) {
+    track('daily_reward_shown', {
+      screen: screen.value,
+      battles_count: profile.stats?.battles || 0,
+    })
+    daily.value = true
+  }
   // сплэш держим минимум ~750мс, чтобы не моргал на быстром старте
   setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - t0)))
 })
@@ -60,9 +81,18 @@ async function handleStartParam() {
   if (String(id) === String(tgUserId())) return // свою же ссылку игнорируем
   if (kind === 'sq') {
     connectSquad(id, profile.name) // приглашён — заходим в лобби взвода командира id
+    track('squad_deeplink_opened', {
+      squad_id_present: true,
+      from_start_param: true,
+    })
   } else {
     try {
-      await apiReferred(id) // сервер привяжет реферера и добавит меня ему в рекруты
+      const out = await apiReferred(id) // сервер привяжет реферера и добавит меня ему в рекруты
+      track('referral_registered', {
+        result: out?.ok ? 'ok' : 'failed',
+        credited: !!out?.credited,
+        reason: out?.reason || null,
+      })
     } catch {
       /* офлайн — реферал не засчитан; повторно засчитывать не пытаемся */
     }
@@ -77,14 +107,32 @@ function go(to) {
 // выходы), на остальных экранах ведёт в ангар вместо сворачивания мини-аппа
 watch(
   screen,
-  (s) => setBackButton(s === 'hangar' || s === 'battle' ? null : () => go('hangar')),
+  (s, prev) => {
+    setBackButton(s === 'hangar' || s === 'battle' ? null : () => go('hangar'))
+    trackScreen(s, prev)
+  },
   { immediate: true },
 )
 function play() {
+  track('play_clicked', {
+    from_screen: screen.value,
+    battle_mode: profile.battleMode,
+    tank_id: profile.selectedTank,
+    party_present: !!party.token,
+    battles_count: profile.stats?.battles || 0,
+  })
   draw.value = { mapId: randomMap().id, side: Math.random() < 0.5 ? 0 : 1 }
   screen.value = 'matchmaking'
 }
 function deploy(net) {
+  track('battle_loading_started', {
+    online: !!net,
+    match_type: net ? (party.token ? 'squad' : 'online') : 'offline_fallback',
+    map_id: net?.mapId || draw.value.mapId,
+    mode: net?.mode || profile.battleMode,
+    party_present: !!party.token,
+    humans: net?.humans || null,
+  })
   // markRaw: НЕ оборачивать клиент (ws + onMessage-подписка) в реактивный прокси —
   // иначе net.js (сырой объект) и NetGame (прокси) расходятся, снапшоты не доходят
   netMatch.value = net ? markRaw(net) : null
@@ -95,6 +143,15 @@ function deploy(net) {
 // награда боя + прогресс задач дня
 function bankBattle(reward) {
   if (!reward) return
+  track('battle_reward_banked', {
+    xp: reward.xp || 0,
+    silver: reward.silver || 0,
+    damage: reward.damage || 0,
+    kills: reward.kills || 0,
+    victory: !!reward.victory,
+    survived: !!reward.survived,
+    premium_bonus: isPremium() ? PREMIUM_BONUS : 0,
+  })
   // премиум: +15% к кредитам и опыту (экипаж + ветка техники) за бой
   const m = isPremium() ? 1 + PREMIUM_BONUS : 1
   addRewards(Math.round((reward.silver || 0) * m))
@@ -121,9 +178,21 @@ function bankBattle(reward) {
 function exitBattle(reward) {
   bankBattle(reward)
   netMatch.value = null
+  track('battle_exit_to_hangar', {
+    had_reward: !!reward,
+    result: reward?.victory ? 'victory' : null,
+    damage: reward?.damage || 0,
+    kills: reward?.kills || 0,
+  })
   screen.value = 'hangar'
 }
 function rematch(reward) {
+  track('rematch_clicked', {
+    result: reward?.victory ? 'victory' : null,
+    damage: reward?.damage || 0,
+    kills: reward?.kills || 0,
+    survived: !!reward?.survived,
+  })
   bankBattle(reward)
   // каждый «ЕЩЁ БОЙ» — через ПОИСК нового боя (как первый раз): попытка найти
   // живых/друзей, затем добор ботами. Не кидаем мгновенно в офлайн-бой.

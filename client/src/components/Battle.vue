@@ -7,9 +7,10 @@ import { Game } from '../game/Game.js'
 import { NetGame } from '../game/NetGame.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
-import { profile, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
+import { profile, party, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
 import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT } from '../game/meta.js'
 import { haptic } from '../tg.js'
+import { track } from '../analytics.js'
 import Results from './Results.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -140,6 +141,11 @@ let endTimer = null // пауза на баннер «почему бой кон
 // пауза по кнопке (поверх фазы fighting)
 const paused = ref(false)
 function pauseGame() {
+  track('pause_opened', {
+    time_sec: battleSec(),
+    before_first_shot: !battleTelemetry.firstShot,
+    match_type: matchType(),
+  })
   paused.value = true
   game.setPaused(true)
 }
@@ -150,6 +156,61 @@ function resumeGame() {
 
 let prevKills = 0
 let prevDeaths = 0
+
+// --- телеметрия боя для Amplitude (одноразовые вехи: первый выстрел/урон/смерть) ---
+const battleTelemetry = {
+  started: false,
+  startedAt: 0,
+  firstInput: false,
+  firstShot: false,
+  firstShotSec: null,
+  firstShotResult: null,
+  firstShotReason: null,
+  firstHitSec: null,
+  firstDamage: false,
+  firstDamageTakenSec: null,
+  firstDeath: false,
+  firstDeathSec: null,
+  firstRevealed: false,
+  fireTapsBeforeFirstValidShot: 0,
+  blockedFireCountFirstMin: 0,
+  exitedEarly: false,
+}
+function battleSec() {
+  return battleTelemetry.startedAt ? Math.round((performance.now() - battleTelemetry.startedAt) / 1000) : 0
+}
+// тип матча: онлайн-онли (взвод/обычный онлайн); offline_direct — на случай прямого
+// боя с ботами без сети (офлайн-фоллбэк из матчмейкинга выпилен — его тут нет)
+function matchType() {
+  if (isNet && party.token) return 'squad'
+  if (isNet) return 'online'
+  return 'offline_direct'
+}
+function markBattleStarted() {
+  if (battleTelemetry.started) return
+  battleTelemetry.started = true
+  battleTelemetry.startedAt = performance.now()
+  track('battle_started', {
+    battle_id: props.net?.room || null,
+    match_type: matchType(),
+    online: isNet,
+    map_id: isNet ? props.net.mapId : props.mapId,
+    mode: isNet ? props.net.mode : props.mode,
+    humans: props.net?.humans || null,
+    bots_estimated: props.net?.humans ? Math.max(0, 14 - props.net.humans) : null,
+    side: mySide,
+    tank_id: profile.selectedTank,
+  })
+}
+function markFirstInput(inputType) {
+  if (battleTelemetry.firstInput) return
+  battleTelemetry.firstInput = true
+  track('battle_first_input', {
+    input_type: inputType,
+    time_sec: battleSec(),
+    match_type: matchType(),
+  })
+}
 
 const toast = ref(null)
 let toastTimer = null
@@ -195,6 +256,16 @@ game.onHurt = (angle) => {
   setTimeout(() => {
     dmgDirs.value = dmgDirs.value.filter((x) => x.key !== key)
   }, 850)
+  if (!battleTelemetry.firstDamage) {
+    battleTelemetry.firstDamage = true
+    battleTelemetry.firstDamageTakenSec = battleSec()
+    track('battle_first_damage_taken', {
+      time_sec: battleTelemetry.firstDamageTakenSec,
+      damage_direction_angle: angle,
+      revealed_state: !!state.value.revealed,
+      match_type: matchType(),
+    })
+  }
 }
 
 // сторож онлайн-старта: если за 5с не пришёл ни один снапшот сервера — показываем
@@ -219,9 +290,31 @@ game.onState = (s) => {
   // пришли данные мира — снимаем сторож «нет связи»
   if (isNet && game.cur) clearNetWatchdog()
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
+  if (s.revealed && !battleTelemetry.firstRevealed) {
+    battleTelemetry.firstRevealed = true
+    track('battle_spotted_state_changed', {
+      state: true,
+      time_sec: battleSec(),
+      after_own_shot: !!battleTelemetry.firstShot,
+      match_type: matchType(),
+    })
+  }
   if (s.deaths > prevDeaths) {
     showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
     deathDismissed.value = false // новая смерть — показываем экран смерти
+    if (!battleTelemetry.firstDeath) {
+      battleTelemetry.firstDeath = true
+      battleTelemetry.firstDeathSec = battleSec()
+      track('battle_player_destroyed', {
+        time_sec: battleTelemetry.firstDeathSec,
+        death_by: s.deathInfo?.by || null,
+        death_dir: s.deathInfo?.dir || null,
+        was_revealed: !!s.revealed,
+        damage_taken_before_death: battleTelemetry.firstDamage,
+        first_shot_result: battleTelemetry.firstShotResult,
+        match_type: matchType(),
+      })
+    }
   }
   if (s.playerHp < prevHp && s.playerHp > 0) {
     haptic('heavy') // получил урон — сильный толчок (хорошо ощущается на iOS)
@@ -234,6 +327,32 @@ game.onState = (s) => {
   prevDeaths = s.deaths
   state.value = s
   if (s.matchOver && phase.value === 'fighting') {
+    track('battle_finished', {
+      battle_id: props.net?.room || null,
+      match_type: matchType(),
+      online: isNet,
+      duration_sec: battleSec(),
+      result: s.result,
+      end_reason: s.endReason || null,
+      mode: s.mode,
+      humans: props.net?.humans || null,
+      bots_estimated: props.net?.humans ? Math.max(0, 14 - props.net.humans) : null,
+      damage_dealt: s.damageDealt || 0,
+      kills: s.kills || 0,
+      shots: s.shots || 0,
+      hits: s.hits || 0,
+      accuracy: s.accuracy || 0,
+      spotted: s.spotted || 0,
+      death_count: s.deaths || 0,
+      survived: !s.deaths,
+      first_shot_sec: battleTelemetry.firstShotSec,
+      first_shot_result: battleTelemetry.firstShotResult,
+      first_miss_reason: battleTelemetry.firstShotReason,
+      first_hit_sec: battleTelemetry.firstHitSec,
+      first_damage_taken_sec: battleTelemetry.firstDamageTakenSec,
+      first_death_sec: battleTelemetry.firstDeathSec,
+      exited_early: battleTelemetry.exitedEarly,
+    })
     // сперва БАННЕР «почему бой кончился» (чтобы не вываливать модалку резко),
     // через ~1.8с — итоговое донесение
     phase.value = 'ending'
@@ -280,6 +399,11 @@ function toggleAmmo() {
   if (ammo.value === 'std' && profile.goldAmmo <= 0) return
   ammo.value = ammo.value === 'std' ? 'gold' : 'std'
   game.ammoMult = ammo.value === 'gold' ? GOLD_AMMO_MULT : 1
+  track('ammo_toggle_used', {
+    time_sec: battleSec(),
+    ammo_to: ammo.value,
+    first_battle: (profile.stats?.battles || 0) === 0,
+  })
 }
 // корректные по роду/числу фразы повреждений модулей
 const CRIT_PHRASE = {
@@ -296,6 +420,35 @@ game.onSaved = (kind) => {
   showToast('hit', kind === 'ricochet' ? 'РИКОШЕТ ОТ БРОНИ' : 'БРОНЯ НЕ ПРОБИТА')
 }
 game.onShot = (r) => {
+  // --- телеметрия: первый выстрел и первый РЕЗУЛЬТАТ (до игровой реакции ниже) ---
+  const _sec = battleSec()
+  if (!battleTelemetry.firstShot) {
+    battleTelemetry.firstShot = true
+    battleTelemetry.firstShotSec = _sec
+    track('battle_first_shot', {
+      time_sec: _sec,
+      match_type: matchType(),
+      blocked: r.type === 'blocked',
+      reason: r.reason || null,
+    })
+  }
+  if (_sec <= 60 && r.type === 'blocked') battleTelemetry.blockedFireCountFirstMin++
+  if (!battleTelemetry.firstShotResult && r.type !== 'blocked') {
+    battleTelemetry.firstShotResult = r.type
+    battleTelemetry.firstShotReason = r.reason || null
+    if (r.type === 'hit' || r.type === 'ricochet' || r.type === 'nopen') battleTelemetry.firstHitSec = _sec
+    track('battle_first_shot_result', {
+      time_sec: _sec,
+      result: r.type,
+      reason: r.reason || null,
+      in_range: !!r.inRange,
+      in_sector: !!r.inSector,
+      los: !!r.los,
+      fire_taps_before_first_valid_shot: battleTelemetry.fireTapsBeforeFirstValidShot,
+      blocked_fire_count_first_min: battleTelemetry.blockedFireCountFirstMin,
+      match_type: matchType(),
+    })
+  }
   if (r.type === 'ram') {
     haptic('rigid') // таран — жёсткий толчок
     showToast('hit', 'ТАРАН!')
@@ -344,6 +497,7 @@ let joyPointer = null
 const JOY_R = 52
 
 function joyStart(e) {
+  markFirstInput('joystick')
   joyActive = true
   joyPointer = e.pointerId
   joyOrigin.value = { x: e.clientX, y: e.clientY }
@@ -373,11 +527,20 @@ function joyEnd(e) {
 }
 
 function onFire() {
+  if (!battleTelemetry.firstShotResult) battleTelemetry.fireTapsBeforeFirstValidShot++
   haptic('medium') // тап по «огонь» — ощутимая отдача выстрела
   game.fire()
 }
 
 function toHangar() {
+  battleTelemetry.exitedEarly = phase.value === 'fighting'
+  track('battle_exit_clicked', {
+    before_finish: phase.value === 'fighting',
+    time_sec: battleSec(),
+    player_alive: state.value.playerHp > 0,
+    result_known: !!state.value.result,
+    match_type: matchType(),
+  })
   // выход до конца матча = поражение в статистику
   if (phase.value === 'fighting' && !statsCounted) {
     statsCounted = true
@@ -407,6 +570,7 @@ function startCountdown() {
       countTimer = null
       phase.value = 'fighting'
       game.setPaused(false)
+      markBattleStarted()
       // онлайн: match-end мог прийти ВО ВРЕМЯ отсчёта (сервер ушёл на рестарт) —
       // onState с matchOver тогда отгейтился фазой; переигрываем состояние
       if (isNet) game._emitState()
@@ -432,6 +596,12 @@ onMounted(async () => {
   if (_el < 700) await new Promise((r) => setTimeout(r, 700 - _el))
   loading.value = false // спрайты прогружены — снимаем лоадер
   game.setMinimap(minimap.value)
+  track('battle_countdown_started', {
+    starts_in_ms: 2400,
+    online: isNet,
+    map_id: isNet ? props.net.mapId : props.mapId,
+    mode: isNet ? props.net.mode : props.mode,
+  })
   startCountdown() // отсчёт сразу (NetGame рисует мир по мере прихода снапшотов)
   if (isNet) {
     // за 5с не пришло НИ ОДНОГО снапшота — экран «нет связи» с кнопками (не офлайн)

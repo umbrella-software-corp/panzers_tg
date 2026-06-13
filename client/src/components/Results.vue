@@ -2,9 +2,10 @@
 // Результаты боя (порт ResultsScreen): крафт-донесение со штампом, два листа
 // как в макете — «Сводка» и «По целям» (по-целевой лог урона из движка).
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { profile, battleEarnedMedals } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID } from '../game/meta.js'
+import { track } from '../analytics.js'
 import PzIcon from './ui/PzIcon.vue'
 import Medal from './ui/Medal.vue'
 import MedalSheet from './MedalSheet.vue'
@@ -80,6 +81,28 @@ const medals = computed(() =>
     .map((e) => ({ ...e, def: MEDAL_BY_ID[e.id] }))
     .filter((e) => e.def),
 )
+
+onMounted(() => {
+  track('results_shown', {
+    result: props.state.result,
+    end_reason: props.state.endReason || null,
+    duration_sec: props.state.matchTime || null,
+    damage: props.state.damageDealt || 0,
+    kills: props.state.kills || 0,
+    deaths: props.state.deaths || 0,
+    accuracy: props.state.accuracy || 0,
+    xp: props.reward.xp || 0,
+    silver: props.reward.silver || 0,
+    medals_count: medals.value.length,
+  })
+})
+function setPage(i) {
+  page.value = i
+  track('results_tab_changed', {
+    tab: i === 0 ? 'summary' : 'scoreboard',
+    result: props.state.result,
+  })
+}
 </script>
 
 <template>
@@ -98,7 +121,7 @@ const medals = computed(() =>
 
       <!-- листы донесения (как скреплённые страницы) -->
       <div style="display: flex; gap: 6px; justify-content: center; margin-top: 10px">
-        <button v-for="(label, i) in ['Сводка', 'По бойцам']" :key="label" class="pz-display sheet-tab" :class="{ on: page === i }" @click="page = i">
+        <button v-for="(label, i) in ['Сводка', 'По бойцам']" :key="label" class="pz-display sheet-tab" :class="{ on: page === i }" @click="setPage(i)">
           {{ label }} <span style="opacity: 0.55">· л.{{ i + 1 }}</span>
         </button>
       </div>
@@ -182,7 +205,7 @@ const medals = computed(() =>
     <!-- действия -->
     <div style="width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 10px; margin-top: 18px">
       <button class="pz-cta pz-cta--hazard" @click="emit('rematch')">ЕЩЁ БОЙ</button>
-      <button class="pz-btn2" @click="emit('hangar')">В ангар</button>
+      <button class="pz-btn2" @click="track('results_hangar_clicked', { result: state.result, end_reason: state.endReason || null }); emit('hangar')">В ангар</button>
     </div>
 
     <!-- модалка медали: что это и как получить -->

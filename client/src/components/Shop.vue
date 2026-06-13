@@ -1,9 +1,10 @@
 <script setup>
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft } from '../store.js'
 import { apiBuy } from '../api.js'
+import { track } from '../analytics.js'
 import { GOLD_AMMO_PACKS } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
 import { haptic } from '../tg.js'
@@ -39,6 +40,12 @@ function showToast(text, bad = false) {
 // вскрытие ящика: показываем окно-награду с тем, ЧТО именно выпало
 const reveal = ref(null) // { name, credits, skin, tokens }
 function buyCrate(c) {
+  track('shop_item_clicked', {
+    item_id: c.id,
+    item_type: 'crate',
+    price: c.costTokens,
+    currency: 'tokens',
+  })
   if (!spendTokens(c.costTokens)) {
     showToast('Не хватает жетонов', true)
     return
@@ -52,19 +59,35 @@ function buyCrate(c) {
     addRewards(0, tokens)
   }
   haptic('success') // вскрытие ящика — приятная отдача
+  track('crate_opened', {
+    crate_id: c.id,
+    credits: c.gain,
+    tokens_bonus: tokens,
+  })
   reveal.value = { name: c.name, credits: c.gain, skin: null, tokens }
 }
 // паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
 // Без BOT_TOKEN сервер начисляет сразу (dev-режим).
 async function buyPack(p, label) {
+  track('purchase_started', { product_id: p.id, label })
   try {
     const r = await apiBuy(p.id)
     if (r.granted) {
       await syncProfile()
+      track('purchase_completed', {
+        product_id: p.id,
+        dev: !!r.dev,
+        payment_type: r.dev ? 'dev_grant' : 'stars',
+      })
       showToast(`${label} — зачислено${r.dev ? ' (dev)' : ''}!`)
     } else if (r.link && window.Telegram?.WebApp?.openInvoice) {
       window.Telegram.WebApp.openInvoice(r.link, async (status) => {
         if (status === 'paid') {
+          track('purchase_completed', {
+            product_id: p.id,
+            dev: false,
+            payment_type: 'stars',
+          })
           setTimeout(async () => {
             await syncProfile()
             showToast(`${label} — оплачено!`)
@@ -75,6 +98,7 @@ async function buyPack(p, label) {
       showToast('Оплата недоступна', true)
     }
   } catch {
+    track('purchase_failed', { product_id: p.id, reason: 'api_error' })
     showToast('Сервер недоступен', true)
   }
 }
@@ -89,6 +113,16 @@ function buyGold(p) {
   showToast(`${p.amount} голдовых снарядов — получено!`)
 }
 const fmt = (n) => n.toLocaleString('ru-RU')
+
+onMounted(() => {
+  track('shop_viewed', {
+    credits: profile.credits || 0,
+    tokens: profile.tokens || 0,
+    premium: isPremium(),
+    battles_count: profile.stats?.battles || 0,
+    before_first_battle: (profile.stats?.battles || 0) === 0,
+  })
+})
 </script>
 
 <template>
