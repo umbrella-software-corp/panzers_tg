@@ -98,7 +98,7 @@ const board = computed(() => {
     let h = 0
     for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 997
     const delta = ((h % 21) - 10) * 18 + (i - RATING_RIVALS.length / 2) * 9
-    return { name, rating: Math.max(120, Math.round(mine + delta)), you: false, live: false }
+    return { name, rating: Math.max(120, Math.round(mine + delta)), you: false, premium: h % 5 === 0, live: false }
   })
   rows.push({ name: profile.name, rating: mine, you: true, premium: isPremium(), live: false })
   rows.sort((a, b) => b.rating - a.rating)

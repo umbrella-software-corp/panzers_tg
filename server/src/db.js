@@ -267,6 +267,7 @@ async function listProfilesUncached() {
         wn8: (p.stats && p.stats.wn8) || 0, // боевой рейтинг по эффективности
         crewXp: (p.crew && p.crew.xp) || 0,
         tanks: Array.isArray(p.owned) ? p.owned.length : 0,
+        premiumUntil: p.premiumUntil || 0, // для отметки ★ премиум в таблице лидеров
         updatedAt: p._updatedAt || 0,
       })
     } catch {
