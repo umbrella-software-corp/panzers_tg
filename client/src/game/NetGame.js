@@ -247,6 +247,15 @@ export class NetGame {
       if (ev.hit && ev.target === this.youUnit) {
         const sh = this._units.get(ev.unit)
         this._lastHitBy = { name: sh ? sh.name : 'враг', cls: sh ? sh.cls : null, x: ev.x1, y: ev.y1 }
+        // индикатор направления урона в HUD: угол на стрелявшего относительно
+        // корпуса (0 = спереди). Камера повёрнута с танком → угол сразу экранный.
+        const own = this._units.get(this.youUnit)
+        if (own && this.onHurt) {
+          let d = Math.atan2(ev.y1 - own.y, ev.x1 - own.x) - (own.hull || 0)
+          while (d > Math.PI) d -= 2 * Math.PI
+          while (d < -Math.PI) d += 2 * Math.PI
+          this.onHurt(d)
+        }
       }
       const a = Math.atan2(ey - ev.y1, ex - ev.x1)
       this.muzzles.push({ x: ev.x1 + Math.cos(a) * 40, y: ev.y1 + Math.sin(a) * 40, a, age: 0, color: col })

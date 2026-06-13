@@ -187,6 +187,17 @@ const shaking = ref(false)
 let shakeTimer = null
 let prevHp = Infinity
 
+// индикатор направления урона: красная дуга у танка, указывает, откуда прилетело
+// (angle — корпус-относительный угол, 0 = спереди/вверх; экран повёрнут с танком)
+const dmgDirs = ref([])
+game.onHurt = (angle) => {
+  const key = Date.now() + Math.random()
+  dmgDirs.value = [...dmgDirs.value, { key, angle }].slice(-3)
+  setTimeout(() => {
+    dmgDirs.value = dmgDirs.value.filter((x) => x.key !== key)
+  }, 850)
+}
+
 // сторож онлайн-старта: если за 8с не пришёл ни один снапшот сервера —
 // откатываемся в бой с ботами, чтобы не висеть вечно на 0:00 (фриз у части
 // WebKit-клиентов). Снимается, как только пришли первые данные мира.
@@ -538,6 +549,13 @@ onBeforeUnmount(() => {
         <div class="wc-sec pz-pixel">{{ state.winCount.sec }}</div>
       </div>
     </transition>
+
+    <!-- индикатор направления урона: красная дуга у танка «откуда прилетело» -->
+    <div v-show="phase === 'fighting' && state.playerHp > 0" class="dmg-dirs">
+      <div v-for="d in dmgDirs" :key="d.key" class="dmg-dir" :style="{ transform: `rotate(${d.angle}rad)` }">
+        <i class="dd-arc"></i>
+      </div>
+    </div>
 
     <!-- килл-фид -->
     <div class="feed">
@@ -1150,6 +1168,55 @@ onBeforeUnmount(() => {
 .wc-pop-leave-to {
   opacity: 0;
   transform: translateX(-50%) scale(0.9);
+}
+
+/* индикатор направления урона — якорь в экранной позиции танка (50% / 66%) */
+.dmg-dirs {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  width: 0;
+  height: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.dmg-dir {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+/* красная дуга-сегмент (~70°) у верха кольца (= спереди); поворот .dmg-dir целит
+   её на стрелявшего. conic — узкий красный сектор сверху, маска — только обод */
+.dd-arc {
+  position: absolute;
+  width: 196px;
+  height: 196px;
+  left: -98px;
+  top: -98px;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgba(255, 72, 46, 0.95) 0deg 34deg,
+    transparent 34deg 326deg,
+    rgba(255, 72, 46, 0.95) 326deg 360deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 80px, #000 82px);
+  mask: radial-gradient(circle, transparent 80px, #000 82px);
+  filter: drop-shadow(0 0 6px rgba(255, 48, 26, 0.8));
+  animation: dd-fade 0.85s ease-out forwards;
+}
+@keyframes dd-fade {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  16% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
 }
 
 /* килл-фид */

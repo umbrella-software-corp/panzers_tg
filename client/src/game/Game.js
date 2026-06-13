@@ -1348,6 +1348,14 @@ export class Game {
         this.blocked++
         this.onSaved(pen.kind)
       }
+      // индикатор направления огня по игроку: угол на стрелявшего относительно
+      // корпуса (0 = спереди), HUD рисует красную дугу «откуда прилетело»
+      if (target.isPlayer && this.onHurt) {
+        let d = Math.atan2(b.y - this.tank.y, b.x - this.tank.x) - this.hullAngle
+        while (d > Math.PI) d -= 2 * Math.PI
+        while (d < -Math.PI) d += 2 * Math.PI
+        this.onHurt(d)
+      }
     }
     this._spawnShell(b.x, b.y, target.x, target.y, col, hit && pierced ? 'hit' : 'dust')
   }
