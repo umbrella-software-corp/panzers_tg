@@ -199,7 +199,7 @@ export function selectTank(id) {
 }
 
 // предыдущий по тиру танк в той же нации (для условия разблокировки)
-function prevTank(tank) {
+export function prevTank(tank) {
   const nation = nationOf(tank.id)
   return Object.values(TANK_BY_ID).find((t) => nationOf(t.id) === nation && t.tier === tank.tier - 1)
 }

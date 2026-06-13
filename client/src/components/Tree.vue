@@ -13,6 +13,7 @@ import {
   buyTank,
   upgradeModule,
   tankModLevel,
+  prevTank,
 } from '../store.js'
 import { tanksOfNation, MODULE_DEFS, moduleCost, modsMaxedCount } from '../game/meta.js'
 import TankImg from './ui/TankImg.vue'
@@ -31,6 +32,37 @@ const selected = computed(() => tanks.value.find((t) => t.id === sel.value))
 const mod = computed(() => MODULE_DEFS.find((m) => m.id === modTab.value))
 const fmt = (n) => (n || 0).toLocaleString('ru-RU')
 const maxedCount = (tankId) => modsMaxedCount(profile.modules, tankId)
+
+// чеклист разблокировки выбранной (некупленной) машины: каждое условие со ✓/✗.
+// Заменяет «серую кнопку без объяснения» — игрок видит, что выполнено и что нет.
+const checklist = computed(() => {
+  const t = selected.value
+  if (!t || isOwned(t.id)) return []
+  const prev = prevTank(t)
+  const rows = []
+  if (prev) {
+    rows.push({ done: isOwned(prev.id), label: `Исследовать ${prev.name}` })
+    const maxed = Math.min(5, maxedCount(prev.id))
+    rows.push({ done: maxed >= 5, label: `Топ-модули ${prev.name}`, value: `${maxed}/5` })
+  }
+  rows.push({ done: profile.credits >= (t.cost || 0), label: 'Кредиты', value: `${fmt(profile.credits)} / ${fmt(t.cost || 0)}` })
+  return rows
+})
+// шаг, к которому ведёт кнопка «→»: пред. танк (открыть его) либо его модули
+const gotoStep = computed(() => {
+  const t = selected.value
+  if (!t || isOwned(t.id)) return null
+  const prev = prevTank(t)
+  if (!prev) return null
+  if (!isOwned(prev.id)) return { id: prev.id, label: `Открыть ${prev.name}` }
+  if (maxedCount(prev.id) < 5) return { id: prev.id, label: `К модулям ${prev.name}` }
+  return null
+})
+// перейти к пред. танку: раскрыть его док (там либо его модули, либо его чеклист)
+function goToStep(id) {
+  sel.value = id
+  modTab.value = 'gun'
+}
 
 function pickNation(n) {
   sel.value = null
@@ -211,17 +243,30 @@ function diamondColor(tankId, modId) {
         <button class="pz-btn2" @click="pickInHangar">Выбрать в ангаре</button>
       </template>
 
-      <button
-        v-else
-        class="pz-cta"
-        style="font-size: 15px; padding: 12px 16px"
-        :style="{ animation: flash ? 'pz-shake .3s linear 2' : 'none' }"
-        :disabled="!canUnlock(selected)"
-        @click="research(selected)"
-      >
-        <template v-if="profile.credits < selected.cost">НУЖНО <PzIcon name="coin" :size="15" /> {{ fmt(selected.cost) }}</template>
-        <template v-else>ИССЛЕДОВАТЬ · {{ fmt(selected.cost) }}</template>
-      </button>
+      <template v-else>
+        <!-- чеклист разблокировки: что выполнено (✓) и что осталось (✗) -->
+        <div class="unlock-list">
+          <div v-for="(s, i) in checklist" :key="i" class="unlock-row" :class="{ ok: s.done }">
+            <span class="ul-mark">{{ s.done ? '✓' : '✗' }}</span>
+            <span class="ul-label">{{ s.label }}</span>
+            <span v-if="s.value" class="ul-value">{{ s.value }}</span>
+          </div>
+        </div>
+        <!-- переход к недостающему шагу: пред. танк или его модули -->
+        <button v-if="gotoStep" class="pz-btn2 goto-step" @click="goToStep(gotoStep.id)">→ {{ gotoStep.label }}</button>
+        <!-- исследование активно, только когда условия (кроме кредитов) выполнены -->
+        <button
+          class="pz-cta"
+          style="font-size: 15px; padding: 12px 16px"
+          :style="{ animation: flash ? 'pz-shake .3s linear 2' : 'none' }"
+          :disabled="!canUnlock(selected)"
+          @click="research(selected)"
+        >
+          <template v-if="!canUnlock(selected)">ВЫПОЛНИ УСЛОВИЯ ВЫШЕ</template>
+          <template v-else-if="profile.credits < selected.cost">НУЖНО <PzIcon name="coin" :size="15" /> {{ fmt(selected.cost) }}</template>
+          <template v-else>ИССЛЕДОВАТЬ · {{ fmt(selected.cost) }}</template>
+        </button>
+      </template>
     </div>
 
     <BottomNav screen="tree" @go="emit('go', $event)" />
@@ -296,5 +341,54 @@ function diamondColor(tankId, modId) {
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--line);
+}
+
+/* чеклист разблокировки */
+.unlock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.unlock-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 12.5px;
+}
+.unlock-row.ok {
+  border-color: rgba(120, 190, 90, 0.45);
+  background: rgba(120, 190, 90, 0.08);
+}
+.ul-mark {
+  width: 16px;
+  text-align: center;
+  font-weight: 800;
+  color: var(--red);
+  flex-shrink: 0;
+}
+.unlock-row.ok .ul-mark {
+  color: #7cc05a;
+}
+.ul-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-dim);
+}
+.unlock-row.ok .ul-label {
+  color: var(--ink);
+}
+.ul-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+.goto-step {
+  border-color: var(--amber);
+  color: var(--amber);
+  font-size: 12.5px;
 }
 </style>
