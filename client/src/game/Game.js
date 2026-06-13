@@ -7,6 +7,7 @@ import {
   CAP_TICK,
   SCORE_LIMIT,
   MATCH_TIME,
+  WIN_HOLD_SEC,
   CRIT_CHANCE,
   CRIT_TIME,
   RADIO_CRIT_MULT,
@@ -187,6 +188,8 @@ export class Game {
     this.matchTime = this.mode === 'annihilation' ? 150 : MATCH_TIME
     this.matchOver = false
     this.result = null // 'victory' | 'defeat' | 'draw'
+    this.winLockTeam = null // команда, удерживающая ВСЕ точки (идёт отсчёт до победы)
+    this.winLockTimer = 0 // секунд до победы winLockTeam (тикает вниз, пока держат всё)
     this.paused = false // стартовый отсчёт держит бой на паузе
 
     // повреждение модулей (Фаза 5): секунды до починки на каждый слот (0 = исправен)
@@ -863,7 +866,7 @@ export class Game {
     this.paused = v
   }
 
-  _checkMatchEnd() {
+  _checkMatchEnd(dt) {
     if (this.matchOver) return
     // уничтожение команды решает бой сразу (одна жизнь)
     const alliesAlive = (this.hp > 0 ? 1 : 0) + this.bots.filter((b) => b.team === TEAM.ALLY && b.alive).length
@@ -884,6 +887,26 @@ export class Game {
       this.matchOver = true
       this.result = alliesAlive > enemiesAlive ? 'victory' : alliesAlive < enemiesAlive ? 'defeat' : 'draw'
       return
+    }
+    // ЗАХВАТ ВСЕХ ТОЧЕК → отсчёт удержания до победы (а не резкий конец/гринд до 25):
+    // держим все точки WIN_HOLD_SEC сек — победа; враг отбил точку — отсчёт сорван.
+    if (this.mode === 'capture' && this.caps.length) {
+      const owners = this.caps.map((c) => c.owner)
+      const hold = owners.every((o) => o === TEAM.ALLY) ? TEAM.ALLY : owners.every((o) => o === TEAM.ENEMY) ? TEAM.ENEMY : null
+      if (hold !== null) {
+        if (this.winLockTeam !== hold) {
+          this.winLockTeam = hold
+          this.winLockTimer = WIN_HOLD_SEC
+        } else {
+          this.winLockTimer = Math.max(0, this.winLockTimer - (dt || 0))
+          if (this.winLockTimer <= 0) {
+            this.matchOver = true
+            this.result = hold === TEAM.ALLY ? 'victory' : 'defeat'
+          }
+        }
+        return // идёт отсчёт удержания — не завершаем бой по лимиту очков/таймауту
+      }
+      this.winLockTeam = null // удержание сорвано — отсчёт сбрасывается
     }
     const limitHit = this.score.ally >= SCORE_LIMIT || this.score.enemy >= SCORE_LIMIT
     if (!limitHit && this.matchTime > 0) return
@@ -982,7 +1005,7 @@ export class Game {
     for (const b of this.bots) if (b.flash > 0) b.flash = Math.max(0, b.flash - dt)
     if (this.hurtFlash > 0) this.hurtFlash = Math.max(0, this.hurtFlash - dt)
 
-    this._checkMatchEnd()
+    this._checkMatchEnd(dt)
     this._draw()
     // HUD обновляем 20 раз/с — глаз не отличит, а Vue-перерендер втрое реже
     this._hudAcc += dt
@@ -1420,6 +1443,8 @@ export class Game {
         cap: c.capper === null ? null : c.capper === TEAM.ALLY ? 'ally' : 'enemy',
         p: +c.progress.toFixed(2),
       })),
+      // отсчёт удержания всех точек до победы (null — не идёт). mine — мы атакуем
+      winCount: this.winLockTeam !== null ? { sec: Math.max(0, Math.ceil(this.winLockTimer)), mine: this.winLockTeam === TEAM.ALLY, kind: 'caps' } : null,
       classId: this.cls.id,
       damageDealt: Math.round(this.damageDealt),
       spotted: this.spotScored.size, // засветов за бой (для боевого рейтинга)

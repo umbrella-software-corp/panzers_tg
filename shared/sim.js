@@ -11,6 +11,7 @@ import {
   CAP_TICK,
   SCORE_LIMIT,
   MATCH_TIME,
+  WIN_HOLD_SEC,
   CRIT_CHANCE,
   CRIT_TIME,
   RADIO_CRIT_MULT,
@@ -47,6 +48,8 @@ export class BattleSim {
     this.matchOver = false
     this.winner = null // 0 | 1 | null (ничья)
     this.endReason = null // 'caps' | 'wipe' | 'score' | 'time' — почему бой кончился
+    this.capLockTeam = null // команда, удерживающая ВСЕ точки (идёт отсчёт до победы)
+    this.capLockEnd = 0 // время this.t, когда отсчёт истечёт → победа capLockTeam
     this.score = [0, 0]
     this.capTimer = 0
     this.events = [] // копятся за шаг, забираются takeEvents()
@@ -524,21 +527,24 @@ export class BattleSim {
       this.winner = a0 === a1 ? null : a0 > a1 ? 0 : 1
       return
     }
-    // ЗАХВАТ ВСЕХ ТОЧЕК = победа (бой завершается красиво, а не тянется до лимита)
+    // ЗАХВАТ ВСЕХ ТОЧЕК → отсчёт до победы (а не мгновенный конец): команда держит
+    // все точки WIN_HOLD_SEC секунд — победа. Враг отбил любую точку → отсчёт сорван.
     if (this.caps.length) {
       const owners = this.caps.map((c) => c.owner)
-      if (owners.every((o) => o === 0)) {
-        this.matchOver = true
-        this.endReason = 'caps'
-        this.winner = 0
-        return
+      const hold = owners.every((o) => o === 0) ? 0 : owners.every((o) => o === 1) ? 1 : null
+      if (hold !== null) {
+        if (this.capLockTeam !== hold) {
+          this.capLockTeam = hold
+          this.capLockEnd = this.t + WIN_HOLD_SEC
+        } else if (this.t >= this.capLockEnd) {
+          this.matchOver = true
+          this.endReason = 'caps'
+          this.winner = hold
+          return
+        }
+        return // идёт отсчёт удержания — не завершаем бой по лимиту очков/таймауту
       }
-      if (owners.every((o) => o === 1)) {
-        this.matchOver = true
-        this.endReason = 'caps'
-        this.winner = 1
-        return
-      }
+      this.capLockTeam = null // удержание сорвано — отсчёт сбрасывается
     }
     const limit = this.score[0] >= SCORE_LIMIT || this.score[1] >= SCORE_LIMIT
     if (!limit && this.matchTime > 0) return
@@ -664,6 +670,8 @@ export class BattleSim {
       alive: [this.aliveCount(0), this.aliveCount(1)],
       // аннигиляция — точек нет, шлём пустой список (HUD/рендер скрывают захват)
       caps: this.mode === 'annihilation' ? [] : this.caps.map((c) => ({ id: c.id, owner: c.owner, capper: c.capper, p: +c.progress.toFixed(2) })),
+      // отсчёт удержания всех точек до победы (null — не идёт)
+      capLock: this.capLockTeam !== null ? { team: this.capLockTeam, sec: Math.max(0, Math.ceil(this.capLockEnd - this.t)) } : null,
       units: this.units
         .filter((u) => !u.alive || u.team === team || seen.has(u.id))
         .map((u) => ({

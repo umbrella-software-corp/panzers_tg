@@ -1390,6 +1390,9 @@ export class NetGame {
         cap: c.capper === null ? null : c.capper === this.side ? 'ally' : 'enemy',
         p: c.p,
       })),
+      // отсчёт удержания всех точек до победы (сервер шлёт capLock { team, sec })
+      winCount:
+        this.cur && this.cur.capLock ? { sec: this.cur.capLock.sec, mine: this.cur.capLock.team === this.side, kind: 'caps' } : null,
       classId: this.cls.id,
       damageDealt: you.damageDealt || 0,
       spotted: you.spotted || 0, // засветов за бой (боевой рейтинг)

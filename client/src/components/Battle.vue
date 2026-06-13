@@ -52,6 +52,8 @@ const state = shallowRef({
   ourBase: 0,
   enemyBase: 0,
   caps: [],
+  winCount: null, // { sec, mine, kind } — отсчёт удержания всех точек до победы
+
   classId: DEFAULT_CLASS,
   damageDealt: 0,
   spotted: 0,
@@ -527,6 +529,15 @@ onBeforeUnmount(() => {
       ЗАХВАТ БАЗЫ {{ state.enemyBase }}%
     </div>
     <div v-if="state.ourBase > 0" class="basecap ours pz-display">НАШУ БАЗУ ЗАХВАТЫВАЮТ {{ state.ourBase }}%</div>
+
+    <!-- отсчёт удержания всех точек до победы: мы атакуем (mine) — янтарный
+         «ПОБЕДА ЧЕРЕЗ N»; теряем — тревожный красный «ОТБЕЙТЕ ТОЧКИ N» -->
+    <transition name="wc-pop">
+      <div v-if="state.winCount && phase === 'fighting'" class="wincount" :class="{ foe: !state.winCount.mine }">
+        <div class="wc-label pz-display">{{ state.winCount.mine ? 'ВСЕ ТОЧКИ НАШИ · ПОБЕДА ЧЕРЕЗ' : 'ТОЧКИ ПОТЕРЯНЫ · ОТБЕЙТЕ ЗА' }}</div>
+        <div class="wc-sec pz-pixel">{{ state.winCount.sec }}</div>
+      </div>
+    </transition>
 
     <!-- килл-фид -->
     <div class="feed">
@@ -1055,6 +1066,90 @@ onBeforeUnmount(() => {
   top: calc(var(--safe-top) + 148px);
   color: var(--red);
   border-color: var(--red);
+}
+
+/* отсчёт удержания всех точек до победы — крупный баннер по центру сверху */
+.wincount {
+  position: absolute;
+  top: 23%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 24px;
+  border-radius: 14px;
+  background: rgba(8, 12, 6, 0.82);
+  border: 2px solid var(--amber);
+  box-shadow:
+    0 8px 26px rgba(0, 0, 0, 0.55),
+    0 0 0 4px rgba(0, 0, 0, 0.22);
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.wincount.foe {
+  border-color: var(--red);
+  animation: wc-alarm 0.9s ease-in-out infinite;
+}
+.wc-label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--amber);
+}
+.wincount.foe .wc-label {
+  color: var(--red);
+}
+.wc-sec {
+  font-size: 30px;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  animation: wc-pulse 1s ease-in-out infinite;
+}
+@keyframes wc-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.82;
+  }
+}
+@keyframes wc-alarm {
+  0%,
+  100% {
+    box-shadow:
+      0 8px 26px rgba(0, 0, 0, 0.55),
+      0 0 0 4px rgba(193, 39, 39, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 8px 26px rgba(0, 0, 0, 0.55),
+      0 0 0 7px rgba(193, 39, 39, 0.42);
+  }
+}
+.wc-pop-enter-active {
+  transition:
+    transform 0.32s cubic-bezier(0.2, 1.4, 0.4, 1),
+    opacity 0.32s ease;
+}
+.wc-pop-leave-active {
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease;
+}
+.wc-pop-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.6);
+}
+.wc-pop-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.9);
 }
 
 /* килл-фид */
