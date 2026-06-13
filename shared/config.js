@@ -83,6 +83,7 @@ export const ENEMY_AI = {
   hitFalloff: 0.5, // на максимуме fireRange шанс падает до hitChance*(1-0.5)
   dodgeFactor: 0.4, // полный ход цели срезает шанс до hitChance*(1-0.4) — уворот работает
   bushCover: 0.4, // цель в кусте: шанс ×0.4 (мягкое укрытие против ботов)
+  graceSec: 5, // «честный первый бой»: первые N секунд боты НЕ стреляют по людям
   radius: 18,
 }
 export const BOT_CLASS_MIX = ['light', 'medium', 'heavy', 'medium', 'light', 'medium', 'light']

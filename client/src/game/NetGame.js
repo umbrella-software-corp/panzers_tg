@@ -234,13 +234,19 @@ export class NetGame {
       const shooter = this._units.get(ev.unit)
       const pal = shooter && shooter.team === this.side ? this.colors.ally : this.colors.enemy
       const col = mine ? 0xffd866 : pal.muzzle
-      // выстрел ПО мне: конец трассера ведём в МОЮ предсказанную позицию (а не в
-      // серверную), чтобы попадание визуально пришло туда, где я себя вижу
+      // выстрел ПО мне: ПОПАДАНИЕ ведём в МОЮ предсказанную позицию (чтобы пришло
+      // туда, где я себя вижу). ПРОМАХ — оставляем серверный увод в сторону (театр
+      // промахов: вижу, как снаряд просвистел мимо, а не «прилетело из ниоткуда»).
       let ex = ev.x2
       let ey = ev.y2
-      if (ev.target === this.youUnit && this._pred) {
+      if (ev.hit && ev.target === this.youUnit && this._pred) {
         ex = this._pred.x
         ey = this._pred.y
+      }
+      // кто и откуда меня бьёт — для экрана смерти (последнее попадание по мне)
+      if (ev.hit && ev.target === this.youUnit) {
+        const sh = this._units.get(ev.unit)
+        this._lastHitBy = { name: sh ? sh.name : 'враг', cls: sh ? sh.cls : null, x: ev.x1, y: ev.y1 }
       }
       const a = Math.atan2(ey - ev.y1, ex - ev.x1)
       this.muzzles.push({ x: ev.x1 + Math.cos(a) * 40, y: ev.y1 + Math.sin(a) * 40, a, age: 0, color: col })
@@ -270,7 +276,22 @@ export class NetGame {
     } else if (ev.type === 'crit') {
       if (mine) this.onCrit(ev.slot)
     } else if (ev.type === 'kill') {
-      if (ev.victim === this.youUnit) this.deaths = 1
+      if (ev.victim === this.youUnit) {
+        this.deaths = 1
+        // экран смерти: кем и с какой стороны (по последнему попаданию по мне)
+        const own = this._units.get(this.youUnit)
+        const killer = this._units.get(ev.killer)
+        const src = this._lastHitBy
+        let dir = null
+        if (own && src) {
+          let d = Math.atan2(src.y - own.y, src.x - own.x) - own.hull
+          while (d > Math.PI) d -= 2 * Math.PI
+          while (d < -Math.PI) d += 2 * Math.PI
+          const ad = Math.abs(d)
+          dir = ad < Math.PI / 4 ? 'спереди' : ad > (3 * Math.PI) / 4 ? 'сзади' : d > 0 ? 'справа' : 'слева'
+        }
+        this._deathInfo = { by: (killer && killer.name) || (src && src.name) || 'врагом', cls: (killer && killer.cls) || (src && src.cls) || null, dir }
+      }
       if (ev.killer === this.youUnit) {
         const v = this._units.get(ev.victim)
         if (v && v.cls === 'light') this.lightKills++
@@ -1340,6 +1361,8 @@ export class NetGame {
       lightKills: this.lightKills,
       blocked: 0, // брони в PvP пока нет
       deaths: this.deaths,
+      revealed: !!(you && you.revealed), // засвечен ли я врагом сейчас (чип «скрыт/виден»)
+      deathInfo: this._deathInfo || null, // кем и откуда меня убили (экран смерти)
       shots,
       hits: you.hits || 0,
       accuracy: shots ? Math.round(((you.hits || 0) / shots) * 100) : 0,

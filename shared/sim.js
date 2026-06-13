@@ -336,7 +336,9 @@ export class BattleSim {
         inArc &&
         b.fireCd <= 0 &&
         bestD <= ai.fireRange &&
-        (!target.human || this._spotted[target.team].has(b.id))
+        // по человеку: бот ДОЛЖЕН быть им засвечен + прошёл стартовый грейс
+        // (первые graceSec секунд боты не фокусят новичка — «честный первый бой»)
+        (!target.human || (this.t >= ai.graceSec && this._spotted[target.team].has(b.id)))
       if (canFire) {
         b.fireCd = b.stats.reload
         // шанс попадания: база режется дистанцией, ходом цели (уворот) и кустом.
@@ -357,6 +359,17 @@ export class BattleSim {
           b.damageDealt += dealt
           killed = this._applyDamage(target, b.botDamage, b)
         }
+        // ТЕАТР ПРОМАХОВ: попал — трассер точно в цель; мимо — уходит в сторону и
+        // за цель, чтобы игрок ВИДЕЛ промах (а не «прилетело из ниоткуда»).
+        let ex = target.x
+        let ey = target.y
+        if (!hit) {
+          const a0 = Math.atan2(target.y - b.y, target.x - b.x)
+          const jitter = (0.05 + Math.random() * 0.09) * (Math.random() < 0.5 ? -1 : 1) // ~3–8° вбок
+          const far = bestD * (1.04 + Math.random() * 0.12)
+          ex = b.x + Math.cos(a0 + jitter) * far
+          ey = b.y + Math.sin(a0 + jitter) * far
+        }
         this.events.push({
           type: 'shot',
           unit: b.id,
@@ -366,8 +379,8 @@ export class BattleSim {
           target: target.id,
           x1: Math.round(b.x),
           y1: Math.round(b.y),
-          x2: Math.round(target.x),
-          y2: Math.round(target.y),
+          x2: Math.round(ex),
+          y2: Math.round(ey),
         })
       }
     } else {
@@ -688,6 +701,9 @@ export class BattleSim {
       hits: u.hits,
       damageDealt: Math.round(u.damageDealt),
       spotted: u.spots, // засветов за бой (для боевого рейтинга)
+      // ЗАСВЕЧЕН ли я сейчас врагом (видит ли меня команда противника) — для
+      // чипа «скрыт/виден»: игрок понимает, прилетит сейчас или он в тумане.
+      revealed: this._spotted[1 - u.team].has(u.id),
     }
   }
 }

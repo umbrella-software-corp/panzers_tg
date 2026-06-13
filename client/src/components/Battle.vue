@@ -83,6 +83,13 @@ const displayScore = computed(() =>
 )
 const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
+// причина смерти для экрана смерти: «Уничтожил: <ник> · <класс> · удар <сторона>»
+const deathCause = computed(() => {
+  const d = state.value.deathInfo
+  if (!d) return ''
+  const cls = d.cls === 'light' ? 'лёгкий' : d.cls === 'heavy' ? 'тяжёлый' : d.cls === 'medium' ? 'средний' : ''
+  return `Уничтожил ${d.by}${cls ? ` · ${cls}` : ''}${d.dir ? ` · удар ${d.dir}` : ''}`
+})
 
 // фаза боя: countdown (отсчёт) | fighting | result. Отсчёт стартует СРАЗУ и для
 // онлайна. Авто-откат онлайн→офлайн приходит как instant=true → сразу fighting
@@ -90,6 +97,7 @@ const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.val
 const phase = ref(props.instant ? 'fighting' : 'countdown')
 const count = ref(3)
 const loading = ref(true) // лоадер до прогрузки спрайтов боя
+const deathDismissed = ref(false) // игрок закрыл экран смерти и ушёл в наблюдение
 let countTimer = null
 
 // пауза по кнопке (поверх фазы fighting)
@@ -160,7 +168,10 @@ game.onState = (s) => {
   // пришли данные мира — снимаем сторож «нет связи»
   if (isNet && game.cur) clearNetWatchdog()
   if (s.kills > prevKills) showToast('hit', 'УНИЧТОЖЕН')
-  if (s.deaths > prevDeaths) showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
+  if (s.deaths > prevDeaths) {
+    showToast('miss', 'ВЫ УНИЧТОЖЕНЫ')
+    deathDismissed.value = false // новая смерть — показываем экран смерти
+  }
   if (s.playerHp < prevHp && s.playerHp > 0) {
     haptic('heavy') // получил урон — сильный толчок (хорошо ощущается на iOS)
     shaking.value = true
@@ -438,6 +449,11 @@ onBeforeUnmount(() => {
           <span class="pz-display hp-text">{{ tankName }} · {{ state.playerHp }} HP</span>
         </div>
 
+        <!-- засвет: понимаю, видит меня враг или я в тумане (прилетит или нет) -->
+        <div v-show="isNet && phase === 'fighting' && state.playerHp > 0" class="spotchip" :class="{ lit: state.revealed }">
+          {{ state.revealed ? '● ВИДЕН ВРАГУ' : '○ В ТЕНИ' }}
+        </div>
+
         <!-- индикаторы модулей: краснеют с отсчётом починки при крите -->
         <div v-show="phase === 'fighting'" class="modrow">
           <div v-for="m in MOD_HUD" :key="m.id" class="modchip" :class="{ down: state.crippled[m.id] > 0 }">
@@ -479,9 +495,23 @@ onBeforeUnmount(() => {
       <div v-if="toast" class="toast pz-display" :class="toast.kind">{{ toast.text }}</div>
     </transition>
 
-    <!-- уничтожен: режим наблюдения -->
-    <div v-if="phase === 'fighting' && state.playerHp <= 0" class="dead-banner pz-display">
-      ВЫ УНИЧТОЖЕНЫ · НАБЛЮДЕНИЕ
+    <!-- ЭКРАН СМЕРТИ 2.0: причина + понятные действия (не тупик «наблюдение») -->
+    <transition name="fade">
+      <div v-if="phase === 'fighting' && state.playerHp <= 0 && !deathDismissed" class="overlay death">
+        <div class="death-card pz-plate pz-brackets" style="--bk: var(--red)">
+          <div class="death-title pz-display">ВЫ УНИЧТОЖЕНЫ</div>
+          <div v-if="deathCause" class="death-cause">{{ deathCause }}</div>
+          <div class="death-actions">
+            <button class="pz-btn2" @click="deathDismissed = true">Наблюдать за боем</button>
+            <button class="pz-cta pz-cta--hazard" style="padding: 12px" @click="toHangar">Выйти в ангар</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+    <!-- наблюдение после закрытия экрана смерти — компактная плашка с выходом -->
+    <div v-if="phase === 'fighting' && state.playerHp <= 0 && deathDismissed" class="obs-chip">
+      <span class="pz-display">НАБЛЮДЕНИЕ</span>
+      <button class="obs-exit" @click="toHangar">в ангар</button>
     </div>
 
     <!-- связь просела (сокет жив) — ждём снапшоты, бой идёт на сервере -->
@@ -579,22 +609,80 @@ onBeforeUnmount(() => {
 .root.shaken {
   animation: pz-shake 0.3s linear;
 }
-.dead-banner {
+.death {
+  z-index: 7;
+  background: radial-gradient(60% 50% at 50% 45%, rgba(40, 6, 6, 0.55), rgba(0, 0, 0, 0.5));
+}
+.death-card {
+  width: min(86%, 320px);
+  padding: 20px 18px 16px;
+  text-align: center;
+  animation: pz-pop 0.28s ease;
+}
+.death-title {
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  color: var(--red);
+}
+.death-cause {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  line-height: 1.35;
+}
+.death-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 18px;
+}
+.obs-chip {
   position: absolute;
-  top: 30%;
+  top: calc(var(--safe-top) + 8px);
   left: 50%;
   transform: translateX(-50%);
-  font-size: 15px;
-  letter-spacing: 0.18em;
-  color: var(--red);
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid var(--red-deep);
-  border-radius: 8px;
-  padding: 8px 16px;
-  white-space: nowrap;
   z-index: 4;
-  pointer-events: none;
-  animation: pz-slide-up 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 6px 8px 6px 12px;
+}
+.obs-chip .pz-display {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: var(--ink-dim);
+}
+.obs-exit {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--amber);
+  background: rgba(242, 165, 12, 0.12);
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.spotchip {
+  align-self: center;
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 11px;
+  border-radius: 11px;
+  color: #7fd06a;
+  background: rgba(95, 211, 95, 0.1);
+  border: 1px solid rgba(95, 211, 95, 0.4);
+}
+.spotchip.lit {
+  color: #ff8a7a;
+  background: rgba(226, 75, 74, 0.14);
+  border-color: rgba(226, 75, 74, 0.55);
+  animation: pz-blink 1.3s linear infinite;
 }
 .reconnect {
   position: absolute;
