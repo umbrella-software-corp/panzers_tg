@@ -5,7 +5,7 @@ import { ref, computed, watch } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
-import { haptic } from '../tg.js'
+import { haptic, openSupport } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -123,7 +123,17 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
     <!-- ===== chrome ===== -->
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
       <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
-      <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
+      <div style="display: flex; align-items: center; gap: 8px">
+        <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
+        <button class="support-btn" title="Поддержка" aria-label="Поддержка" @click="haptic('light'); openSupport()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+            <rect x="2.5" y="13" width="4" height="6" rx="1.6" />
+            <rect x="17.5" y="13" width="4" height="6" rx="1.6" />
+            <path d="M20 18v.5a3.5 3.5 0 0 1-3.5 3.5H13" />
+          </svg>
+        </button>
+      </div>
     </header>
 
     <NationSwitch :nation="profile.nation" style="padding: 2px 14px" @pick="setNation" />
@@ -266,6 +276,22 @@ watch(() => tank.value.id, () => (previewCamo.value = null))
 </template>
 
 <style scoped>
+.support-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--amber);
+  cursor: pointer;
+}
+.support-btn:active {
+  transform: scale(0.94);
+}
 .bay {
   position: absolute;
   left: 50%;

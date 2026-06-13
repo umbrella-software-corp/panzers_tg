@@ -7,6 +7,7 @@ import { BattleSim, MAP_SIZE, randomMap } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
+import { startSupportBot } from './support.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { adminPage } from './admin.js'
@@ -907,4 +908,5 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 httpServer.listen(PORT, () => {
   console.log(`[srv] Panzer TG: HTTP API + WS ${TEAM_SIZE}x${TEAM_SIZE} на :${PORT} (${TICK_HZ}Hz, добор ботами через ${WAIT_MS}мс)`)
   startPaymentsLoop()
+  startSupportBot() // саппорт-бот (если задан SUPPORT_BOT_TOKEN/SUPPORT_CHAT_ID)
 })

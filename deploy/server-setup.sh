@@ -33,10 +33,13 @@ if [ ! -s server/.env ]; then
     exit 1
   fi
   ADMIN_KEY="${ADMIN_KEY:-$(openssl rand -hex 16)}"
-  printf 'BOT_TOKEN=%s\nADMIN_KEY=%s\n' "$BOT_TOKEN" "$ADMIN_KEY" > server/.env
+  # SUPPORT_* — саппорт-бот (отдельный токен) + id группы разработчиков; пустые =
+  # саппорт выключен. Заполни вручную после первого деплоя (см. README/деплой-доку).
+  printf 'BOT_TOKEN=%s\nADMIN_KEY=%s\nSUPPORT_BOT_TOKEN=%s\nSUPPORT_CHAT_ID=%s\n' \
+    "$BOT_TOKEN" "$ADMIN_KEY" "${SUPPORT_BOT_TOKEN:-}" "${SUPPORT_CHAT_ID:-}" > server/.env
   echo ">> ADMIN_KEY (сохрани для входа в /admin): $ADMIN_KEY"
 else
-  echo "server/.env уже есть — не трогаю"
+  echo "server/.env уже есть — не трогаю (SUPPORT_BOT_TOKEN/SUPPORT_CHAT_ID добавь вручную, если нужен саппорт)"
 fi
 
 echo "== 4/6 зависимости и сборка клиента =="

@@ -67,6 +67,27 @@ export function shareLink(url, text = '') {
   return 'none'
 }
 
+// открыть саппорт-бота в личке: юзер пишет боту → разработчику падает в группу,
+// ответ приходит обратно в эту же личку. Username не секрет — из env или дефолт.
+const SUPPORT_BOT = import.meta.env.VITE_SUPPORT_BOT || 'punzers_support_bot'
+export function openSupport() {
+  const url = `https://t.me/${SUPPORT_BOT}`
+  const tg = window.Telegram && window.Telegram.WebApp
+  if (tg && typeof tg.openTelegramLink === 'function') {
+    try {
+      tg.openTelegramLink(url)
+      return
+    } catch {
+      /* старый клиент — пробуем window.open ниже */
+    }
+  }
+  try {
+    window.open(url, '_blank')
+  } catch {
+    /* ничего не вышло */
+  }
+}
+
 // текущий обработчик кнопки «Назад» (его дёргает единый onClick из initTelegram)
 let backHandler = null
 
