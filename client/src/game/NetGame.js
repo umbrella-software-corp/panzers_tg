@@ -654,13 +654,15 @@ export class NetGame {
     return this.cls.sectorHalf * (0.55 + 0.45 * k)
   }
 
-  // линия сведения — та же формула, что на сервере (по t снапшота)
+  // линия сведения. ВРЕМЯ берём из ПЛАВНЫХ интерп-часов _renderT (по ним же едет
+  // весь мир), а не из дискретного this.cur.t — иначе маяк прицела «скачет» по
+  // снапшотам, пока танки едут гладко (рассинхрон → дёрганый прицел).
   _sweepOffset() {
     if (this.you && this.you.crippled && this.you.crippled.turret > 0) {
       return this.sweepFrozen ?? 0
     }
-    const t = this.cur ? this.cur.t : 0
-    const p = (t % this.cls.sweepPeriod) / this.cls.sweepPeriod
+    const t = this._renderT != null ? this._renderT : this.cur ? this.cur.t : 0
+    const p = (((t % this.cls.sweepPeriod) + this.cls.sweepPeriod) % this.cls.sweepPeriod) / this.cls.sweepPeriod
     const tri = p < 0.5 ? 4 * p - 1 : 3 - 4 * p
     this.sweepFrozen = this._sectorHalfEff() * tri
     return this.sweepFrozen
