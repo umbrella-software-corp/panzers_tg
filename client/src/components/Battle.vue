@@ -17,11 +17,10 @@ const props = defineProps({
   loadout: { type: Object, default: null },
   mapId: { type: String, default: '' },
   side: { type: Number, default: 0 }, // 0 — юг (синие), 1 — север (красные)
-  mode: { type: String, default: 'capture' }, // 'capture' | 'annihilation' — для офлайн-боя
+  mode: { type: String, default: 'capture' }, // 'capture' | 'annihilation'
   net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz, mode }
-  instant: { type: Boolean, default: false }, // авто-откат онлайн→офлайн: сразу в бой, без отсчёта
 })
-const emit = defineEmits(['exit', 'rematch', 'netfail'])
+const emit = defineEmits(['exit', 'rematch'])
 
 const stage = ref(null)
 const minimap = ref(null)
@@ -198,9 +197,8 @@ game.onHurt = (angle) => {
   }, 850)
 }
 
-// сторож онлайн-старта: если за 8с не пришёл ни один снапшот сервера —
-// откатываемся в бой с ботами, чтобы не висеть вечно на 0:00 (фриз у части
-// WebKit-клиентов). Снимается, как только пришли первые данные мира.
+// сторож онлайн-старта: если за 5с не пришёл ни один снапшот сервера — показываем
+// экран «нет связи» с кнопками (онлайн-онли, в офлайн НЕ сваливаемся).
 let netWatchdog = null
 function clearNetWatchdog() {
   clearTimeout(netWatchdog)
@@ -208,9 +206,13 @@ function clearNetWatchdog() {
 }
 
 // снапшоты просели, но сокет жив (короткий iOS-затык на старте боя) — показываем
-// плашку и ЖДЁМ возобновления, не сваливаясь в офлайн. Снимается, как пошли данные.
+// плашку и ЖДЁМ возобновления. Снимается, как пошли данные.
 const reconnecting = ref(false)
 if (isNet) game.onReconnecting = (on) => (reconnecting.value = on)
+
+// связь окончательно потеряна (исчерпаны попытки реконнекта) — экран с кнопками
+// «Повторить» (новый поиск) / «В ангар». Никакого офлайна.
+const connLost = ref(false)
 
 let statsCounted = false // статистика матча банкается один раз
 game.onState = (s) => {
@@ -430,27 +432,21 @@ onMounted(async () => {
   if (_el < 700) await new Promise((r) => setTimeout(r, 700 - _el))
   loading.value = false // спрайты прогружены — снимаем лоадер
   game.setMinimap(minimap.value)
-  if (props.instant) {
-    // авто-откат в офлайн: без отсчёта, сразу в бой
-    phase.value = 'fighting'
-    game.setPaused(false)
-  } else {
-    startCountdown() // отсчёт сразу — и в онлайне (NetGame рисует мир по мере прихода снапшотов)
-  }
+  startCountdown() // отсчёт сразу (NetGame рисует мир по мере прихода снапшотов)
   if (isNet) {
-    // если за 5с не пришло НИ ОДНОГО снапшота — авто-откат в бой с ботами
-    // (мгновенно, без второго отсчёта). Игрок никогда не залипает на «нет связи».
+    // за 5с не пришло НИ ОДНОГО снапшота — экран «нет связи» с кнопками (не офлайн)
     netWatchdog = setTimeout(() => {
       netWatchdog = null
       if (!game.cur) {
-        console.warn('[battle] онлайн-бой: 5с без снапшотов — авто-откат в офлайн с ботами')
-        emit('netfail')
+        console.warn('[battle] онлайн-бой: 5с без снапшотов — экран «нет связи»')
+        connLost.value = true
       }
     }, 5000)
-    // связь оборвалась ПОСРЕДИ боя (снапшоты шли, потом встали) — тоже в офлайн
+    // связь оборвалась ПОСРЕДИ боя: NetGame делает 3 попытки вернуться (onReconnecting
+    // рисует плашку), исчерпал — onStall → экран «нет связи» с кнопками
     game.onStall = () => {
-      console.warn('[battle] онлайн-бой: связь встала посреди боя — откат в офлайн с ботами')
-      emit('netfail')
+      console.warn('[battle] онлайн-бой: связь потеряна (попытки исчерпаны) — экран «нет связи»')
+      connLost.value = true
     }
   }
 })
@@ -595,6 +591,16 @@ onBeforeUnmount(() => {
     <!-- связь просела (сокет жив) — ждём снапшоты, бой идёт на сервере -->
     <div v-if="reconnecting && !state.matchOver" class="reconnect pz-display">
       <span class="rc-spin"></span> ВОССТАНАВЛИВАЕМ СВЯЗЬ…
+    </div>
+
+    <!-- связь окончательно потеряна (исчерпаны попытки) — кнопки, без офлайна -->
+    <div v-if="connLost" class="overlay connlost">
+      <div class="pz-plate pz-brackets cl-plate" style="--bk: var(--red)">
+        <div class="pz-stencil-h" style="justify-content: center; color: var(--red)">СВЯЗЬ ПОТЕРЯНА</div>
+        <p class="cl-text">Не удалось вернуться в бой — сервер недоступен или связь оборвалась.</p>
+        <button class="pz-cta" style="font-size: 15px; padding: 13px" @click="emit('rematch')">Повторить</button>
+        <button class="pz-btn2" @click="emit('exit')">В ангар</button>
+      </div>
     </div>
 
     <!-- зона движения: джойстик появляется под пальцем. После гибели джойстик
@@ -1547,6 +1553,27 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 10px;
   animation: pz-pop 0.25s ease;
+}
+.connlost {
+  z-index: 9;
+  background: rgba(6, 8, 5, 0.86);
+  backdrop-filter: blur(3px);
+}
+.cl-plate {
+  width: 280px;
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: pz-pop 0.25s ease;
+}
+.cl-text {
+  margin: 2px 0 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 500;
+  color: var(--ink-dim);
+  text-align: center;
 }
 
 .result {

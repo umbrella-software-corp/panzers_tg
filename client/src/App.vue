@@ -20,10 +20,9 @@ const battleKey = ref(0) // смена пересоздаёт Battle (реван
 const loadout = computed(() => loadoutStats(profile.selectedTank))
 // жребий боя: карта и сторона (0 — юг/синие, 1 — север/красные); реванш — там же
 const draw = ref({ mapId: 'polygon', side: 0 })
-// онлайн-матч от матчмейкинга ({client, mapId, side, youUnit, tickHz}); null — офлайн с ботами
+// онлайн-матч от матчмейкинга ({client, mapId, side, youUnit, tickHz}). Игра онлайн-онли:
+// матчмейкинг входит в бой только с живым клиентом, офлайн-фоллбэка нет.
 const netMatch = ref(null)
-// мгновенный старт боя БЕЗ отсчёта — для авто-отката онлайн→офлайн (нет второго «3-2-1»)
-const instantDeploy = ref(false)
 
 // старт: подтянуть профиль с сервера, потом ежедневный вход
 const daily = ref(false)
@@ -88,21 +87,10 @@ function play() {
 function deploy(net) {
   // markRaw: НЕ оборачивать клиент (ws + onMessage-подписка) в реактивный прокси —
   // иначе net.js (сырой объект) и NetGame (прокси) расходятся, снапшоты не доходят
-  netMatch.value = net ? markRaw(net) : null // онлайн, если матчмейкинг нашёл сервер
-  // фиксируем сторону онлайн-боя в жребий: если связь оборвётся ПОСРЕДИ боя и будет
-  // откат в офлайн — игрок останется за ту же команду (без смены синие↔красные)
-  if (net) draw.value = { ...draw.value, side: net.side }
-  instantDeploy.value = false // обычный старт с отсчётом
+  netMatch.value = net ? markRaw(net) : null
+  if (net) draw.value = { ...draw.value, side: net.side } // сторона из серверного лобби
   battleKey.value++ // каждый матч — свежий бой
   screen.value = 'battle'
-}
-// онлайн-бой не получил снапшоты — пересобираем бой офлайн с ботами МГНОВЕННО
-// (без второго отсчёта), со свежей картой. Игрок никогда не залипает на «нет связи».
-function netFail() {
-  draw.value = { mapId: randomMap().id, side: draw.value.side }
-  netMatch.value = null
-  instantDeploy.value = true // сразу в бой, без «3-2-1»
-  battleKey.value++ // смена ключа пересоздаёт Battle уже в офлайн-режиме
 }
 // награда боя + прогресс задач дня
 function bankBattle(reward) {
@@ -151,7 +139,7 @@ function rematch(reward) {
   <Shop v-else-if="screen === 'shop'" @go="go" />
   <Rating v-else-if="screen === 'rating'" @go="go" />
   <Matchmaking v-else-if="screen === 'matchmaking'" :map-id="draw.mapId" :side="draw.side" @battle="deploy" @cancel="go('hangar')" />
-  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :instant="instantDeploy" @exit="exitBattle" @rematch="rematch" @netfail="netFail" />
+  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" @exit="exitBattle" @rematch="rematch" />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" />
 
