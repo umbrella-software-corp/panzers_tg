@@ -11,6 +11,7 @@ import { startSupportBot } from './support.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { adminPage } from './admin.js'
+import { trackServer, analyticsEnabled } from './analytics.js'
 
 const ADMIN_KEY = process.env.ADMIN_KEY || ''
 
@@ -81,6 +82,7 @@ async function handleAdmin(req, res) {
       revenueStars: payments.reduce((s, p) => s + (p.stars || 0), 0),
       products: PRODUCTS,
       payMode: hasBot() ? 'stars' : 'dev',
+      analytics: analyticsEnabled(),
     })
   }
   if (req.url === '/api/admin/profiles' && req.method === 'GET') {
@@ -138,6 +140,8 @@ async function recordVisit(user) {
   if (!p.src && tag) {
     p.src = tag
     dirty = true
+    // источник из ПОДПИСАННОГО initData — надёжнее клиентского source_tag
+    trackServer(user.uid, 'source_attributed', { source_tag: tag })
   }
   if (!p.lastSeen || now - p.lastSeen > 60000) {
     p.lastSeen = now
@@ -539,6 +543,9 @@ function setupBattleSocket(ws, room, human, ip) {
       if (typeof msg.tint === 'number' && Number.isFinite(msg.tint)) human.tint = msg.tint & 0xffffff
       if (typeof msg.skin === 'string' && ID_RE.test(msg.skin)) human.skin = msg.skin
       if (typeof msg.battles === 'number' && Number.isFinite(msg.battles)) human.battles = Math.max(0, Math.min(1e6, msg.battles | 0))
+      // best-effort tg-id ТОЛЬКО для аналитики (не авторизация): сшивает серверные
+      // server_match_* с клиентским tg_<id>. Нет/гость — событий просто не шлём.
+      if (typeof msg.uid === 'string' && /^\d{3,20}$/.test(msg.uid)) human.uid = 'tg_' + msg.uid
       human.stats = sanitizeStats(msg.stats)
       broadcastLobby(room)
     } else if (!room.sim) {
@@ -658,6 +665,20 @@ function startRoom(room) {
       rkey, // токен возврата в этот бой за свой юнит
     })
   }
+  // серверно-авторитетный старт боя (backstop к клиентскому battle_started): только
+  // для игроков с известным tg-id — гостей в аналитику матчей не тащим
+  for (const h of room.humans) {
+    if (!h.uid) continue
+    trackServer(h.uid, 'server_match_started', {
+      room_id: room.id,
+      mode: room.mode,
+      map_id: map.id,
+      humans: room.humans.length,
+      bots_estimated: TEAM_SIZE * 2 - room.humans.length,
+      party_present: !!h.party,
+      team: h.team,
+    })
+  }
   console.log(
     `[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», люди ${room.humans.filter((h) => h.team === 0).length}vs${room.humans.filter((h) => h.team === 1).length}, остальное — боты`,
   )
@@ -724,6 +745,20 @@ function roomTick(room) {
       const stats = roomStats(room)
       for (const h of room.humans) {
         send(h.ws, { type: 'match-end', winner: room.sim.winner, score: room.sim.score, reason: room.sim.endReason, stats })
+      }
+      // серверно-авторитетный итог (backstop к клиентскому battle_finished)
+      for (const h of room.humans) {
+        if (!h.uid) continue
+        trackServer(h.uid, 'server_match_finished', {
+          room_id: room.id,
+          winner: room.sim.winner,
+          reason: room.sim.endReason,
+          score_ally: room.sim.score[h.team],
+          score_enemy: room.sim.score[1 - h.team],
+          team: h.team,
+          humans: room.humans.length,
+          stats_count: stats.length,
+        })
       }
       console.log(
         `[ws] ${room.id}: конец, счёт ${room.sim.score.join(':')}, winner=${room.sim.winner}, средний тик ${(room.tickAccMs / Math.max(1, room.tickN)).toFixed(3)}мс`,
@@ -854,7 +889,7 @@ wss.on('connection', (ws, req) => {
   const id = `p${nextId++}`
   const room = getJoinRoom(mode)
   // party-токен храним на игроке — по нему делим на команды в startRoom (взвод цело)
-  const human = { id, party, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0 }
+  const human = { id, party, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0, uid: null }
   room.humans.push(human)
   ws.playerId = id
   ws.room = room

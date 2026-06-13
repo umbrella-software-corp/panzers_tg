@@ -6,6 +6,7 @@ import { profile, loadoutStats, party } from '../store.js'
 import { TANK_BY_ID, MAX_TIER, SKIN_BY_ID, rankByBattles } from '../game/meta.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { connectMatch } from '../game/net.js'
+import { tgUserId } from '../tg.js'
 import { track } from '../analytics.js'
 import TankTopDown from './ui/TankTopDown.vue'
 import PzIcon from './ui/PzIcon.vue'
@@ -79,6 +80,7 @@ function connectParams() {
     battles: profile.stats.battles,
     party: party.token, // взвод: одинаковый токен → одна комната на сервере
     mode: profile.battleMode, // режим боя → сервер ищет комнату того же режима
+    uid: tgUserId() ? String(tgUserId()) : null, // best-effort tg-id для серверной аналитики
     stats: JSON.parse(JSON.stringify(loadoutStats(profile.selectedTank))),
     onLobby: (msg) => {
       // живые игроки на РЕАЛЬНЫХ сторонах (сервер раздаёт команды уже в лобби) —

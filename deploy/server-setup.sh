@@ -41,6 +41,8 @@ if [ ! -s server/.env ]; then
 else
   echo "server/.env уже есть — не трогаю (SUPPORT_BOT_TOKEN/SUPPORT_CHAT_ID добавь вручную, если нужен саппорт)"
 fi
+# серверная аналитика Amplitude (ПУБЛИЧНЫЙ API key) — дозаписываем, если ещё нет
+grep -q '^AMPLITUDE_API_KEY=' server/.env 2>/dev/null || echo 'AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0' >> server/.env
 
 echo "== 4/6 зависимости и сборка клиента =="
 pnpm install --silent
