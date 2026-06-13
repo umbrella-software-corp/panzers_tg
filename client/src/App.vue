@@ -27,7 +27,11 @@ const instantDeploy = ref(false)
 
 // старт: подтянуть профиль с сервера, потом ежедневный вход
 const daily = ref(false)
+const booting = ref(true) // стартовый сплэш-лоадер (БЕТА) — держим, пока тянем профиль
 onMounted(async () => {
+  const t0 = Date.now()
+  const finishBoot = () => (booting.value = false)
+  setTimeout(finishBoot, 3000) // предохранитель: не зависаем на сплэше при медленной сети
   await syncProfile() // офлайн — молча остаёмся на локальном кеше
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)
@@ -43,6 +47,8 @@ onMounted(async () => {
   squad.onDisband = () => {} // UI взвода сам покажет роспуск
   handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
   if (dailyAvailable()) daily.value = true
+  // сплэш держим минимум ~750мс, чтобы не моргал на быстром старте
+  setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - t0)))
 })
 
 // разбор start_param из пригласительной ссылки. ref_<id> — засчитать реферера на
@@ -148,4 +154,91 @@ function rematch(reward) {
   <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :instant="instantDeploy" @exit="exitBattle" @rematch="rematch" @netfail="netFail" />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" />
+
+  <!-- стартовый сплэш-лоадер с пометкой БЕТА (пока тянем профиль) -->
+  <transition name="boot-fade">
+    <div v-if="booting" class="bootsplash">
+      <div class="boot-mid">
+        <div class="boot-logo pz-display">PANZER <b>TG</b><span class="boot-beta pz-display">БЕТА</span></div>
+        <div class="boot-spin"></div>
+        <div class="boot-sub">готовим ангар…</div>
+      </div>
+      <div class="boot-foot">ранний доступ · билд в активной разработке</div>
+    </div>
+  </transition>
 </template>
+
+<style scoped>
+.bootsplash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #090b08; /* сплошной непрозрачный фон (перекрывает ангар) */
+  background-image: radial-gradient(120% 75% at 50% 30%, rgba(48, 60, 36, 0.5), transparent 68%);
+}
+.boot-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.boot-logo {
+  position: relative;
+  font-size: 38px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+.boot-logo b {
+  color: var(--amber);
+}
+.boot-beta {
+  position: absolute;
+  top: -10px;
+  right: -42px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #1d1604;
+  background: var(--amber);
+  border-radius: 6px;
+  padding: 2px 7px 1px;
+  transform: rotate(7deg);
+}
+.boot-spin {
+  margin-top: 30px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid rgba(242, 165, 12, 0.18);
+  border-top-color: var(--amber);
+  animation: boot-rot 0.8s linear infinite;
+}
+.boot-sub {
+  margin-top: 16px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  font-weight: 500;
+}
+.boot-foot {
+  position: absolute;
+  bottom: calc(var(--safe-bottom, 0px) + 22px);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+@keyframes boot-rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.boot-fade-leave-active {
+  transition: opacity 0.45s ease;
+}
+.boot-fade-leave-to {
+  opacity: 0;
+}
+</style>
