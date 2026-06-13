@@ -5,7 +5,7 @@ import http from 'http'
 import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
-import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting } from './db.js'
+import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
@@ -60,8 +60,10 @@ async function handleAdmin(req, res) {
   }
   if (req.url === '/api/admin/stats' && req.method === 'GET') {
     const payments = await listPayments()
+    const now = Date.now()
+    const profs = await listProfiles()
     return json(res, 200, {
-      now: Date.now(),
+      now,
       online: wss.clients.size,
       tournaments: !!(await getSetting('tournamentsOn', false)),
       rooms: [...rooms.values()].map((r) => ({
@@ -71,7 +73,9 @@ async function handleAdmin(req, res) {
         humans: r.humans.map((h) => ({ id: h.id, name: h.name })),
         score: r.sim ? r.sim.score : null,
       })),
-      profilesCount: (await listProfiles()).length,
+      profilesCount: profs.length,
+      traffic: trafficMetrics(profs, now), // метрики трафика + разбивка по источникам
+      linkBase: process.env.APP_LINK_BASE || `https://t.me/${process.env.BOT_USERNAME || 'panzers_bot'}`,
       payments,
       revenueStars: payments.reduce((s, p) => s + (p.stars || 0), 0),
       products: PRODUCTS,
@@ -114,6 +118,60 @@ async function registerReferral(user, ref) {
   return { ok: true, credited: true }
 }
 
+// зафиксировать визит существующего игрока для метрик: проставить источник (один
+// раз), firstSeen (если не было) и lastSeen (не чаще раза в минуту — для DAU).
+// Нового игрока не создаём здесь — его заведёт первый POST профиля (со срс).
+async function recordVisit(user) {
+  if (!user || user.uid.startsWith('g_')) {
+    // dev-гость: профиля может не быть, но визит всё равно полезно учесть на POST
+  }
+  const p = await loadProfile(user.uid)
+  if (!p) return
+  const now = Date.now()
+  let dirty = false
+  if (!p.firstSeen) {
+    p.firstSeen = p._updatedAt || now
+    dirty = true
+  }
+  const tag = srcTag(user.startParam)
+  if (!p.src && tag) {
+    p.src = tag
+    dirty = true
+  }
+  if (!p.lastSeen || now - p.lastSeen > 60000) {
+    p.lastSeen = now
+    dirty = true
+  }
+  if (dirty) await saveProfile(user.uid, p)
+}
+
+// агрегат метрик трафика из сводки профилей (для админки)
+function trafficMetrics(profiles, now) {
+  const DAY = 86400000
+  const bySrc = new Map()
+  let newToday = 0
+  let new7d = 0
+  let dau = 0
+  for (const p of profiles) {
+    if (p.firstSeen && now - p.firstSeen < DAY) newToday++
+    if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
+    if (p.lastSeen && now - p.lastSeen < DAY) dau++
+    const key = p.src || '—'
+    const e = bySrc.get(key) || { src: key, users: 0, played: 0, new7d: 0 }
+    e.users++
+    if (p.battles > 0) e.played++
+    if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
+    bySrc.set(key, e)
+  }
+  return {
+    total: profiles.length,
+    newToday,
+    new7d,
+    dau,
+    bySource: [...bySrc.values()].sort((a, b) => b.users - a.users),
+  }
+}
+
 async function handleApi(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, CORS)
@@ -124,6 +182,7 @@ async function handleApi(req, res) {
   if (!user) return json(res, 401, { error: 'unauthorized' })
 
   if (req.url === '/api/profile' && req.method === 'GET') {
+    await recordVisit(user) // метрики: источник/firstSeen/lastSeen (DAU)
     return json(res, 200, { uid: user.uid, profile: await loadProfile(user.uid) })
   }
   if (req.url === '/api/leaderboard' && req.method === 'GET') {
@@ -152,6 +211,11 @@ async function handleApi(req, res) {
       // членство в клане ведут только clan-эндпоинты — сейв профиля его не трогает
       clanId: prev.clanId || null,
       clanTag: prev.clanTag || null,
+      // атрибуция трафика — серверные поля, клиент их не пишет. src ставится один
+      // раз (на первом сейве нового игрока из start_param), firstSeen — тоже.
+      src: prev.src || srcTag(user.startParam) || null,
+      firstSeen: prev.firstSeen || Date.now(),
+      lastSeen: Date.now(),
     }
     await saveProfile(user.uid, merged)
     return json(res, 200, { ok: true })

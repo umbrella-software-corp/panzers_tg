@@ -100,6 +100,19 @@ export async function playerByRank(rank) {
 
 const safe = (uid) => String(uid).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
 
+// метка источника трафика из start_param (?startapp=…): ref_/sq_ — это НЕ трафик
+// (игрок-реферал/взвод), всё прочее — источник; срезаем префикс src_/s_, чистим
+export function srcTag(sp) {
+  if (!sp || typeof sp !== 'string') return null
+  if (/^(ref|sq)_/i.test(sp)) return null
+  const tag = sp
+    .replace(/^s(rc)?[-_]/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 32)
+  return tag || null
+}
+
 export async function loadProfile(uid) {
   try {
     return JSON.parse(await fs.readFile(path.join(PROFILES, safe(uid) + '.json'), 'utf8'))
@@ -269,6 +282,9 @@ async function listProfilesUncached() {
         tanks: Array.isArray(p.owned) ? p.owned.length : 0,
         premiumUntil: p.premiumUntil || 0, // для отметки ★ премиум в таблице лидеров
         updatedAt: p._updatedAt || 0,
+        src: p.src || null, // метка источника трафика (атрибуция)
+        firstSeen: p.firstSeen || p._updatedAt || 0,
+        lastSeen: p.lastSeen || p._updatedAt || 0,
       })
     } catch {
       /* битый файл — пропускаем */

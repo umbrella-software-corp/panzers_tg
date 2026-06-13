@@ -1,6 +1,8 @@
 // Клиент серверного API: профиль + платежи Stars.
 // Авторизация: подписанный Telegram initData; вне Telegram — dev-гость
 // со стабильным id в localStorage.
+import { startParam } from './tg.js'
+
 const BASE = import.meta.env.VITE_API_URL || `${location.protocol}//${location.hostname}:8080`
 
 function guestId() {
@@ -16,7 +18,13 @@ function headers() {
   const h = { 'Content-Type': 'application/json' }
   const initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData
   if (initData) h['x-init-data'] = initData
-  else h['x-guest-id'] = guestId()
+  else {
+    h['x-guest-id'] = guestId()
+    // вне Telegram источник трафика берём из start_param (?tgWebAppStartParam=…);
+    // у реальных юзеров сервер берёт его из подписанного initData и заголовок игнорит
+    const sp = startParam()
+    if (sp) h['x-start-param'] = sp
+  }
   return h
 }
 

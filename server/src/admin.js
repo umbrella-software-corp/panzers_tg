@@ -43,6 +43,17 @@ export const adminPage = () => `<!doctype html>
 <div id="app" hidden>
   <h1>PANZER <b>TG</b> · админка <span class="muted" style="font-size:12px">(обновление каждые 5с)</span></h1>
   <div class="cards" id="cards"></div>
+  <h2>Трафик</h2><div class="cards" id="traffic"></div>
+  <h2>Реф-ссылка трафика</h2>
+  <div id="reflink">
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+      <span class="muted">метка источника:</span>
+      <input id="srcTag" placeholder="напр. tgads, blogger1, channel" style="width:auto; flex:1; min-width:170px; margin:0" onkeydown="if(event.key==='Enter')makeLink()">
+      <button style="width:auto; padding:9px 16px" onclick="makeLink()">Сгенерировать ссылку</button>
+    </div>
+    <div id="linkOut" style="margin-top:10px"></div>
+  </div>
+  <h2>Источники трафика</h2><div id="sources"></div>
   <h2>Турниры</h2><div id="tournaments"></div>
   <h2>Комнаты боёв</h2><div id="rooms"></div>
   <h2>Покупки за звёзды</h2><div id="payments"></div>
@@ -68,6 +79,24 @@ async function api(path) {
   return r.json()
 }
 
+// генератор реф-ссылки трафика: метка → t.me/<бот>?startapp=src_<метка>
+let LINK_BASE = ''
+function makeLink() {
+  const tag = ($('srcTag').value || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32)
+  if (!tag) { $('linkOut').innerHTML = '<span class="err">введите метку: a-z, 0-9, _ или -</span>'; return }
+  if (!LINK_BASE) { $('linkOut').innerHTML = '<span class="err">база ссылки не задана (BOT_USERNAME)</span>'; return }
+  const url = LINK_BASE + '?startapp=src_' + tag
+  $('linkOut').innerHTML = '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">'
+    + '<code style="background:#0d100a; padding:8px 10px; border-radius:8px; border:1px solid var(--line); word-break:break-all; flex:1; min-width:200px">' + esc(url) + '</code>'
+    + '<button class="refbtn" style="background:var(--blue)" onclick="copyLink(\\'' + esc(url) + '\\', this)">Копировать</button></div>'
+    + '<div class="muted" style="margin-top:6px; font-size:12px">в метриках источник: <b>' + esc(tag) + '</b> · перешедшие появятся в «Источники трафика»</div>'
+}
+window.makeLink = makeLink
+function copyLink(url, btn) {
+  navigator.clipboard.writeText(url).then(() => { btn.textContent = 'Скопировано ✓' }, () => { btn.textContent = 'не вышло' })
+}
+window.copyLink = copyLink
+
 async function refresh() {
   const s = await api('/api/admin/stats')
   const prof = await api('/api/admin/profiles')
@@ -79,6 +108,20 @@ async function refresh() {
     ['★ ' + s.revenueStars.toLocaleString('ru-RU'), 'выручка, звёзды'],
     [s.payMode === 'stars' ? 'STARS' : 'DEV', 'режим оплаты'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>').join('')
+
+  const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, bySource:[] }
+  LINK_BASE = s.linkBase || ''
+  $('traffic').innerHTML = [
+    [t.total, 'всего игроков'],
+    [t.newToday, 'новых сегодня'],
+    [t.new7d, 'новых за 7 дней'],
+    [t.dau, 'актив сегодня (DAU)'],
+  ].map(([v, l]) => '<div class="card"><div class="v">' + (v||0).toLocaleString('ru-RU') + '</div><div class="l">' + l + '</div></div>').join('')
+
+  $('sources').innerHTML = table(
+    ['Источник', 'Игроков', 'Сыграли бой', 'Новых 7д'],
+    t.bySource.map((x) => [x.src === '—' ? '— без метки (прямой заход)' : esc(x.src), x.users, x.played, x.new7d]),
+  )
 
   $('tournaments').innerHTML = '<button style="width:auto;padding:9px 16px;background:'
     + (s.tournaments ? 'var(--green)' : 'var(--line)') + ';color:' + (s.tournaments ? '#0d100a' : 'var(--ink)')
