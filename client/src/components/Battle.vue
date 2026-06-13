@@ -658,7 +658,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .root {
-  position: fixed;
+  position: absolute; /* внутри портретной колонки #app, не во всё окно (портретный замок) */
   inset: 0;
   overflow: hidden;
   background: #0c0f0a;
@@ -1316,7 +1316,10 @@ onBeforeUnmount(() => {
 }
 .combatinfo {
   position: absolute;
-  top: calc(var(--safe-top) + 52px);
+  /* ниже центрального блока HUD (счёт/точки/HP/модули): на узкой портретной
+     колонке центрированный HP-бар занимает всю ширину и пересёкся бы с этой
+     панелью по вертикали — поэтому уводим её под кластер, слева над полем */
+  top: calc(var(--safe-top) + 150px);
   left: calc(var(--safe-left) + 12px);
   z-index: 3;
   display: flex;
