@@ -37,6 +37,27 @@ export async function setSetting(key, value) {
   return s
 }
 
+// заявки на турниры: data/tournaments.json = { [tournamentId]: [uid, ...] }.
+// Каталог форматов статичен (в коде), здесь храним только КТО нажал «участвую».
+const TOURNAMENTS = path.join(ROOT, 'tournaments.json')
+let tourn = null
+export async function getTournRegs() {
+  if (tourn) return tourn
+  try {
+    tourn = JSON.parse(await fs.readFile(TOURNAMENTS, 'utf8'))
+  } catch {
+    tourn = {}
+  }
+  return tourn
+}
+export async function saveTournRegs(map) {
+  tourn = map
+  const tmp = `${TOURNAMENTS}.${process.pid}.tmp`
+  await fs.writeFile(tmp, JSON.stringify(map))
+  await fs.rename(tmp, TOURNAMENTS)
+  return map
+}
+
 // топ игроков по боевому рейтингу (по эффективности — wn8) для живой таблицы лидеров.
 // Поле rating в ответе = wn8 (клиент показывает его как «боевой рейтинг»).
 export async function leaderboard(limit = 20) {

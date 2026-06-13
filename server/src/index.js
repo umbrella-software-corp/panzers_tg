@@ -8,6 +8,7 @@ import { authRequest, hasBot } from './auth.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
+import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { adminPage } from './admin.js'
 
 const ADMIN_KEY = process.env.ADMIN_KEY || ''
@@ -194,6 +195,20 @@ async function handleApi(req, res) {
     const id = req.url.slice('/api/clan/'.length).split('?')[0]
     const c = await getClan(id)
     return c ? json(res, 200, { clan: c }) : json(res, 404, { error: 'not found' })
+  }
+  // ===== турниры (регистрация + счётчик «участвую») =====
+  if (req.url === '/api/tournaments' && req.method === 'GET') {
+    return json(res, 200, { tournaments: await listTournaments(user.uid) })
+  }
+  if (req.url === '/api/tournament/join' && req.method === 'POST') {
+    const b = await readBody(req)
+    const r = await joinTournament(user.uid, String(b.tid || ''))
+    return r.error ? json(res, 400, r) : json(res, 200, { tournament: r })
+  }
+  if (req.url === '/api/tournament/leave' && req.method === 'POST') {
+    const b = await readBody(req)
+    const r = await leaveTournament(user.uid, String(b.tid || ''))
+    return r.error ? json(res, 400, r) : json(res, 200, { tournament: r })
   }
   json(res, 404, { error: 'not found' })
 }

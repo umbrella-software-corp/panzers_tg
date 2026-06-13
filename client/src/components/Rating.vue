@@ -6,7 +6,7 @@
 import { computed, ref, onMounted, watch } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft, playerRank } from '../store.js'
 import { RATING_RIVALS, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS } from '../game/meta.js'
-import { apiRename, apiLeaderboard, apiPlayer, apiClans, apiCreateClan, apiJoinClan, apiLeaveClan } from '../api.js'
+import { apiRename, apiLeaderboard, apiPlayer, apiClans, apiCreateClan, apiJoinClan, apiLeaveClan, apiTournaments, apiJoinTournament, apiLeaveTournament } from '../api.js'
 import { haptic, tgUserId } from '../tg.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
@@ -172,7 +172,49 @@ async function loadClans() {
 }
 watch(tab, (t) => {
   if (t === 2) loadClans()
+  else if (t === 3) loadTournaments()
 })
+
+// ===== турниры =====
+const CLS_INFO = {
+  light: { label: 'Лёгкие', col: '#5fd35f' },
+  medium: { label: 'Средние', col: '#4aa3ff' },
+  heavy: { label: 'Тяжёлые', col: '#e0853c' },
+  any: { label: 'Все классы', col: 'var(--amber)' },
+}
+const clsInfo = (c) => CLS_INFO[c] || CLS_INFO.any
+const tournaments = ref([])
+const tournLoading = ref(false)
+const tournBusy = ref('') // id турнира в процессе записи
+async function loadTournaments() {
+  tournLoading.value = true
+  try {
+    const r = await apiTournaments()
+    tournaments.value = (r && r.tournaments) || []
+  } catch {
+    /* офлайн */
+  } finally {
+    tournLoading.value = false
+  }
+}
+async function toggleTournament(t) {
+  if (tournBusy.value) return
+  tournBusy.value = t.id
+  try {
+    const r = t.joined ? await apiLeaveTournament(t.id) : await apiJoinTournament(t.id)
+    if (r.tournament) {
+      haptic(t.joined ? 'select' : 'success')
+      const i = tournaments.value.findIndex((x) => x.id === t.id)
+      if (i >= 0) tournaments.value[i] = r.tournament
+    } else if (r.error) {
+      showClanErr('Не получилось')
+    }
+  } catch {
+    showClanErr('Сервер недоступен')
+  } finally {
+    tournBusy.value = ''
+  }
+}
 
 async function doCreateClan() {
   const name = cForm.value.name.trim()
@@ -256,17 +298,32 @@ const fmtTime = (t) => {
     </div>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
-      <!-- ===== ТУРНИРЫ (СКОРО) ===== -->
-      <section v-if="tab === 3" style="flex: 1; display: flex; align-items: center; justify-content: center">
-        <div class="pz-plate pz-brackets" :style="{ '--bk': tournamentLive ? 'var(--green)' : 'var(--amber)', padding: '26px 30px', textAlign: 'center' }">
-          <div class="pz-display" style="font-size: 20px; letter-spacing: 0.14em">{{ TABS[tab] }}</div>
-          <div class="pz-pixel" style="font-size: 9px; margin-top: 10px" :style="{ color: tournamentLive ? 'var(--green)' : 'var(--amber)' }">
-            {{ tournamentLive ? '● ИДЁТ СЕЙЧАС' : 'СКОРО' }}
-          </div>
-          <div style="font-size: 11.5px; color: var(--ink-dim); margin-top: 8px; font-weight: 500">
-            {{ tournamentLive ? 'Турнир в эфире — врывайся в бой и поднимай рейтинг!' : 'На базе взводов — следующим шагом после кланов' }}
+      <!-- ===== ТУРНИРЫ: запись + счётчик «участвую» ===== -->
+      <section v-if="tab === 3" class="clans">
+        <p class="hint" style="margin-bottom: 4px">Жми «УЧАСТВУЮ» в нужном формате — как наберётся состав, турнир стартует. Видно, сколько уже записалось.</p>
+        <div v-if="tournLoading" class="clan-empty">загрузка…</div>
+        <div v-else style="display: flex; flex-direction: column; gap: 8px">
+          <div v-for="t in tournaments" :key="t.id" class="tour-card" :class="{ joined: t.joined }">
+            <div class="tour-top">
+              <span class="tour-fmt pz-display">{{ t.teamSize }}×{{ t.teamSize }}</span>
+              <div style="flex: 1; min-width: 0">
+                <div class="tour-name">{{ t.name }}</div>
+                <div class="tour-cls" :style="{ color: clsInfo(t.cls).col }">{{ clsInfo(t.cls).label }}</div>
+              </div>
+              <span class="tour-count"><b>{{ t.count }}</b><i>/{{ t.need }}</i></span>
+            </div>
+            <div class="tour-bar"><b :style="{ width: Math.min(100, (t.count / t.need) * 100) + '%', background: t.count >= t.need ? 'var(--green)' : 'var(--amber)' }"></b></div>
+            <div class="tour-foot">
+              <span class="tour-status" :style="{ color: t.count >= t.need ? 'var(--green)' : 'var(--ink-dim)' }">
+                {{ t.count >= t.need ? '✓ состав набран — ждём старта' : `нужно ещё ${t.need - t.count}` }}
+              </span>
+              <button class="tour-btn" :class="{ on: t.joined }" :disabled="tournBusy === t.id" @click="toggleTournament(t)">
+                {{ t.joined ? 'ВЫ В ЗАЯВКЕ ✓' : 'УЧАСТВУЮ' }}
+              </button>
+            </div>
           </div>
         </div>
+        <transition name="pz-fade"><div v-if="clanErr" class="clan-err">{{ clanErr }}</div></transition>
       </section>
 
       <!-- ===== КЛАНЫ ===== -->
@@ -756,5 +813,96 @@ const fmtTime = (t) => {
   font-weight: 600;
   padding: 8px 14px;
   border-radius: 8px;
+}
+
+/* ===== турниры ===== */
+.tour-card {
+  padding: 12px 13px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+}
+.tour-card.joined {
+  border-color: var(--amber);
+  background: rgba(242, 165, 12, 0.07);
+}
+.tour-top {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.tour-fmt {
+  font-size: 19px;
+  color: var(--amber);
+  width: 50px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.tour-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tour-cls {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  margin-top: 1px;
+}
+.tour-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.tour-count b {
+  font-size: 18px;
+  color: var(--ink);
+  font-weight: 700;
+}
+.tour-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  margin: 10px 0 8px;
+}
+.tour-bar b {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.tour-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.tour-status {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.tour-btn {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi), var(--amber));
+  border: 1px solid transparent;
+}
+.tour-btn.on {
+  color: var(--green);
+  background: rgba(141, 184, 74, 0.14);
+  border-color: var(--green);
+}
+.tour-btn:disabled {
+  opacity: 0.6;
 }
 </style>

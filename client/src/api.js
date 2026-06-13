@@ -45,3 +45,7 @@ export const apiCreateClan = (name, tag, emblem) => call('/api/clan/create', { m
 export const apiJoinClan = (clanId) => call('/api/clan/join', { method: 'POST', body: JSON.stringify({ clanId }) })
 export const apiLeaveClan = () => call('/api/clan/leave', { method: 'POST', body: JSON.stringify({}) })
 export const apiClan = (id) => call('/api/clan/' + encodeURIComponent(id))
+// турниры: список (со счётчиком «участвую» и моим статусом), записаться, сняться
+export const apiTournaments = () => call('/api/tournaments')
+export const apiJoinTournament = (tid) => call('/api/tournament/join', { method: 'POST', body: JSON.stringify({ tid }) })
+export const apiLeaveTournament = (tid) => call('/api/tournament/leave', { method: 'POST', body: JSON.stringify({ tid }) })
