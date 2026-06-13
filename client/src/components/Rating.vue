@@ -20,6 +20,9 @@ const emit = defineEmits(['go'])
 const tab = ref(0)
 const selMedal = ref(null) // открытая модалка медали (витрина)
 const TABS = ['ПРОФИЛЬ', 'РЕЙТИНГ', 'КЛАНЫ', 'ТУРНИРЫ']
+// кланы и турниры пока «Скоро» — не палим недоделанное на трафике. Весь функционал
+// ниже сохранён, прячется за этим флагом; запуск — поставить false.
+const COMING_SOON = true
 const renaming = ref(false)
 
 // смена позывного за Telegram Stars: имя → инвойс сервера → openInvoice.
@@ -171,6 +174,7 @@ async function loadClans() {
   }
 }
 watch(tab, (t) => {
+  if (COMING_SOON) return // «Скоро» — данные не тянем
   if (t === 2) loadClans()
   else if (t === 3) loadTournaments()
 })
@@ -294,12 +298,33 @@ const fmtTime = (t) => {
 
     <!-- вкладки -->
     <div style="display: flex; gap: 6px; padding: 0 14px 8px">
-      <button v-for="(t, i) in TABS" :key="t" class="pz-display tabbtn" :class="{ on: tab === i }" @click="haptic('select'); tab = i">{{ t }}</button>
+      <button
+        v-for="(t, i) in TABS"
+        :key="t"
+        class="pz-display tabbtn"
+        :class="{ on: tab === i, soon: COMING_SOON && i >= 2 }"
+        @click="haptic('select'); tab = i"
+      >
+        {{ t }}<i v-if="COMING_SOON && i >= 2" class="soon-tag">скоро</i>
+      </button>
     </div>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
+      <!-- ===== КЛАНЫ / ТУРНИРЫ — пока «Скоро» (тизер) ===== -->
+      <section v-if="COMING_SOON && (tab === 2 || tab === 3)" class="soon-screen">
+        <div class="soon-stamp pz-display">СКОРО</div>
+        <div class="soon-feat pz-display">{{ tab === 2 ? 'КЛАНЫ' : 'ТУРНИРЫ' }}</div>
+        <p class="soon-text">
+          {{
+            tab === 2
+              ? 'Создавай клан, собирай состав и поднимай клановый рейтинг. Уже на подходе — готовь отряд.'
+              : 'Турниры 2×2, 3×3 и 5×5 по классам техники. Совсем скоро — точи машину.'
+          }}
+        </p>
+      </section>
+
       <!-- ===== ТУРНИРЫ: запись + счётчик «участвую» ===== -->
-      <section v-if="tab === 3" class="clans">
+      <section v-if="tab === 3 && !COMING_SOON" class="clans">
         <p class="hint" style="margin-bottom: 4px">Жми «УЧАСТВУЮ» в нужном формате — как наберётся состав, турнир стартует. Видно, сколько уже записалось.</p>
         <div v-if="tournLoading" class="clan-empty">загрузка…</div>
         <div v-else style="display: flex; flex-direction: column; gap: 8px">
@@ -327,7 +352,7 @@ const fmtTime = (t) => {
       </section>
 
       <!-- ===== КЛАНЫ ===== -->
-      <section v-if="tab === 2" class="clans">
+      <section v-if="tab === 2 && !COMING_SOON" class="clans">
         <!-- я уже в клане -->
         <template v-if="myClan">
           <div class="pz-plate pz-brackets clan-card" style="--bk: var(--amber)">
@@ -506,6 +531,7 @@ const fmtTime = (t) => {
 
 <style scoped>
 .tabbtn {
+  position: relative;
   flex: 1;
   padding: 7px 0 6px;
   font-size: 9.5px;
@@ -520,6 +546,62 @@ const fmtTime = (t) => {
   color: #1d1604;
   background: linear-gradient(180deg, var(--amber-hi), var(--amber));
   border-color: transparent;
+}
+.tabbtn.soon:not(.on) {
+  opacity: 0.72;
+}
+/* мини-бейдж «скоро» в углу таба (не влияет на раскладку — absolute) */
+.soon-tag {
+  position: absolute;
+  top: -6px;
+  right: -2px;
+  font-size: 6.5px;
+  letter-spacing: 0.02em;
+  font-style: normal;
+  font-weight: 700;
+  padding: 1px 4px 0;
+  border-radius: 6px;
+  background: var(--amber);
+  color: #1d1604;
+  pointer-events: none;
+}
+.tabbtn.on .soon-tag {
+  background: #1d1604;
+  color: var(--amber);
+}
+
+/* экран-тизер «Скоро» для кланов/турниров */
+.soon-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+  padding: 48px 24px;
+}
+.soon-stamp {
+  font-size: 30px;
+  letter-spacing: 0.2em;
+  color: var(--amber);
+  border: 3px solid var(--amber);
+  border-radius: 12px;
+  padding: 8px 26px 6px;
+  transform: rotate(-7deg);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+}
+.soon-feat {
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  margin-top: 10px;
+}
+.soon-text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+  max-width: 290px;
 }
 .me {
   margin-top: 10px;
