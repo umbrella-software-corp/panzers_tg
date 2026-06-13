@@ -624,11 +624,13 @@ function roomTick(room) {
     // на сервере ЗАСТЫЛ (боты не едут и не стреляют, время t не идёт). Снапшоты
     // всё равно шлём — поле видно за оверлеем отсчёта. Размораживаемся в startAt.
     const warming = room.startAt && Date.now() < room.startAt
+    // буфер событий инициализируем ВСЕГДА (даже в warmup) — иначе снапшот ниже
+    // вызывает eventsForTeam(undefined) и комната падает на первом тике отсчёта
+    if (!room.evBuf) room.evBuf = []
     if (!warming) {
       room.sim.step(TICK_DT)
       // события копим между отправками: шлём реже тика, но НИ ОДНО не теряем
       // (выстрелы/попадания/киллы с пропущенных тиков уходят со следующим снапшотом)
-      if (!room.evBuf) room.evBuf = []
       const ev = room.sim.takeEvents()
       if (ev.length) room.evBuf.push(...ev)
     }
@@ -636,7 +638,7 @@ function roomTick(room) {
 
     if (room.sinceSnap >= SNAP_EVERY || room.sim.matchOver) {
       room.sinceSnap = 0
-      const events = room.evBuf
+      const events = room.evBuf || []
       room.evBuf = []
       // сериализация один раз на команду: личная добавка подклеивается строкой
       const teamStr = [0, 1].map((t) =>

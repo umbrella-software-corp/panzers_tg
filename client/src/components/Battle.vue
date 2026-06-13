@@ -366,7 +366,12 @@ onMounted(async () => {
   // статы до mount: спрайт игрока выбирается по классу лоадаута
   if (props.loadout) game.setStats(props.loadout)
   else game.setClass(DEFAULT_CLASS)
+  const _t0 = performance.now()
   await game.mount(stage.value)
+  // лоадер держим минимум 700мс — иначе на кэшированных спрайтах он мелькает и
+  // «не виден»; игрок должен застать экран загрузки, а не пустой кадр
+  const _el = performance.now() - _t0
+  if (_el < 700) await new Promise((r) => setTimeout(r, 700 - _el))
   loading.value = false // спрайты прогружены — снимаем лоадер
   game.setMinimap(minimap.value)
   if (props.instant) {
