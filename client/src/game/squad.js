@@ -49,6 +49,13 @@ export function myTankCompatible() {
   const me = String(tgUserId())
   return squad.members.every((m) => String(m.id) === me || !m.tank || Math.abs(m.tank.tier - mt) <= MAX_TIER_SPREAD)
 }
+// уровень техники tier совместим с остальными участниками (в пределах ±1)? —
+// для пикера смены танка во взводе: помечаем, какие из моих танков подходят
+export function tierFitsSquad(tier) {
+  if (tier == null) return true
+  const me = String(tgUserId())
+  return squad.members.every((m) => String(m.id) === me || !m.tank || Math.abs(m.tank.tier - tier) <= MAX_TIER_SPREAD)
+}
 // весь взвод в пределах ±1 уровня?
 export function squadTierOk() {
   const tiers = squad.members.map((m) => m.tank && m.tank.tier).filter((t) => t != null)

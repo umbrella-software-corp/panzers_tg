@@ -4,10 +4,10 @@
 // с тем же токеном и попадает в ТВОЮ комнату (одна команда живых). Таб НАГРАДЫ —
 // рефералы: постоянная ref-ссылка, рекруты считаются на сервере (не фейк).
 import { ref, computed, onUnmounted } from 'vue'
-import { profile, claimRefMilestone } from '../store.js'
-import { REF_MILESTONES } from '../game/meta.js'
+import { profile, claimRefMilestone, selectTank, selectedTank } from '../store.js'
+import { REF_MILESTONES, TANK_BY_ID } from '../game/meta.js'
 import { tgUserId, inviteLink, shareLink } from '../tg.js'
-import { squad, connectSquad, squadSetReady, squadLaunch, closeSquad, isSquadLeader, myReady, allReady, myTankCompatible, squadTierOk, memberTierBad } from '../game/squad.js'
+import { squad, connectSquad, squadSetReady, squadLaunch, closeSquad, isSquadLeader, myReady, allReady, myTankCompatible, squadTierOk, memberTierBad, tierFitsSquad } from '../game/squad.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -18,6 +18,21 @@ let toastTimer = null
 
 const myId = computed(() => tgUserId())
 const isLeader = computed(() => isSquadLeader())
+
+// смена техники прямо во взводе (а не «иди в ангар»): пикер своих танков с
+// пометкой, какие подходят по уровню взвода. selectTank → watch в squad.js
+// сам шлёт танк в лобби и пересчитывает совместимость.
+const picker = ref(false)
+const mySelId = computed(() => profile.selectedTank)
+const myTankName = computed(() => {
+  const t = selectedTank()
+  return t ? `${t.name} · ур.${t.tier}` : '—'
+})
+const myTanks = computed(() => (profile.owned || []).map((id) => TANK_BY_ID[id]).filter(Boolean).sort((a, b) => a.tier - b.tier))
+function pickTank(id) {
+  selectTank(id)
+  picker.value = false
+}
 const rewardsDot = computed(() =>
   REF_MILESTONES.some((m, i) => !profile.claimedRef.includes(i) && profile.referrals.length >= m.need),
 )
@@ -46,9 +61,10 @@ function inviteMore() {
   afterShare(shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG!'))
 }
 function toggleReady() {
-  // готовлюсь, но техника не в пределах ±1 уровня — не даём встать в готовность
+  // готовлюсь, но техника не в пределах ±1 уровня — открываем пикер смены танка
   if (!myReady() && !myTankCompatible()) {
-    showToast('Смените технику — взвод только в пределах ±1 уровня')
+    showToast('Выбери технику в пределах ±1 уровня взвода')
+    picker.value = true
     return
   }
   squadSetReady(!myReady())
@@ -150,6 +166,31 @@ onUnmounted(() => {
           <p v-if="isLeader && squad.members.length < 2" class="hint" style="margin: 10px 0 0; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(0,0,0,.25)">
             Ждём друга. Он должен <b>полностью закрыть игру</b> (смахнуть в Telegram) и открыть её <b>по твоей ссылке</b> — тогда появится здесь. Если игра у него уже открыта — по ссылке не зайдёт.
           </p>
+
+          <!-- моя техника + смена прямо во взводе (подогнать под уровень взвода) -->
+          <div class="mytank">
+            <div class="mt-row">
+              <span class="mt-lbl">ТВОЯ ТЕХНИКА</span>
+              <span class="mt-name" :class="{ bad: !myTankCompatible() }">{{ myTankName }}</span>
+              <button class="mt-swap" @click="picker = !picker">{{ picker ? 'ЗАКРЫТЬ' : 'СМЕНИТЬ' }}</button>
+            </div>
+            <p v-if="!myTankCompatible() && !picker" class="mt-warn">Не подходит по уровню взвода — жми «СМЕНИТЬ» и выбери из подходящих (✓)</p>
+            <transition name="pz-fade">
+              <div v-if="picker" class="tank-picker pz-noscroll">
+                <button
+                  v-for="t in myTanks"
+                  :key="t.id"
+                  class="tp-cell"
+                  :class="{ on: t.id === mySelId, fit: tierFitsSquad(t.tier), unfit: !tierFitsSquad(t.tier) }"
+                  @click="pickTank(t.id)"
+                >
+                  <span class="tp-name">{{ t.name }}</span>
+                  <span class="tp-tier">ур.{{ t.tier }}</span>
+                  <span class="tp-mark">{{ t.id === mySelId ? '●' : tierFitsSquad(t.tier) ? '✓' : '✗' }}</span>
+                </button>
+              </div>
+            </transition>
+          </div>
 
           <!-- моя готовность: лейбл по ДЕЙСТВИЮ (зелёный = уже готов) -->
           <button class="ready-toggle" :class="{ on: myReady() }" @click="toggleReady">
@@ -389,6 +430,120 @@ onUnmounted(() => {
   border-color: var(--green);
   background: rgba(141, 184, 74, 0.14);
   color: var(--green);
+}
+/* моя техника + смена во взводе */
+.mytank {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.3);
+}
+.mt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mt-lbl {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.mt-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mt-name.bad {
+  color: #ff6a5a;
+}
+.mt-swap {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 1px solid var(--amber);
+  background: rgba(242, 165, 12, 0.12);
+  color: var(--amber);
+}
+.mt-warn {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: #ff8a5a;
+}
+.tank-picker {
+  margin-top: 9px;
+  max-height: 168px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tp-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.3);
+  text-align: left;
+}
+.tp-cell.fit {
+  border-color: rgba(141, 184, 74, 0.5);
+  background: rgba(141, 184, 74, 0.07);
+}
+.tp-cell.unfit {
+  opacity: 0.5;
+}
+.tp-cell.on {
+  border-color: var(--amber);
+  background: rgba(242, 165, 12, 0.1);
+}
+.tp-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-tier {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  flex-shrink: 0;
+}
+.tp-mark {
+  width: 14px;
+  text-align: center;
+  font-weight: 800;
+  flex-shrink: 0;
+  color: var(--ink-faint);
+}
+.tp-cell.fit .tp-mark {
+  color: #7cc05a;
+}
+.tp-cell.unfit .tp-mark {
+  color: #ff6a5a;
+}
+.tp-cell.on .tp-mark {
+  color: var(--amber);
 }
 .friend-row {
   display: flex;
