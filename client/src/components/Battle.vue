@@ -956,6 +956,11 @@ onBeforeUnmount(() => {
 .hpbar {
   position: relative;
   height: 16px;
+  /* центрируем и ограничиваем ширину — иначе на широком экране (ПК/ландшафт)
+     HP-бар тянется во всю ширину и наезжает влево на инфо-плашку урона */
+  align-self: center;
+  width: 100%;
+  max-width: 320px;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid var(--line-strong);
   border-radius: 5px;
