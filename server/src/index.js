@@ -187,12 +187,14 @@ function referrerMetrics(profiles, now) {
   const by = new Map()
   for (const p of profiles) {
     if (!p.referredBy) continue
-    const e = by.get(p.referredBy) || { ref: p.referredBy, came: 0, played: 0, returned: 0, active: 0, ghosts: 0, new7d: 0 }
+    const e = by.get(p.referredBy) || { ref: p.referredBy, came: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
     e.came++
+    const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
+    // непересекающийся разбор: бой / открыл-и-исчез / полазил-без-боя = came
     if (p.battles > 0) e.played++
-    else if ((p.lastSeen || 0) - (p.firstSeen || 0) < 60000) e.ghosts++ // зашёл и исчез <1 мин, без боя — признак бота/фейк-клика
-    if (p.firstSeen && p.lastSeen && p.lastSeen - p.firstSeen > 20 * 3600000) e.returned++ // вернулся на 2-й день+
-    if (p.lastSeen && now - p.lastSeen < DAY) e.active++ // ещё заходит (24ч)
+    else if (dwell < 60000) e.ghosts++ // открыл <1 мин, без боя — бот/фейк-клик
+    else e.lingered++ // полазил ≥1 мин, но в бой так и не пошёл
+    if (dwell > 20 * 3600000) e.returned++ // заходил на 2-й день+ (ретеншн; копится со временем)
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
     by.set(p.referredBy, e)
   }
