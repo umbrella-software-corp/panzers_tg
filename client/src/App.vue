@@ -13,7 +13,7 @@ import DailyReward from './components/DailyReward.vue'
 import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode } from './store.js'
 import { randomMap } from './game/maps.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
-import { track, trackScreen, setAnalyticsUserId, identifyUser } from './analytics.js'
+import { track, trackScreen, setAnalyticsUserId, identifyUser, identifyAcquisition } from './analytics.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
 const screen = ref('hangar')
@@ -28,6 +28,21 @@ const netMatch = ref(null)
 // старт: подтянуть профиль с сервера, потом ежедневный вход
 const daily = ref(false)
 const booting = ref(true) // стартовый сплэш-лоадер (БЕТА) — держим, пока тянем профиль
+
+// Дейлик показываем максимум один раз за сессию и НЕ на первом входе новичка:
+// при 0 боёв вход не перехватываем — попап всплывёт при возврате в ангар после
+// первого боя (battles уже >0). У возвращающихся — как раньше, сразу на входе.
+let dailyShown = false
+function maybeShowDaily() {
+  if (dailyShown || daily.value) return
+  if (!dailyAvailable() || (profile.stats?.battles || 0) === 0) return
+  dailyShown = true
+  track('daily_reward_shown', {
+    screen: screen.value,
+    battles_count: profile.stats?.battles || 0,
+  })
+  daily.value = true
+}
 onMounted(async () => {
   const t0 = Date.now()
   const finishBoot = () => (booting.value = false)
@@ -37,6 +52,7 @@ onMounted(async () => {
   loadConfig() // флаг турниров и пр. (не блокируем старт)
   // профиль загружен — связываем юзера и шлём срез прогрессии в Amplitude
   setAnalyticsUserId(tgUserId() ? `tg_${tgUserId()}` : null)
+  identifyAcquisition() // стики-атрибуция источника (реф-ферма vs живые) на весь lifecycle
   identifyUser({
     battles_count: profile.stats?.battles || 0,
     owned_tanks_count: Array.isArray(profile.owned) ? profile.owned.length : 0,
@@ -60,13 +76,7 @@ onMounted(async () => {
   }
   squad.onDisband = () => {} // UI взвода сам покажет роспуск
   handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
-  if (dailyAvailable()) {
-    track('daily_reward_shown', {
-      screen: screen.value,
-      battles_count: profile.stats?.battles || 0,
-    })
-    daily.value = true
-  }
+  maybeShowDaily() // первую сессию (0 боёв) НЕ перехватываем — дейлик всплывёт после первого боя
   // сплэш держим минимум ~750мс, чтобы не моргал на быстром старте
   setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - t0)))
 })
@@ -185,6 +195,7 @@ function exitBattle(reward) {
     kills: reward?.kills || 0,
   })
   screen.value = 'hangar'
+  maybeShowDaily() // после первого боя (battles>0) дейлик всплывает здесь, а не на входе
 }
 function rematch(reward) {
   track('rematch_clicked', {

@@ -42,6 +42,9 @@ function commonProps(extra = {}) {
     user_type: tgUserId() ? 'telegram' : 'guest',
     start_param_kind: startParamKind(sp),
     source_tag: cleanSourceTag(sp),
+    // инцентивированный реф-заход (реферер вознаграждается за приведённого → риск
+    // «фермы»): тег на КАЖДОМ событии сессии входа, чтобы вычитать ферму из воронки
+    incentivized: startParamKind(sp) === 'ref',
     ...extra,
   }
 }
@@ -68,6 +71,31 @@ export function initAnalytics() {
 
   ready = true
   if (pendingUserId) amplitude.setUserId(pendingUserId)
+
+  // Flush на закрытии вебвью. Telegram-мини-апп закрывается без надёжного
+  // beforeunload → очередь Amplitude не успевает уйти (теряется ~12-18% событий).
+  // На переход в hidden шлём очередь через sendBeacon (переживает выгрузку);
+  // вернулись на передний план — возвращаем обычный fetch-транспорт.
+  const flushBeacon = () => {
+    try {
+      amplitude.setTransport('beacon')
+      amplitude.flush()
+    } catch {
+      /* транспорт/флаш недоступен — не роняем приложение */
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushBeacon()
+    else {
+      try {
+        amplitude.setTransport('fetch')
+      } catch {
+        /* no-op */
+      }
+    }
+  })
+  // pagehide — последний надёжный сигнал перед выгрузкой (iOS Safari/вебвью)
+  window.addEventListener('pagehide', flushBeacon)
 }
 
 export function setAnalyticsUserId(uid) {
@@ -83,6 +111,22 @@ export function identifyUser(props = {}) {
     if (value !== undefined && value !== null) identify.set(key, value)
   }
   amplitude.identify(identify)
+}
+
+// Первичная атрибуция источника как СТИКИ user-property (setOnce — не
+// перетираем на следующих сессиях). Даёт когорту на весь lifecycle игрока:
+// вычитать реф-ферму можно из всей воронки, а не только из событий с start_param
+// (на возвратах его уже нет). ref = инцентивированный (реферер вознаграждается).
+export function identifyAcquisition() {
+  if (!ready) return
+  const sp = startParam()
+  const kind = startParamKind(sp)
+  const id = new amplitude.Identify()
+  id.setOnce('acq_kind', kind) // none | ref | squad | source
+  id.setOnce('acq_source_tag', cleanSourceTag(sp) || 'none')
+  id.setOnce('acq_incentivized', kind === 'ref')
+  id.set('last_entry_kind', kind) // текущий вход (видеть возвраты по другим ссылкам)
+  amplitude.identify(id)
 }
 
 export function track(eventType, props = {}) {

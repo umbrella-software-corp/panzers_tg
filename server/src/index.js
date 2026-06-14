@@ -633,10 +633,16 @@ function startRoom(room) {
   // добирается ботами в sim. Соло против соло = настоящий бой человек-vs-человек.
   assignTeams(room.humans)
   const map = randomMap()
+  // «Мягкий первый бой»: если в комнате есть игрок без единого боя — смягчаем
+  // ботов на всю катку (см. SOFT_START в shared/config.js). Новичок почти всегда
+  // соло-против-ботов, так что смягчение точечное; редкий микс с ветераном
+  // просто получит чуть гуманнее ботов (дуэль человек-vs-человек не затронута).
+  const softStart = room.humans.some((h) => (h.battles | 0) === 0)
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
     mapId: map.id,
     mode: room.mode,
+    softStart,
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
   })
 
@@ -677,10 +683,11 @@ function startRoom(room) {
       bots_estimated: TEAM_SIZE * 2 - room.humans.length,
       party_present: !!h.party,
       team: h.team,
+      soft_start: softStart, // «мягкий первый бой» включён для этой комнаты
     })
   }
   console.log(
-    `[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», люди ${room.humans.filter((h) => h.team === 0).length}vs${room.humans.filter((h) => h.team === 1).length}, остальное — боты`,
+    `[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», люди ${room.humans.filter((h) => h.team === 0).length}vs${room.humans.filter((h) => h.team === 1).length}, остальное — боты${softStart ? ' · МЯГКИЙ ПЕРВЫЙ БОЙ' : ''}`,
   )
 
   room.timer = setInterval(() => {

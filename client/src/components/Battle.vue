@@ -26,6 +26,9 @@ const emit = defineEmits(['exit', 'rematch'])
 const stage = ref(null)
 const minimap = ref(null)
 const isNet = !!props.net
+// обучающая подсказка прицеливания: только в самом первом бою и до первого выстрела
+const firstBattle = (profile.stats?.battles || 0) === 0
+const firedOnce = ref(false)
 const game = isNet ? new NetGame(props.net) : new Game({ mapId: props.mapId, side: props.side, mode: props.mode })
 
 // цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
@@ -181,6 +184,7 @@ const battleTelemetry = {
   fireTapsBeforeFirstValidShot: 0,
   blockedFireCountFirstMin: 0,
   exitedEarly: false,
+  abandoned: false, // терминальное событие «ушёл до конца боя» отправлено (1 раз)
 }
 function battleSec() {
   return battleTelemetry.startedAt ? Math.round((performance.now() - battleTelemetry.startedAt) / 1000) : 0
@@ -534,8 +538,39 @@ function joyEnd(e) {
 
 function onFire() {
   if (!battleTelemetry.firstShotResult) battleTelemetry.fireTapsBeforeFirstValidShot++
+  firedOnce.value = true // выстрелил — убираем обучающую подсказку прицеливания
   haptic('medium') // тап по «огонь» — ощутимая отдача выстрела
   game.fire()
+}
+
+// терминальное событие для тех, кто ушёл ДО конца боя. Закрывает перекос
+// «battle_finished только у выживших/победителей» (Drop #2 в воронке): теперь у
+// каждого боя есть финальное событие — либо battle_finished, либо battle_abandoned.
+// НЕ вешаем на visibility/pagehide: кратковременный уход в фон Telegram ≠ выход.
+function logAbandon(reason) {
+  if (battleTelemetry.abandoned || !battleTelemetry.started) return
+  if (phase.value !== 'fighting') return // после matchOver терминал — это battle_finished
+  battleTelemetry.abandoned = true
+  const s = state.value
+  track('battle_abandoned', {
+    battle_id: props.net?.room || null,
+    match_type: matchType(),
+    online: isNet,
+    reason, // 'exit_button' — явный выход во время боя
+    duration_sec: battleSec(),
+    player_alive: s.playerHp > 0,
+    died: battleTelemetry.firstDeath, // ушёл после гибели (основной кейс Drop #2)
+    result: s.result || 'defeat', // не доиграл = поражение
+    mode: s.mode,
+    kills: s.kills || 0,
+    damage_dealt: s.damageDealt || 0,
+    shots: s.shots || 0,
+    accuracy: s.accuracy || 0,
+    death_count: s.deaths || 0,
+    first_shot_result: battleTelemetry.firstShotResult,
+    first_death_sec: battleTelemetry.firstDeathSec,
+    was_revealed: !!s.revealed,
+  })
 }
 
 function toHangar() {
@@ -547,6 +582,7 @@ function toHangar() {
     result_known: !!state.value.result,
     match_type: matchType(),
   })
+  logAbandon('exit_button') // no-op, если бой уже завершён (phase !== 'fighting')
   // выход до конца матча = поражение в статистику
   if (phase.value === 'fighting' && !statsCounted) {
     statsCounted = true
@@ -811,8 +847,15 @@ onBeforeUnmount(() => {
       <template v-else>ББ <span style="opacity: 0.6">· ★{{ profile.goldAmmo }}</span></template>
     </button>
 
+    <!-- подсказка прицеливания в первом бою: учим ловить зелёный «захват» -->
+    <transition name="fade">
+      <div v-if="firstBattle && !firedOnce && phase === 'fighting' && state.playerHp > 0" class="aim-hint pz-display">
+        Веди ствол на врага и жми <b>ОГОНЬ</b>, когда прицел загорится <b class="g">зелёным</b>
+      </div>
+    </transition>
+
     <!-- ОГОНЬ -->
-    <button v-show="phase === 'fighting' && !paused && state.playerHp > 0" class="fire" :class="{ cold: !state.ready }" @pointerdown.prevent="onFire">
+    <button v-show="phase === 'fighting' && !paused && state.playerHp > 0" class="fire" :class="{ cold: !state.ready, locked: state.aimLock }" @pointerdown.prevent="onFire">
       <svg class="ring" width="92" height="92" viewBox="0 0 92 92">
         <circle cx="46" cy="46" r="34" class="ring-bg" />
         <circle cx="46" cy="46" r="34" class="ring-fg" :stroke-dasharray="RING" :stroke-dashoffset="ringOffset" />
@@ -1597,6 +1640,49 @@ onBeforeUnmount(() => {
   background: radial-gradient(circle at 35% 30%, #4a4f42, #23271e);
   box-shadow: none;
   transform: translateY(4px);
+}
+/* «захват»: ствол готов и линия сведения легла на цель — кнопка зеленеет и
+   пульсирует, синхронно с зелёной линией в поле: явный сигнал «жми ОГОНЬ» */
+.fire.locked {
+  background: radial-gradient(circle at 35% 30%, #57e69a, #1f9d63);
+  box-shadow:
+    0 0 32px rgba(70, 224, 138, 0.6),
+    0 6px 0 #146b41;
+  animation: firepulse 0.5s ease-in-out infinite;
+}
+@keyframes firepulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
+}
+.aim-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 132px);
+  transform: translateX(-50%);
+  max-width: 280px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--ink-dim);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 8px 12px;
+  z-index: 3;
+  pointer-events: none;
+}
+.aim-hint b {
+  color: #fff;
+  font-weight: 700;
+}
+.aim-hint b.g {
+  color: #57e69a;
 }
 .fire .flabel {
   position: relative;

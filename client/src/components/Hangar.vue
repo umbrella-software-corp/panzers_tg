@@ -93,6 +93,9 @@ const ttxStats = computed(() => {
   })
 })
 const locked = computed(() => !isOwned(tank.value.id))
+// первая сессия (ещё ни одного боя): на ангаре оставляем ОДИН CTA «В БОЙ» —
+// ЗАДАЧИ и ВЗВОД прячем, чтобы не размывать вход. После первого боя возвращаются.
+const firstSession = computed(() => (profile.stats?.battles || 0) === 0)
 const nationLabel = computed(() => (NATIONS.find((n) => n.id === profile.nation) || {}).label)
 const tanks = computed(() => tanksOfNation(profile.nation))
 const ttx = ref(false)
@@ -302,14 +305,14 @@ onMounted(() => {
 
     <!-- CTA -->
     <div style="padding: 8px 14px 4px; flex-shrink: 0; display: flex; gap: 8px">
-      <button class="pz-btn2 squad-btn tasks-btn" @click="openTasksSheet">
+      <button v-if="!firstSession" class="pz-btn2 squad-btn tasks-btn" @click="openTasksSheet">
         <span style="position: relative">
           <PzIcon name="tasks" :size="18" />
           <i v-if="tasksClaimable() > 0" class="task-dot"></i>
         </span>
         ЗАДАЧИ
       </button>
-      <button class="pz-btn2 squad-btn" @click="openSquadSheet">
+      <button v-if="!firstSession" class="pz-btn2 squad-btn" @click="openSquadSheet">
         <span class="dots">
           <span class="slot you"><PzIcon name="star" :size="7" color="var(--amber)" /></span>
           <span class="slot" :class="{ filled: inParty }"></span>

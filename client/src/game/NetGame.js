@@ -682,6 +682,70 @@ export class NetGame {
     return this.sweepFrozen
   }
 
+  // --- прицельный ассист: геометрия (зеркало shared/geometry, чтобы не тащить
+  // shared в клиентский бандл — как и дублированный config.js) ---
+  _angDiff(a, b) {
+    return Math.atan2(Math.sin(a - b), Math.cos(a - b))
+  }
+  // линия взгляда заблокирована стеной/камнем? (вода и кусты не блокируют — мягкое
+  // укрытие, как на сервере). Совпадает с BattleSim._lineBlocked.
+  _losBlocked(x1, y1, x2, y2) {
+    for (const o of this.obstacles) {
+      if (o.kind === 'water' || o.kind === 'bush') continue
+      if (this._segCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
+    }
+    for (const w of this.walls) {
+      if (this._segRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true
+    }
+    return false
+  }
+  _segCircle(x1, y1, x2, y2, cx, cy, r) {
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const l2 = dx * dx + dy * dy
+    let t = l2 ? ((cx - x1) * dx + (cy - y1) * dy) / l2 : 0
+    t = Math.max(0, Math.min(1, t))
+    const px = x1 + t * dx
+    const py = y1 + t * dy
+    return Math.hypot(px - cx, py - cy) <= r
+  }
+  _segRect(x1, y1, x2, y2, minx, miny, maxx, maxy) {
+    let t0 = 0
+    let t1 = 1
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const clip = (p, q) => {
+      if (p === 0) return q >= 0
+      const r = q / p
+      if (p < 0) {
+        if (r > t1) return false
+        if (r > t0) t0 = r
+      } else {
+        if (r < t0) return false
+        if (r < t1) t1 = r
+      }
+      return true
+    }
+    if (!clip(-dx, x1 - minx)) return false
+    if (!clip(dx, maxx - x1)) return false
+    if (!clip(-dy, y1 - miny)) return false
+    if (!clip(dy, maxy - y1)) return false
+    return t0 <= t1
+  }
+  // рамка-«захват»: четыре уголка вокруг цели (в мировых координатах — крутится
+  // с сектором/линией, как и остальная прицельная разметка)
+  _drawTargetBracket(g, x, y, r, color, alpha) {
+    const arm = r * 0.42
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const cx = x + sx * r
+        const cy = y + sy * r
+        g.moveTo(cx, cy).lineTo(cx - sx * arm, cy).stroke({ width: 2.5, color, alpha, cap: 'round' })
+        g.moveTo(cx, cy).lineTo(cx, cy - sy * arm).stroke({ width: 2.5, color, alpha, cap: 'round' })
+      }
+    }
+  }
+
   // --- цикл ---
 
   // после гибели джойстик свободно водит камеру по карте (наблюдение).
@@ -861,8 +925,12 @@ export class NetGame {
       }
     }
 
+    // дальности тумана/обзора нужны и прицельному ассисту, и скрытию врага ниже
+    const PROX = 150
+    const vis = this.cls.vision
     // сектор и линия сведения у живого своего танка
     const aliveSelf = own && own.alive
+    this._aimLock = false // «захват» цели (зелёная линия) пересчитывается каждый кадр
     if (aliveSelf) {
       const half = this._sectorHalfEff() // разброс дышит со скоростью (стоя уже, на ходу шире)
       const L = this.cls.vision // длина прицела = дальность обнаружения (совпадает с туманом)
@@ -884,7 +952,35 @@ export class NetGame {
       const ex = ox + Math.cos(lineA) * L
       const ey = oy + Math.sin(lineA) * L
       const ready = !!(this.you && this.you.ready)
-      const col = ready ? 0xffe066 : 0x9aa0ad
+
+      // АССИСТ ПРИЦЕЛИВАНИЯ: ищем ближайшую валидную цель в секторе — в дальности
+      // орудия, не в тумане, без стены/камня на линии (та же проверка, что у
+      // серверного выстрела). Рисуем на ней рамку-«захват». Когда ствол заряжен И
+      // линия сведения легла на цель — линия, наконечник и рамка ЗЕЛЕНЕЮТ: явный
+      // сигнал «жми ОГОНЬ». Это читаемый момент выстрела — лечит 44% первых мимо
+      // без авто-аима (тайминг остаётся за игроком, окно просто видно).
+      let target = null
+      let targetD = Infinity
+      for (const u of units) {
+        if (!u.alive || u.team === this.side) continue
+        const dx = u.x - ox
+        const dy = u.y - oy
+        const d = Math.hypot(dx, dy)
+        if (d > this.cls.range) continue // вне дальности орудия
+        if (d > PROX && d > vis) continue // в тумане — не наводимся
+        const ang = Math.atan2(dy, dx)
+        if (Math.abs(this._angDiff(ang, ohull)) > half) continue // вне сектора
+        if (this._losBlocked(ox, oy, u.x, u.y)) continue // стена/камень на линии
+        if (d < targetD) {
+          targetD = d
+          target = { x: u.x, y: u.y, ang }
+        }
+      }
+      const onLine = !!target && Math.abs(this._angDiff(target.ang, lineA)) <= this.cls.tolerance
+      const locked = ready && onLine
+      this._aimLock = locked // в HUD: подсветка кнопки ОГОНЬ
+
+      const col = locked ? 0x46e08a : ready ? 0xffe066 : 0x9aa0ad // зелёный — «захват»
       g.moveTo(ox, oy).lineTo(ex, ey).stroke({ width: 9, color: col, alpha: ready ? 0.16 : 0.08, cap: 'round' })
       g.moveTo(ox, oy).lineTo(ex, ey).stroke({ width: 4, color: col, alpha: ready ? 1 : 0.5, cap: 'round' })
       const tick = ready ? 15 : 10
@@ -893,12 +989,16 @@ export class NetGame {
       g.moveTo(ex - px * tick, ey - py * tick)
         .lineTo(ex + px * tick, ey + py * tick)
         .stroke({ width: ready ? 4 : 3, color: col, alpha: ready ? 1 : 0.5, cap: 'round' })
+
+      // рамка-«захват» вокруг наведённой цели: нейтральная при наводке, зелёная
+      // в момент захвата (ствол готов + линия на цели)
+      if (target) {
+        this._drawTargetBracket(g, target.x, target.y, 26, locked ? 0x46e08a : 0xffe066, locked ? 1 : 0.55)
+      }
     }
 
     // личный туман войны: живой враг, засвеченный сервером (командой), но вне
     // ЛИЧНОГО обзора игрока — не рисуется. Мёртв игрок — наблюдение, видно всех.
-    const PROX = 150
-    const vis = this.cls.vision
     const meAlive = own && own.alive
     this._hiddenEnemy = new Set()
     if (meAlive) {
@@ -1395,6 +1495,7 @@ export class NetGame {
       enemiesAlive: this.cur && this.cur.alive ? this.cur.alive[1 - this.side] : 7,
       reload01,
       ready: !!you.ready,
+      aimLock: !!this._aimLock, // линия сведения легла на цель + ствол готов — кнопка ОГОНЬ зеленеет
       reloadLeft: you.ready ? 0 : Math.ceil((1 - reload01) * this.cls.reload * 10) / 10,
       ourBase: 0,
       enemyBase: 0,
