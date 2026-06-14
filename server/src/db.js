@@ -58,15 +58,26 @@ export async function saveTournRegs(map) {
   return map
 }
 
+// набор uid с РЕАЛЬНО оплаченным премиумом (платёж prem, не возвращён). Корона ♛
+// выдаётся только при наличии платежа: premiumUntil клиент мог проставить себе
+// сам сейвом профиля (дыра закрыта в index.js), а старые фейки гасим этой сверкой.
+async function paidPremiumUids() {
+  const set = new Set()
+  for (const pay of await listPayments()) if (pay.productId === 'prem' && !pay.refunded) set.add(pay.uid)
+  return set
+}
+
 // топ игроков по боевому рейтингу (по эффективности — wn8) для живой таблицы лидеров.
 // Поле rating в ответе = wn8 (клиент показывает его как «боевой рейтинг»).
 export async function leaderboard(limit = 20) {
   const all = await listProfiles()
+  const paid = await paidPremiumUids()
+  const now = Date.now()
   return all
     .filter((p) => p.name)
     .sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
     .slice(0, limit)
-    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > Date.now() }))
+    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > now && paid.has(p.uid) }))
 }
 
 // публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):
@@ -75,6 +86,7 @@ export async function playerByRank(rank) {
   const sorted = (await listProfiles()).filter((p) => p.name).sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
   const row = sorted[rank - 1]
   if (!row) return null
+  const paid = await paidPremiumUids()
   const p = (await loadProfile(row.uid)) || {}
   const s = p.stats || {}
   let favoriteTank = null
@@ -94,7 +106,7 @@ export async function playerByRank(rank) {
     tank: p.selectedTank || null, // id текущей машины (для спрайта)
     favoriteTank, // имя самой частой машины в истории
     medals: p.medals || {}, // медали игрока (карточка показывает их в гриде)
-    premium: (p.premiumUntil || 0) > Date.now(),
+    premium: (p.premiumUntil || 0) > Date.now() && paid.has(row.uid),
   }
 }
 

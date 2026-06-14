@@ -240,6 +240,9 @@ async function handleApi(req, res) {
       // членство в клане ведут только clan-эндпоинты — сейв профиля его не трогает
       clanId: prev.clanId || null,
       clanTag: prev.clanTag || null,
+      // премиум выдаёт ТОЛЬКО платёж (payments.js): клиент НЕ может проставить себе
+      // premiumUntil сейвом профиля. Иначе любой через localStorage даёт себе корону.
+      premiumUntil: prev.premiumUntil || 0,
       // атрибуция трафика — серверные поля, клиент их не пишет. src ставится один
       // раз (на первом сейве нового игрока из start_param), firstSeen — тоже.
       src: prev.src || srcTag(user.startParam) || null,
