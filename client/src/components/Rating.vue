@@ -495,7 +495,7 @@ const fmtTime = (t) => {
               <span v-if="r.premium" class="prem-crown" title="Премиум">♛</span>{{ r.name }}
             </span>
             <span v-if="r.live" style="font-size: 10.5px; color: var(--ink-dim); font-weight: 600; margin-right: 6px">{{ r.winrate }}%</span>
-            <span class="pz-display" style="font-size: 13.5px">{{ r.rating }}</span>
+            <span class="pz-display" :style="{ fontSize: '13.5px', color: ratingBand(r.rating).color }">{{ r.rating }}</span>
           </div>
         </div>
         <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 8px; font-weight: 500; text-align: center">
