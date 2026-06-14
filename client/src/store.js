@@ -143,6 +143,10 @@ if (!profile.tasks || typeof profile.tasks !== 'object') profile.tasks = { date:
 if (typeof profile.skin !== 'string') profile.skin = 'std'
 if (typeof profile.premiumUntil !== 'number') profile.premiumUntil = 0 // премиум активен, пока > Date.now()
 if (profile.battleMode !== 'annihilation') profile.battleMode = 'capture' // режим боя: захват точек / на уничтожение
+// тур по ангару показываем один раз самому новому игроку; уже игравшим — нет
+if (typeof profile.onboarded !== 'boolean') profile.onboarded = (profile.stats?.battles || 0) > 0
+// бонус за первый бой выдаём только новичку; у кого уже есть бои — считаем выданным
+if (typeof profile.firstBattleRewarded !== 'boolean') profile.firstBattleRewarded = (profile.stats?.battles || 0) > 0
 
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()
@@ -258,6 +262,17 @@ export function spendTokens(n) {
   if (profile.tokens < n) return false
   profile.tokens -= n
   return true
+}
+
+// морковка за ПЕРВЫЙ ЗАКОНЧЕННЫЙ бой (главная утечка воронки — постреляли и слились).
+// Обещаем в туре, выдаём один раз на экране итогов первого боя. Возвращает сумму
+// бонуса (для показа), либо 0 если уже выдано.
+export const FIRST_BATTLE_BONUS = 1000 // кредитов за первый завершённый бой
+export function grantFirstBattleReward() {
+  if (profile.firstBattleRewarded) return 0
+  profile.firstBattleRewarded = true
+  addRewards(FIRST_BATTLE_BONUS)
+  return FIRST_BATTLE_BONUS
 }
 
 // ---------- боевые статы с учётом модулей (для Pixi-движка) ----------

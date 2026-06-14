@@ -3,7 +3,7 @@
 // как в макете — «Сводка» и «По целям» (по-целевой лог урона из движка).
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref, onMounted } from 'vue'
-import { profile, battleEarnedMedals } from '../store.js'
+import { profile, battleEarnedMedals, grantFirstBattleReward } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID } from '../game/meta.js'
 import { track } from '../analytics.js'
 import PzIcon from './ui/PzIcon.vue'
@@ -11,6 +11,7 @@ import Medal from './ui/Medal.vue'
 import MedalSheet from './MedalSheet.vue'
 
 const selMedal = ref(null) // открытая модалка медали (тап по значку)
+const firstBonus = ref(0) // бонус за первый завершённый бой (выдаётся один раз тут)
 const props = defineProps({
   // снапшот матча из Battle: result/kills/deaths/damageDealt/accuracy/allyScore/enemyScore
   state: { type: Object, required: true },
@@ -83,6 +84,9 @@ const medals = computed(() =>
 )
 
 onMounted(() => {
+  // экран итогов = бой ЗАВЕРШЁН → выдаём морковку за первый бой (один раз, по флагу)
+  firstBonus.value = grantFirstBattleReward()
+  if (firstBonus.value > 0) track('first_battle_bonus_granted', { credits: firstBonus.value, result: props.state.result })
   track('results_shown', {
     result: props.state.result,
     end_reason: props.state.endReason || null,
@@ -160,6 +164,11 @@ function setPage(i) {
         <!-- куда ушёл опыт -->
         <div style="font-size: 11.5px; font-weight: 600; opacity: 0.75; text-align: center; margin-top: 8px">
           ветка {{ branchLabel }} +{{ branchXp }} ОП · экипаж +{{ crewXp }} ОП
+        </div>
+        <!-- морковка за первый завершённый бой (показываем только когда выдана) -->
+        <div v-if="firstBonus" class="first-bonus">
+          <PzIcon name="coin" :size="16" />
+          <span class="pz-display">БОНУС ЗА ПЕРВЫЙ БОЙ +{{ firstBonus }}</span>
         </div>
         <!-- изменение боевого рейтинга -->
         <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1.5px dashed rgba(33, 29, 18, 0.35)">
@@ -377,6 +386,20 @@ function setPage(i) {
   color: #5a4a2e;
   margin: 2px 0 0;
   letter-spacing: 0.02em;
+}
+.first-bonus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1.5px solid #9a6b10;
+  border-radius: 6px;
+  background: rgba(154, 107, 16, 0.14);
+  color: #5a3e08;
+  font-size: 14px;
+  animation: pz-pop 0.4s 0.3s ease both;
 }
 .cell {
   text-align: center;

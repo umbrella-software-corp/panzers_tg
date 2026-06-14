@@ -169,7 +169,7 @@ onMounted(() => {
       </div>
 
       <!-- тень + танк -->
-      <div class="tank-wrap">
+      <div class="tank-wrap" data-tut="tank">
         <div class="tank-shadow"></div>
         <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
           <TankImg :tank-id="tank.id" :size="300" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
@@ -292,7 +292,7 @@ onMounted(() => {
     </div>
 
     <!-- режим боя -->
-    <div class="modepick" style="padding: 6px 14px 0; flex-shrink: 0; display: flex; gap: 6px">
+    <div class="modepick" data-tut="mode" style="padding: 6px 14px 0; flex-shrink: 0; display: flex; gap: 6px">
       <button class="modeopt" :class="{ on: profile.battleMode === 'capture' }" @click="pickMode('capture')">
         <span class="pz-display mlabel">ЗАХВАТ</span>
         <span class="msub">точки · быстрая катка</span>
@@ -320,7 +320,7 @@ onMounted(() => {
         </span>
         ВЗВОД
       </button>
-      <button class="pz-cta pz-cta--hazard playbtn" @click="locked ? emit('go', 'tree') : emit('play')">
+      <button class="pz-cta pz-cta--hazard playbtn" data-tut="play" @click="locked ? emit('go', 'tree') : emit('play')">
         <span v-if="locked" class="play-stack">
           <span class="play-main">ОТКРЫТЬ ТАНК ▸</span>
           <span class="play-sub">в «Развитии»</span>

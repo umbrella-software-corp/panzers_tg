@@ -36,7 +36,7 @@ export class BattleSim {
    * humans: [{ id, team: 0|1, name, stats? }] — stats в deg-форме (лоадаут
    * клиента) или null → DEFAULT_CLASS. Обе команды добираются ботами до teamSize.
    */
-  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false } = {}) {
+  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null } = {}) {
     this.teamSize = teamSize
     this.map = MAP_BY_ID[mapId] || MAPS[0]
     this.mapId = this.map.id
@@ -44,14 +44,20 @@ export class BattleSim {
     // режим боя: 'capture' — захват точек до лимита очков; 'annihilation' —
     // бой до последнего танка (точки выключены, победа по вайпу/живым на таймауте)
     this.mode = mode === 'annihilation' ? 'annihilation' : 'capture'
-    // «Мягкий первый бой» (см. SOFT_START): больше окно развёртывания (грейс),
-    // боты реже попадают и слабее бьют. Готовим тюнинг ДО создания юнитов, т.к.
-    // _makeUnit читает this.botDmgMult. ai-инвариант засвета остаётся прежним.
-    this.softStart = !!softStart
+    // «Мягкий старт» (см. SOFT_START): больше окно развёртывания (грейс), боты реже
+    // попадают и слабее бьют. Сила — softFactor ∈ [0..1] (плавный спад бой1→норма);
+    // принимаем и старый булев softStart (true → полное смягчение 1.0). Множители
+    // линейно интерполируем к нейтрали (×1) по силе. Готовим ДО создания юнитов
+    // (_makeUnit читает this.botDmgMult). ai-инвариант честного засвета не трогаем.
+    const sf = Math.max(0, Math.min(1, softFactor == null ? (softStart ? 1 : 0) : softFactor))
+    this.softFactor = sf
+    this.softStart = sf > 0
+    const lerpMul = (mult) => 1 - sf * (1 - mult) // ×mult при sf=1, ×1 при sf=0
     this.ai = this.softStart
-      ? { ...ENEMY_AI, graceSec: ENEMY_AI.graceSec + SOFT_START.extraGraceSec, hitChance: ENEMY_AI.hitChance * SOFT_START.hitMult }
+      ? { ...ENEMY_AI, graceSec: ENEMY_AI.graceSec + SOFT_START.extraGraceSec * sf, hitChance: ENEMY_AI.hitChance * lerpMul(SOFT_START.hitMult) }
       : ENEMY_AI
-    this.botDmgMult = this.softStart ? BOT_DMG_MULT * SOFT_START.dmgMult : BOT_DMG_MULT
+    this.botDmgMult = BOT_DMG_MULT * lerpMul(SOFT_START.dmgMult)
+    this.aimTolMult = lerpMul(SOFT_START.aimToleranceMult) // ассист прицеливания игроку, тоже плавный
     this.t = 0
     // аннигиляция — короче и злее (дезматч не тянем 4 минуты; таймаут решает по живым)
     this.matchTime = this.mode === 'annihilation' ? 150 : MATCH_TIME
@@ -195,10 +201,10 @@ export class BattleSim {
 
     const lineAngle = u.hull + this._sweepOffset(u)
     const halfEff = this._sectorHalfEff(u) // разброс: стоя уже, на ходу шире
-    // «ассист новичку» (мягкий первый бой): окно сведения у человека шире —
-    // больше первых выстрелов засчитывается (телеметрия: 44% первых мимо). На
-    // ботов не влияет (у них своя модель попадания), на ветеранов — тоже.
-    const tol = u.stats.tolerance * (this.softStart ? SOFT_START.aimToleranceMult : 1)
+    // «ассист новичку» (мягкий старт): окно сведения у человека шире — больше
+    // первых выстрелов засчитывается (телеметрия: 44% первых мимо). Сила плавная
+    // (aimTolMult, бой1→норма). На ботов не влияет, на ветеранов — тоже (×1).
+    const tol = u.stats.tolerance * this.aimTolMult
     let best = null
     for (const e of this.units) {
       if (!e.alive || e.team === u.team) continue

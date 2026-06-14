@@ -10,6 +10,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
+import Onboarding from './components/Onboarding.vue'
 import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode } from './store.js'
 import { randomMap } from './game/maps.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
@@ -111,6 +112,17 @@ async function handleStartParam() {
 
 function go(to) {
   screen.value = to
+}
+
+// тур по ангару: только самому первому входу (0 боёв, ещё не проходил), после
+// того как сплэш ушёл и мы в ангаре. Главную дыру воронки лечат тупые боты, а
+// тур — лёгкий и пропускаемый, чтобы не добавлять трения до боя.
+const showOnboarding = computed(
+  () => !booting.value && screen.value === 'hangar' && (profile.stats?.battles || 0) === 0 && !profile.onboarded,
+)
+function finishOnboarding(launch) {
+  profile.onboarded = true // персистится сам (deep watch в store)
+  if (launch) play()
 }
 
 // кнопка «Назад» Telegram: на корне (ангар) и в бою — спрятана (там свои
@@ -222,6 +234,9 @@ function rematch(reward) {
   <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" @exit="exitBattle" @rematch="rematch" />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" />
+
+  <!-- тур по ангару для самого первого входа (lazy: остальным даже не грузится) -->
+  <Onboarding v-if="showOnboarding" @play="finishOnboarding(true)" @skip="finishOnboarding(false)" />
 
   <!-- стартовый сплэш-лоадер с пометкой БЕТА (пока тянем профиль) -->
   <transition name="boot-fade">

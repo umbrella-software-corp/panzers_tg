@@ -3,7 +3,7 @@
 // подпись Telegram initData (без BOT_TOKEN — dev-гости и мгновенные «оплаты»).
 import http from 'http'
 import { WebSocketServer } from 'ws'
-import { BattleSim, MAP_SIZE, randomMap } from 'panzer-tg-shared'
+import { BattleSim, MAP_SIZE, randomMap, softFactor } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
@@ -321,6 +321,12 @@ const httpServer = http.createServer((req, res) => {
 const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
 // сколько комната ждёт живых игроков, прежде чем добрать ботов
 const WAIT_MS = +(process.env.WAIT_MS || 8000)
+// новичок-соло: почти мгновенный старт без 8с «поиска живых» (онлайн низкий, живой
+// матч всё равно не собирается → ожидание = отвал на первой сессии; см. воронку)
+const NEWBIE_WAIT_MS = +(process.env.NEWBIE_WAIT_MS || 600)
+// порог «новичка» для мгновенного старта: у кого меньше — кидаем в бой сразу (а не
+// маринуем в поиске). Шире окна тупых ботов (fullBattles): это про ожидание, не сложность.
+const INSTANT_BATTLE_BELOW = +(process.env.INSTANT_BATTLE_BELOW || 30)
 // стартовый отсчёт «3-2-1»: мир на сервере застыл, пока клиент считает (Battle.vue
 // крутит 3с). Чуть больше 3с — с поправкой на пинг игрок дочитывает раньше, чем
 // боты тронутся (а не «боты поехали на цифре 3»).
@@ -574,7 +580,27 @@ function setupBattleSocket(ws, room, human, ip) {
       // server_match_* с клиентским tg_<id>. Нет/гость — событий просто не шлём.
       if (typeof msg.uid === 'string' && /^\d{3,20}$/.test(msg.uid)) human.uid = 'tg_' + msg.uid
       human.stats = sanitizeStats(msg.stats)
+      // дедуп по tg-id: один игрок (несколько вкладок/перезаходов webview) не должен
+      // занимать несколько слотов в комнате — иначе у него в бою «афк-клоны». Оставляем
+      // ЭТО (свежее) соединение, прежние дубли с тем же uid в комнате выкидываем.
+      if (human.uid && !room.started) {
+        for (const dup of [...room.humans]) {
+          if (dup !== human && dup.uid === human.uid) {
+            room.humans = room.humans.filter((h) => h !== dup)
+            try { dup.ws.close(4002, 'dup') } catch {}
+            console.log(`[ws] дубль ${dup.id} (${human.uid}) выкинут из ${room.id} — оставлен ${human.id}`)
+          }
+        }
+      }
       broadcastLobby(room)
+      // новичок (< INSTANT_BATTLE_BELOW боёв) соло → не маринуем 8с в «поиске живых»,
+      // кидаем в бой почти сразу. С низким онлайном живой матч всё равно не собирается,
+      // ожидание = отвал. Только если игрок ОДИН в свежей комнате и не во взводе.
+      if (!room.started && room.humans.length === 1 && !human.party && (human.battles | 0) < INSTANT_BATTLE_BELOW) {
+        clearTimeout(room.waitTimer)
+        room.deadline = Date.now() + NEWBIE_WAIT_MS
+        room.waitTimer = setTimeout(() => startRoom(room), NEWBIE_WAIT_MS)
+      }
     } else if (!room.sim) {
       return
     } else if (msg.type === 'input') {
@@ -660,16 +686,19 @@ function startRoom(room) {
   // добирается ботами в sim. Соло против соло = настоящий бой человек-vs-человек.
   assignTeams(room.humans)
   const map = randomMap()
-  // «Мягкий первый бой»: если в комнате есть игрок без единого боя — смягчаем
-  // ботов на всю катку (см. SOFT_START в shared/config.js). Новичок почти всегда
-  // соло-против-ботов, так что смягчение точечное; редкий микс с ветераном
-  // просто получит чуть гуманнее ботов (дуэль человек-vs-человек не затронута).
-  const softStart = room.humans.some((h) => (h.battles | 0) === 0)
+  // «Мягкий старт»: берём самого зелёного человека в комнате и смягчаем ботов
+  // ПЛАВНО по числу его боёв (бой №1 максимально тупые → к бою 6 норма; см.
+  // softFactor/SOFT_START в shared/config.js). Новичок почти всегда соло-против-
+  // ботов, так что смягчение точечное; ветеран в миксе просто получит softFactor
+  // по своему (меньшему) числу боёв — дуэль человек-vs-человек не затронута.
+  const minBattles = Math.min(...room.humans.map((h) => h.battles | 0))
+  const softF = softFactor(minBattles)
+  const softStart = softF > 0
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
     mapId: map.id,
     mode: room.mode,
-    softStart,
+    softFactor: softF,
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
   })
 
@@ -710,11 +739,13 @@ function startRoom(room) {
       bots_estimated: TEAM_SIZE * 2 - room.humans.length,
       party_present: !!h.party,
       team: h.team,
-      soft_start: softStart, // «мягкий первый бой» включён для этой комнаты
+      soft_start: softStart, // «мягкий старт» включён для этой комнаты
+      soft_factor: +softF.toFixed(2), // сила смягчения 1.0..0 (плавный спад бой1→6)
+      newbie_battles: minBattles, // боёв у самого зелёного игрока комнаты
     })
   }
   console.log(
-    `[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», люди ${room.humans.filter((h) => h.team === 0).length}vs${room.humans.filter((h) => h.team === 1).length}, остальное — боты${softStart ? ' · МЯГКИЙ ПЕРВЫЙ БОЙ' : ''}`,
+    `[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», люди ${room.humans.filter((h) => h.team === 0).length}vs${room.humans.filter((h) => h.team === 1).length}, остальное — боты${softStart ? ` · МЯГКИЙ СТАРТ ×${softF.toFixed(2)}` : ''}`,
   )
 
   room.timer = setInterval(() => {
