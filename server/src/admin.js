@@ -54,6 +54,7 @@ export const adminPage = () => `<!doctype html>
     <div id="linkOut" style="margin-top:10px"></div>
   </div>
   <h2>Источники трафика</h2><div id="sources"></div>
+  <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
   <h2>Турниры</h2><div id="tournaments"></div>
   <h2>Комнаты боёв</h2><div id="rooms"></div>
   <h2>Покупки за звёзды</h2><div id="payments"></div>
@@ -122,6 +123,14 @@ async function refresh() {
     ['Источник', 'Игроков', 'Сыграли бой', 'Новых 7д'],
     t.bySource.map((x) => [x.src === '—' ? '— без метки (прямой заход)' : esc(x.src), x.users, x.played, x.new7d]),
   )
+
+  const refs = s.referrers || []
+  $('referrers').innerHTML = refs.length
+    ? table(
+        ['Реферер (tg-id)', 'Привёл', 'Сыграли бой', 'Вернулись (2-й день+)', 'Активны 24ч', 'Новых 7д'],
+        refs.map((x) => [esc(String(x.ref).replace(/^tg_/, '')), x.came, x.played, x.returned, x.active, x.new7d]),
+      )
+    : '<div class="muted">пока никто не пришёл по реф-ссылке ref_&lt;id&gt;</div>'
 
   $('tournaments').innerHTML = '<button style="width:auto;padding:9px 16px;background:'
     + (s.tournaments ? 'var(--green)' : 'var(--line)') + ';color:' + (s.tournaments ? '#0d100a' : 'var(--ink)')

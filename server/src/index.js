@@ -77,6 +77,7 @@ async function handleAdmin(req, res) {
       })),
       profilesCount: profs.length,
       traffic: trafficMetrics(profs, now), // метрики трафика + разбивка по источникам
+      referrers: referrerMetrics(profs, now), // воронка по рефереру (кто привёл по ref_<id>)
       linkBase: process.env.APP_LINK_BASE || `https://t.me/${process.env.BOT_USERNAME || 'panzers_bot'}`,
       payments,
       revenueStars: payments.reduce((s, p) => s + (p.stars || 0), 0),
@@ -175,6 +176,26 @@ function trafficMetrics(profiles, now) {
     dau,
     bySource: [...bySrc.values()].sort((a, b) => b.users - a.users),
   }
+}
+
+// воронка по рефереру: для каждого, кто привёл людей (referredBy = tg_<id>), —
+// сколько пришло / сыграло бой / вернулось (заходили на 2-й день+) / активны 24ч.
+// Закрывает «кто прошёл по моей реф-ссылке и что с ними» (когда реклама залита на
+// ref_<id>, а не на src_-метку — такой трафик в «Источники» не попадает).
+function referrerMetrics(profiles, now) {
+  const DAY = 86400000
+  const by = new Map()
+  for (const p of profiles) {
+    if (!p.referredBy) continue
+    const e = by.get(p.referredBy) || { ref: p.referredBy, came: 0, played: 0, returned: 0, active: 0, new7d: 0 }
+    e.came++
+    if (p.battles > 0) e.played++
+    if (p.firstSeen && p.lastSeen && p.lastSeen - p.firstSeen > 20 * 3600000) e.returned++ // вернулся на 2-й день+
+    if (p.lastSeen && now - p.lastSeen < DAY) e.active++ // ещё заходит (24ч)
+    if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
+    by.set(p.referredBy, e)
+  }
+  return [...by.values()].sort((a, b) => b.came - a.came)
 }
 
 async function handleApi(req, res) {

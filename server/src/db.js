@@ -283,6 +283,7 @@ async function listProfilesUncached() {
         premiumUntil: p.premiumUntil || 0, // для отметки ★ премиум в таблице лидеров
         updatedAt: p._updatedAt || 0,
         src: p.src || null, // метка источника трафика (атрибуция)
+        referredBy: p.referredBy || null, // кто привёл (tg_<id> реферера) — для воронки по реф-ссылке
         firstSeen: p.firstSeen || p._updatedAt || 0,
         lastSeen: p.lastSeen || p._updatedAt || 0,
       })
