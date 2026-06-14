@@ -125,10 +125,19 @@ async function refresh() {
   )
 
   const refs = s.referrers || []
+  const pct = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '—')
   $('referrers').innerHTML = refs.length
     ? table(
-        ['Реферер (tg-id)', 'Привёл', 'Сыграли бой', 'Вернулись (2-й день+)', 'Активны 24ч', 'Новых 7д'],
-        refs.map((x) => [esc(String(x.ref).replace(/^tg_/, '')), x.came, x.played, x.returned, x.active, x.new7d]),
+        ['Реферер (tg-id)', 'Привёл', 'Дошли до боя', 'Вернулись (2-й день+)', 'Активны 24ч', 'Зашёл-и-исчез', 'Новых 7д'],
+        refs.map((x) => [
+          esc(String(x.ref).replace(/^tg_/, '')),
+          x.came,
+          x.played + ' · ' + pct(x.played, x.came),
+          x.returned + ' · ' + pct(x.returned, x.came),
+          x.active,
+          x.ghosts + ' · ' + pct(x.ghosts, x.came),
+          x.new7d,
+        ]),
       )
     : '<div class="muted">пока никто не пришёл по реф-ссылке ref_&lt;id&gt;</div>'
 
