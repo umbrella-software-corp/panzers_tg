@@ -102,7 +102,8 @@ async function refresh() {
   const s = await api('/api/admin/stats')
   const prof = await api('/api/admin/profiles')
   $('cards').innerHTML = [
-    [s.online, 'онлайн (WS)'],
+    [s.online, 'онлайн (уник. tg-id)'],
+    [s.onlineSockets ?? s.online, 'сокетов (с клонами)'],
     [s.rooms.length, 'комнат'],
     [s.profilesCount, 'профилей'],
     [s.payments.length, 'покупок'],

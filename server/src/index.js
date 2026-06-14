@@ -66,7 +66,19 @@ async function handleAdmin(req, res) {
     const profs = await listProfiles()
     return json(res, 200, {
       now,
-      online: wss.clients.size,
+      // честный онлайн: уникальные tg-id, а не сырые сокеты (один игрок с кучей
+      // вкладок/перезаходов = 1, а не +20). Соединения без tg-id (гость/лобби) — по одному.
+      online: (() => {
+        const seen = new Set()
+        let n = 0
+        for (const c of wss.clients) {
+          if (c.readyState !== 1) continue
+          if (c.uid) { if (seen.has(c.uid)) continue; seen.add(c.uid) }
+          n++
+        }
+        return n
+      })(),
+      onlineSockets: wss.clients.size, // сырые сокеты (для сверки/диагностики клонов)
       tournaments: !!(await getSetting('tournamentsOn', false)),
       rooms: [...rooms.values()].map((r) => ({
         id: r.id,
@@ -579,6 +591,7 @@ function setupBattleSocket(ws, room, human, ip) {
       // best-effort tg-id ТОЛЬКО для аналитики (не авторизация): сшивает серверные
       // server_match_* с клиентским tg_<id>. Нет/гость — событий просто не шлём.
       if (typeof msg.uid === 'string' && /^\d{3,20}$/.test(msg.uid)) human.uid = 'tg_' + msg.uid
+      ws.uid = human.uid || null // для честного счётчика онлайна (уникальные tg-id, не сокеты)
       human.stats = sanitizeStats(msg.stats)
       // дедуп по tg-id: один игрок (несколько вкладок/перезаходов webview) не должен
       // занимать несколько слотов в комнате — иначе у него в бою «афк-клоны». Оставляем
