@@ -115,7 +115,8 @@ const selCamo = computed(() => tankCamo(tank.value.id))
 // предпросмотр запертого камо: показываем на БОЛЬШОМ танке, не покупая.
 // Большой танк рисует previewCamo (если есть) поверх надетого.
 const previewCamo = ref(null)
-const dispCamo = computed(() => previewCamo.value || selCamo.value)
+// прем-технике камо недоступен → всегда заводской облик (даже если был сохранён ранее)
+const dispCamo = computed(() => (tank.value.premium ? '' : previewCamo.value || selCamo.value))
 const previewDef = computed(() => (previewCamo.value ? CAMO_BY_ID[previewCamo.value] : null))
 function pickCamo(id) {
   const tid = tank.value.id
@@ -242,34 +243,37 @@ onMounted(() => {
     </div>
 
     <!-- камуфляж: 3 схемы + заводская, на КАЖДЫЙ танк. Превью — сам танк в этом
-         камо; разблокировка за жетоны (заводская бесплатна) -->
-    <div class="camo-head">
-      <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">{{ t('hangar.camo') }}</span>
-    </div>
-    <div class="camo-dots pz-noscroll">
-      <button
-        v-for="c in CAMOS"
-        :key="c.id || 'std'"
-        class="camo-cell"
-        :class="{ on: dispCamo === c.id, locked: !camoUnlocked(tank.id, c.id) }"
-        :disabled="locked"
-        :title="c.name"
-        @click="pickCamo(c.id)"
-      >
-        <TankImg :tank-id="tank.id" :camo="c.id" :size="40" :rotate="180" />
-        <span v-if="!camoUnlocked(tank.id, c.id)" class="camo-price pz-pixel">
-          <PzIcon name="token" :size="8" /> {{ c.cost }}
-        </span>
-        <span class="camo-lbl">{{ c.short }}</span>
-      </button>
-    </div>
-    <!-- примерка запертого камо: купить за жетоны (танк уже показан в нём) -->
-    <div v-if="previewCamo && previewDef" class="camo-buy">
-      <span class="camo-buy-name pz-display">{{ previewDef.name }}</span>
-      <button class="pz-cta camo-buy-btn" @click="buyPreview">
-        {{ t('hangar.buy') }} <PzIcon name="token" :size="11" /> {{ previewDef.cost }}
-      </button>
-    </div>
+         камо; разблокировка за жетоны (заводская бесплатна). Прем-технике камо
+         не положено — у неё свой заводской облик, блок целиком скрыт. -->
+    <template v-if="!tank.premium">
+      <div class="camo-head">
+        <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">{{ t('hangar.camo') }}</span>
+      </div>
+      <div class="camo-dots pz-noscroll">
+        <button
+          v-for="c in CAMOS"
+          :key="c.id || 'std'"
+          class="camo-cell"
+          :class="{ on: dispCamo === c.id, locked: !camoUnlocked(tank.id, c.id) }"
+          :disabled="locked"
+          :title="c.name"
+          @click="pickCamo(c.id)"
+        >
+          <TankImg :tank-id="tank.id" :camo="c.id" :size="40" :rotate="180" />
+          <span v-if="!camoUnlocked(tank.id, c.id)" class="camo-price pz-pixel">
+            <PzIcon name="token" :size="8" /> {{ c.cost }}
+          </span>
+          <span class="camo-lbl">{{ c.short }}</span>
+        </button>
+      </div>
+      <!-- примерка запертого камо: купить за жетоны (танк уже показан в нём) -->
+      <div v-if="previewCamo && previewDef" class="camo-buy">
+        <span class="camo-buy-name pz-display">{{ previewDef.name }}</span>
+        <button class="pz-cta camo-buy-btn" @click="buyPreview">
+          {{ t('hangar.buy') }} <PzIcon name="token" :size="11" /> {{ previewDef.cost }}
+        </button>
+      </div>
+    </template>
 
     <!-- карусель -->
     <div class="pz-noscroll" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 14px; flex-shrink: 0">
