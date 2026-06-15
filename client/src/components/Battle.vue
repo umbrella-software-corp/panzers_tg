@@ -703,12 +703,6 @@ onBeforeUnmount(() => {
           <span v-for="c in state.caps" :key="c.id" class="cap" :class="[c.own, { capping: c.cap && c.cap !== c.own }]">{{ c.id }}<i v-if="c.cap && c.cap !== c.own && c.p > 0" class="capbar"><b :style="{ width: c.p * 100 + '%' }"></b></i></span>
         </div>
 
-        <!-- фраги / засветы иконками (урон уехал в пост-гейм таблицу) -->
-        <div v-show="phase === 'fighting'" class="combaticons">
-          <span class="cic" title="Уничтожено">💀 {{ state.kills }}</span>
-          <span class="cic" title="Засвечено">👁 {{ state.spotted }}</span>
-        </div>
-
         <!-- индикаторы модулей: краснеют с отсчётом починки при крите -->
         <div v-show="phase === 'fighting'" class="modrow">
           <div v-for="m in MOD_HUD" :key="m.id" class="modchip" :class="{ down: state.crippled[m.id] > 0 }">
@@ -718,7 +712,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <canvas class="minimap" ref="minimap" width="240" height="240"></canvas>
+      <!-- правая колонка: миникарта + статы боя под ней -->
+      <div class="hud-right">
+        <canvas class="minimap" ref="minimap" width="240" height="240"></canvas>
+        <div v-show="phase === 'fighting'" class="mapstats">
+          <span class="ms" title="Урон"><b>💥</b> {{ state.damageDealt }}</span>
+          <span class="ms" title="Уничтожено"><b>💀</b> {{ state.kills }}</span>
+          <span class="ms" title="Засвечено"><b>👁</b> {{ state.spotted }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- засвет: СКРЫТ / ЗАСВЕЧЕН / РАСКРЫТ — отдельным чипом по центру вверху -->
@@ -1162,6 +1164,38 @@ onBeforeUnmount(() => {
   left: 50%;
   transform: translateX(-50%);
   z-index: 4;
+}
+.hud-right {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+.mapstats {
+  width: 96px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 3px 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 5px 7px;
+}
+.mapstats .ms {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.mapstats .ms b {
+  font-size: 11px;
+  font-weight: 400;
 }
 .scoreplate {
   display: flex;
