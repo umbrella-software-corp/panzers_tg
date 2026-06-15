@@ -176,9 +176,14 @@ function trafficMetrics(profiles, now) {
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
     if (p.lastSeen && now - p.lastSeen < DAY) dau++
     const key = p.src || '—'
-    const e = bySrc.get(key) || { src: key, users: 0, played: 0, new7d: 0 }
+    const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
     e.users++
+    // та же воронка, что у рефереров: бой / зашёл-и-исчез(<1мин) / завис-без-боя / вернулись(2-й день+)
+    const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
     if (p.battles > 0) e.played++
+    else if (dwell < 60000) e.ghosts++
+    else e.lingered++
+    if (dwell > 20 * 3600000) e.returned++
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
     bySrc.set(key, e)
   }

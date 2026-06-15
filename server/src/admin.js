@@ -120,13 +120,21 @@ async function refresh() {
     [t.dau, 'актив сегодня (DAU)'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + (v||0).toLocaleString('ru-RU') + '</div><div class="l">' + l + '</div></div>').join('')
 
+  const pct = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '—')
   $('sources').innerHTML = table(
-    ['Источник', 'Игроков', 'Сыграли бой', 'Новых 7д'],
-    t.bySource.map((x) => [x.src === '—' ? '— без метки (прямой заход)' : esc(x.src), x.users, x.played, x.new7d]),
+    ['Источник', 'Игроков', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Новых 7д'],
+    t.bySource.map((x) => [
+      x.src === '—' ? '— без метки (прямой заход)' : esc(x.src),
+      x.users,
+      x.played + ' · ' + pct(x.played, x.users),
+      (x.ghosts || 0) + ' · ' + pct(x.ghosts || 0, x.users),
+      (x.lingered || 0) + ' · ' + pct(x.lingered || 0, x.users),
+      (x.returned || 0) + ' · ' + pct(x.returned || 0, x.users),
+      x.new7d,
+    ]),
   )
 
   const refs = s.referrers || []
-  const pct = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '—')
   $('referrers').innerHTML = refs.length
     ? table(
         ['Реферер (tg-id)', 'Привёл', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Новых 7д'],
