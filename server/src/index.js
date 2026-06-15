@@ -594,15 +594,20 @@ function setupBattleSocket(ws, room, human, ip) {
       if (typeof msg.uid === 'string' && /^\d{3,20}$/.test(msg.uid)) human.uid = 'tg_' + msg.uid
       ws.uid = human.uid || null // для честного счётчика онлайна (уникальные tg-id, не сокеты)
       human.stats = sanitizeStats(msg.stats)
-      // дедуп по tg-id: один игрок (несколько вкладок/перезаходов webview) не должен
-      // занимать несколько слотов в комнате — иначе у него в бою «афк-клоны». Оставляем
-      // ЭТО (свежее) соединение, прежние дубли с тем же uid в комнате выкидываем.
-      if (human.uid && !room.started) {
-        for (const dup of [...room.humans]) {
-          if (dup !== human && dup.uid === human.uid) {
-            room.humans = room.humans.filter((h) => h !== dup)
-            try { dup.ws.close(4002, 'dup') } catch {}
-            console.log(`[ws] дубль ${dup.id} (${human.uid}) выкинут из ${room.id} — оставлен ${human.id}`)
+      // дедуп по tg-id: один игрок не должен висеть сразу в НЕСКОЛЬКИХ комнатах
+      // (вкладки / разные режимы / перезаходы webview) — иначе у него «клоны».
+      // Выкидываем его прежние коннекты из ВСЕХ ещё не стартовавших комнат (живой
+      // бой НЕ трогаем — оттуда не выкидываем). Оставляем это (свежее) соединение.
+      // Пустую чужую комнату добьёт ws.close-обработчик дубля (endRoom).
+      if (human.uid) {
+        for (const r of rooms.values()) {
+          if (r.started) continue
+          for (const dup of [...r.humans]) {
+            if (dup !== human && dup.uid === human.uid) {
+              r.humans = r.humans.filter((h) => h !== dup)
+              try { dup.ws.close(4002, 'dup') } catch {}
+              console.log(`[ws] дубль ${dup.id} (${human.uid}) выкинут из ${r.id} (оставлен ${human.id} в ${room.id})`)
+            }
           }
         }
       }
