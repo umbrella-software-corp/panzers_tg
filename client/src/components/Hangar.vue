@@ -2,7 +2,7 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode } from '../store.js'
+import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
 import { haptic, openSupport } from '../tg.js'
@@ -186,7 +186,11 @@ onMounted(() => {
 
     <!-- ===== chrome ===== -->
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
-      <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
+      <div style="display: flex; align-items: center; gap: 8px; min-width: 0">
+        <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
+        <!-- премиум активен: корона на главной (тап → магазин) -->
+        <button v-if="isPremium()" class="prem-badge pz-display" title="Премиум активен" @click="emit('go', 'shop')">♛ ПРЕМ<i>{{ premiumDaysLeft() }}д</i></button>
+      </div>
       <div style="display: flex; align-items: center; gap: 8px">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
         <button class="support-btn" title="Поддержка" aria-label="Поддержка" @click="openSupportTracked">
@@ -340,6 +344,29 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.prem-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi, #ffce5a), var(--amber));
+  border: none;
+  border-radius: 7px;
+  box-shadow: 0 0 10px rgba(242, 165, 12, 0.5);
+  cursor: pointer;
+}
+.prem-badge i {
+  font-style: normal;
+  font-size: 9px;
+  opacity: 0.7;
+}
+.prem-badge:active {
+  transform: scale(0.95);
+}
 .support-btn {
   display: flex;
   align-items: center;
