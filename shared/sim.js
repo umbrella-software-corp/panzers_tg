@@ -26,6 +26,7 @@ import {
   BOT_SPOT_VISION,
   FIRE_REVEAL_SEC,
   TANK_RADIUS,
+  REVERSE_MULT,
   BOT_NICKS,
   BOT_SKINS,
   BOT_SKIN_CHANCE,
@@ -345,7 +346,7 @@ export class BattleSim {
     if (u.crippled.engine > 0) throttle = 0
 
     u.hull += steer * u.stats.turnRate * dt
-    const target = u.stats.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
+    const target = u.stats.maxSpeed * (throttle >= 0 ? throttle : throttle * REVERSE_MULT)
     const da = u.stats.accel * dt
     if (u.speed < target) u.speed = Math.min(target, u.speed + da)
     else u.speed = Math.max(target, u.speed - da * 1.4)
@@ -391,9 +392,9 @@ export class BattleSim {
       else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
       wantMove = move !== 0
 
-      // движение вдоль корпуса; РЕВЕРС вдвое медленнее (как у игрока: throttle<0 → ×0.5).
-      // Раньше бот пятился на ПОЛНОМ ходу — быстрее игрока, палевно и неестественно.
-      const mag = move < 0 ? Math.abs(move) * 0.5 : move
+      // движение вдоль корпуса; РЕВЕРС как у игрока (×REVERSE_MULT). Раньше бот
+      // пятился на ПОЛНОМ ходу — быстрее игрока, палевно и неестественно.
+      const mag = move < 0 ? Math.abs(move) * REVERSE_MULT : move
       b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
       b.y += Math.sin(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
 
