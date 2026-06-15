@@ -112,8 +112,14 @@ export async function runDailyDigest(now = Date.now()) {
 }
 
 // ---------- «друг в бою» (соц-хук из startRoom) ----------
+// «Друг в бою» ВЫКЛЮЧЕН по умолчанию: «друзья» сейчас = реферальный граф, а он
+// засран Traffy-трафиком (один реф-id «привёл» ~1900 человек) → пуши «твой друг
+// X в бою» летят про незнакомцев. Включить (FRIEND_PING=1) только когда появится
+// НАСТОЯЩИЙ граф друзей (взаимные/squad-мейты), а не реклама-рефералы.
+const FRIEND_PING_ENABLED = process.env.FRIEND_PING === '1'
 const friendThrottle = new Map() // uid игрока → ts последнего соц-броадкаста
 export async function notifyFriendsInBattle(player) {
+  if (!FRIEND_PING_ENABLED) return // см. коммент выше — реф-граф ≠ граф друзей (Traffy)
   if (!hasBot() || !player || !player.uid || !tgIdOf(player.uid)) return
   const now = Date.now()
   if ((friendThrottle.get(player.uid) || 0) > now - FRIEND_SENDER_COOLDOWN) return // отправитель уже недавно дёргал друзей
