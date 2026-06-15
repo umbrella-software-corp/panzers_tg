@@ -16,10 +16,11 @@ import {
   prevTank,
   syncProfile,
 } from '../store.js'
-import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS } from '../game/meta.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 import TankImg from './ui/TankImg.vue'
+import StatRow from './ui/StatRow.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
 import BottomNav from './ui/BottomNav.vue'
@@ -29,6 +30,9 @@ const emit = defineEmits(['go'])
 
 const tanks = computed(() => tanksOfNation(profile.nation))
 const premiums = computed(() => premiumOfNation(profile.nation)) // прем-техника нации (за ⭐)
+const premSel = ref(null) // развёрнутый ТТХ прем-танка (тап по строке)
+// ТТХ прем-танка (базовые статы 0..10 для оценки ДО покупки)
+const premStats = (t) => Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v }))
 
 // выбрать уже купленный прем-танк → в ангар
 function pickPrem(t) {
@@ -271,24 +275,31 @@ watch(selected, (t) => {
       <!-- ===== премиум-техника (покупка за ⭐, не исследуется) ===== -->
       <div v-if="premiums.length" class="prem-sec">
         <div class="prem-head pz-pixel">★ ПРЕМИУМ-ТЕХНИКА</div>
-        <button
+        <div
           v-for="t in premiums"
           :key="t.id"
-          class="pz-plate prem-node"
+          class="pz-plate prem-card"
           :style="{ borderColor: isOwned(t.id) ? 'rgba(242,165,12,.5)' : 'var(--line-strong)' }"
-          @click="isOwned(t.id) ? pickPrem(t) : buyPrem(t)"
         >
-          <TankImg :tank-id="t.id" :size="40" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)', flexShrink: 0 }" />
-          <div style="flex: 1; min-width: 0; text-align: left">
-            <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap">
-              <span class="pz-display" style="font-size: 15px">{{ t.name }}</span>
-              <span v-if="t.legend" class="legend-tag pz-pixel">ЛЕГЕНДА</span>
+          <div class="prem-node" @click="premSel = premSel === t.id ? null : t.id">
+            <TankImg :tank-id="t.id" :size="40" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)', flexShrink: 0 }" />
+            <div style="flex: 1; min-width: 0; text-align: left">
+              <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap">
+                <span class="pz-display" style="font-size: 15px">{{ t.name }}</span>
+                <span v-if="t.legend" class="legend-tag pz-pixel">ЛЕГЕНДА</span>
+                <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint)">ТТХ {{ premSel === t.id ? '▾' : '▸' }}</span>
+              </div>
+              <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; font-weight: 500">{{ t.cls }} · ур. {{ t.tier }} · +5% опыт/кредиты, кристаллы</div>
             </div>
-            <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; font-weight: 500">{{ t.cls }} · ур. {{ t.tier }} · +5% опыт/кредиты, кристаллы</div>
+            <button v-if="isOwned(t.id)" class="prem-act owned" @click.stop="pickPrem(t)">✓ в гараже</button>
+            <button v-else class="prem-act prem-buy" @click.stop="buyPrem(t)">★ {{ t.stars }}</button>
           </div>
-          <span v-if="isOwned(t.id)" class="pz-chip" style="color: #7cc05a; flex-shrink: 0">✓ в гараже</span>
-          <span v-else class="pz-chip prem-buy">★ {{ t.stars }}</span>
-        </button>
+          <!-- ТТХ прем-танка (тап по строке): оценить ДО покупки -->
+          <div v-if="premSel === t.id" class="prem-ttx">
+            <StatRow v-for="s in premStats(t)" :key="s.key" :label="s.label" :value="s.value" />
+            <div class="prem-desc">{{ t.desc }}</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -532,6 +543,11 @@ watch(selected, (t) => {
   opacity: 0.85;
   padding-left: 2px;
 }
+.prem-card {
+  padding: 0;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(242, 165, 12, 0.06), rgba(0, 0, 0, 0.3));
+}
 .prem-node {
   display: flex;
   align-items: center;
@@ -541,7 +557,6 @@ watch(selected, (t) => {
   text-align: left;
   color: var(--ink);
   font-family: var(--font-body);
-  background: linear-gradient(90deg, rgba(242, 165, 12, 0.06), rgba(0, 0, 0, 0.3));
 }
 .legend-tag {
   font-size: 7px;
@@ -551,12 +566,36 @@ watch(selected, (t) => {
   border-radius: 5px;
   padding: 2px 5px 1px;
 }
-.prem-buy {
+.prem-act {
   flex-shrink: 0;
+  border: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 11px;
+  border-radius: 7px;
+}
+.prem-buy {
   color: #1d1604;
   background: linear-gradient(180deg, var(--amber-hi, #ffce5a), var(--amber));
   font-weight: 800;
-  padding: 5px 10px;
-  border-radius: 7px;
+}
+.prem-act.owned {
+  color: #7cc05a;
+  background: rgba(124, 192, 90, 0.14);
+}
+.prem-ttx {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 14px 12px;
+  border-top: 1px solid var(--line);
+  animation: pz-slide-up 0.2s ease;
+}
+.prem-desc {
+  font-size: 11px;
+  color: var(--ink-dim);
+  line-height: 1.4;
+  margin-top: 2px;
 }
 </style>
