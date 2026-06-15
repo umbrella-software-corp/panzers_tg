@@ -3,7 +3,6 @@
 // HP-полоса с именем машины, миникарта, килл-фид, индикаторы критов, пауза,
 // плавающий джойстик и hazard-кнопка ОГОНЬ с кольцом перезарядки.
 import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue'
-import { Game } from '../game/Game.js'
 import { NetGame } from '../game/NetGame.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
@@ -29,7 +28,8 @@ const isNet = !!props.net
 // обучающая подсказка прицеливания: только в самом первом бою и до первого выстрела
 const firstBattle = (profile.stats?.battles || 0) === 0
 const firedOnce = ref(false)
-const game = isNet ? new NetGame(props.net) : new Game({ mapId: props.mapId, side: props.side, mode: props.mode })
+// онлайн-онли: бой всегда сетевой (Battle рендерится только после deploy(net)).
+const game = new NetGame(props.net)
 
 // цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
 const mySide = isNet ? props.net.side : props.side
