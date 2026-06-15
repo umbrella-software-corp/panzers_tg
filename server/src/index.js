@@ -349,13 +349,17 @@ const httpServer = http.createServer((req, res) => {
   res.end('Panzer TG server')
 })
 const TEAM_SIZE = +(process.env.TEAM_SIZE || 7)
-// сколько комната ждёт живых игроков, прежде чем добрать ботов
+// сколько комната ждёт живых игроков, прежде чем добрать ботов (одинокий ветеран)
 const WAIT_MS = +(process.env.WAIT_MS || 8000)
-// новичок-соло: почти мгновенный старт без 8с «поиска живых» (онлайн низкий, живой
-// матч всё равно не собирается → ожидание = отвал на первой сессии; см. воронку)
-const NEWBIE_WAIT_MS = +(process.env.NEWBIE_WAIT_MS || 600)
-// порог «новичка» для мгновенного старта: у кого меньше — кидаем в бой сразу (а не
-// маринуем в поиске). Первые 7 боёв — сразу боты; дальше игрок ждёт живых (WAIT_MS).
+// новичок-СОЛО: короткое окно ПУЛИНГА — успеть свести с другим живым (под наплыв
+// рекламы их много), иначе боты. Было 600мс — слишком быстро, второй живой не
+// успевал зайти и каждый падал в свой бой с ботами. Теперь 2с: концы встречаются.
+const NEWBIE_WAIT_MS = +(process.env.NEWBIE_WAIT_MS || 2000)
+// в комнате уже ≥2 живых → короткое окно ДОБОРА (наберём ещё живых до старта),
+// потом стартуем живой PvP. Под наплыв комната быстро дорастает до 14 = полный бой.
+const FILL_MS = +(process.env.FILL_MS || 2500)
+// порог «новичка»: у кого меньше боёв — соло-старт быстрый (см. NEWBIE_WAIT_MS);
+// дальше одинокий игрок ждёт живых дольше (WAIT_MS). ≥2 живых — всегда быстрый добор.
 const INSTANT_BATTLE_BELOW = +(process.env.INSTANT_BATTLE_BELOW || 7)
 // стартовый отсчёт «3-2-1»: мир на сервере застыл, пока клиент считает (Battle.vue
 // крутит 3с). Чуть больше 3с — с поправкой на пинг игрок дочитывает раньше, чем
@@ -629,14 +633,10 @@ function setupBattleSocket(ws, room, human, ip) {
         }
       }
       broadcastLobby(room)
-      // новичок (< INSTANT_BATTLE_BELOW боёв) соло → не маринуем 8с в «поиске живых»,
-      // кидаем в бой почти сразу. С низким онлайном живой матч всё равно не собирается,
-      // ожидание = отвал. Только если игрок ОДИН в свежей комнате и не во взводе.
-      if (!room.started && room.humans.length === 1 && !human.party && (human.battles | 0) < INSTANT_BATTLE_BELOW) {
-        clearTimeout(room.waitTimer)
-        room.deadline = Date.now() + NEWBIE_WAIT_MS
-        room.waitTimer = setTimeout(() => startRoom(room), NEWBIE_WAIT_MS)
-      }
+      // теперь известны battles/состав — пересчитываем старт: соло-новичок стартует
+      // быстро (пулинг), но если рядом уже ≥2 живых — короткий добор живого PvP, а не
+      // мгновенные боты. Ближайший дедлайн (поздний вход не двигает старт назад).
+      scheduleStart(room)
     } else if (!room.sim) {
       return
     } else if (msg.type === 'input') {
@@ -731,6 +731,33 @@ async function refreshBotNames() {
 }
 refreshBotNames()
 setInterval(refreshBotNames, 180000).unref?.()
+
+// Матчмейкинг: когда стартовать комнату и с кем. ≥14 живых — сразу (полный PvP);
+// ≥2 живых — короткое окно ДОБОРА (FILL_MS) — сводим живых вместе; один новичок —
+// окно ПУЛИНГА (NEWBIE_WAIT_MS); один ветеран — ждёт живых дольше (WAIT_MS). Берём
+// БЛИЖАЙШИЙ дедлайн (поздний вход не двигает старт назад — антигриф + быстрый матч
+// под наплыв). Вызывать на каждом входе/«join», когда известно battles/состав.
+function scheduleStart(room) {
+  if (room.started) return
+  const n = room.humans.length
+  if (n === 0) return
+  if (n >= TEAM_SIZE * 2) {
+    startRoom(room)
+    return
+  }
+  let wait
+  if (n >= 2) wait = FILL_MS // уже есть живой против живого — быстро добираем и в бой
+  else {
+    const solo = room.humans[0]
+    const newbie = !solo.party && (solo.battles | 0) < INSTANT_BATTLE_BELOW
+    wait = newbie ? NEWBIE_WAIT_MS : WAIT_MS
+  }
+  const deadline = Date.now() + wait
+  if (room.waitTimer && room.deadline && room.deadline <= deadline) return // уже назначен более ранний старт
+  clearTimeout(room.waitTimer)
+  room.deadline = deadline
+  room.waitTimer = setTimeout(() => startRoom(room), wait)
+}
 
 function startRoom(room) {
   if (room.started) return
@@ -1022,12 +1049,15 @@ wss.on('connection', (ws, req) => {
   send(ws, { type: 'init', id, map: MAP_SIZE, tickHz: TICK_HZ, teamSize: TEAM_SIZE, waitMs: WAIT_MS })
   console.log(`[ws] ${id} → ${room.id} (${room.humans.length} чел.)`)
 
+  // первый в комнате — потолок ожидания (WAIT_MS); точный режим (новичок/≥2 живых)
+  // уточнит join-сообщение через scheduleStart. ≥2-й живой уже здесь → окно добора.
   if (room.humans.length === 1) {
     room.deadline = Date.now() + WAIT_MS
     room.waitTimer = setTimeout(() => startRoom(room), WAIT_MS)
+  } else {
+    scheduleStart(room) // появился ≥2-й живой → быстрый добор (или мгновенно при полном лобби)
   }
   broadcastLobby(room)
-  if (room.humans.length >= TEAM_SIZE * 2) startRoom(room) // обе команды живых заполнены — старт
 
   // ввод/огонь/пинг + корректное закрытие (общий путь со входом-реконнектом)
   setupBattleSocket(ws, room, human, ip)
