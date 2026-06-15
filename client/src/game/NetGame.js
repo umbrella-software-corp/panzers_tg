@@ -268,6 +268,7 @@ export class NetGame {
         dur: Math.max(0.08, Math.hypot(ex - ev.x1, ey - ev.y1) / 1400),
         color: col,
         boom: ev.killed ? 'big' : ev.hit ? 'hit' : 'dust',
+        ricochet: ev.outcome === 'ricochet', // срикошетит: искра + полетит дальше под углом
       })
       if (mine) {
         // outcome брони: 'ricochet'/'nopen' → свой фидбек, иначе hit/miss
@@ -837,15 +838,26 @@ export class NetGame {
       }
     }
     this._panSpectator(dt)
+    const ricoTails = []
     for (const s of this.shells) {
       s.t += dt
       if (s.t >= s.dur) {
-        this.booms.push({ x: s.x2, y: s.y2, age: 0, big: s.boom === 'big', dust: s.boom === 'dust' })
-        if (s.boom === 'hit') this._spawnFx(s.x2, s.y2, 0.7)
-        if (s.boom === 'big') this._spawnFx(s.x2, s.y2, 1.7)
+        if (s.ricochet) {
+          // РИКОШЕТ: искра в точке отскока + снаряд УЛЕТАЕТ ДАЛЬШЕ под углом
+          this._spawnFx(s.x2, s.y2, 0.5)
+          const a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1) // входящее направление
+          const defl = a + (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.5) // увод ±25–50°
+          const len = 220 + Math.random() * 200
+          ricoTails.push({ x1: s.x2, y1: s.y2, x2: s.x2 + Math.cos(defl) * len, y2: s.y2 + Math.sin(defl) * len, t: 0, dur: Math.max(0.06, len / 1700), color: s.color, boom: 'dust' })
+        } else {
+          this.booms.push({ x: s.x2, y: s.y2, age: 0, big: s.boom === 'big', dust: s.boom === 'dust' })
+          if (s.boom === 'hit') this._spawnFx(s.x2, s.y2, 0.7)
+          if (s.boom === 'big') this._spawnFx(s.x2, s.y2, 1.7)
+        }
       }
     }
     this.shells = this.shells.filter((s) => s.t < s.dur)
+    if (ricoTails.length) this.shells.push(...ricoTails) // срикошетившие «хвосты» — отдельными трассерами
     for (const bm of this.booms) bm.age += dt
     this.booms = this.booms.filter((bm) => bm.age <= (bm.big ? 0.7 : 0.45))
     for (const m of this.muzzles) m.age += dt
