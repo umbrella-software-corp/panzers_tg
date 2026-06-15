@@ -14,8 +14,10 @@ import {
   upgradeModule,
   tankModLevel,
   prevTank,
+  syncProfile,
 } from '../store.js'
-import { tanksOfNation, MODULE_DEFS, moduleCost, modsMaxedCount } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount } from '../game/meta.js'
+import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
@@ -26,6 +28,39 @@ import PzIcon from './ui/PzIcon.vue'
 const emit = defineEmits(['go'])
 
 const tanks = computed(() => tanksOfNation(profile.nation))
+const premiums = computed(() => premiumOfNation(profile.nation)) // прем-техника нации (за ⭐)
+
+// выбрать уже купленный прем-танк → в ангар
+function pickPrem(t) {
+  selectTank(t.id)
+  emit('go', 'hangar')
+}
+// покупка прем-танка за ⭐ (как в Shop: invoice → openInvoice → sync). dev — мгновенно.
+async function buyPrem(t) {
+  track('prem_tank_buy_started', { tank_id: t.id, tier: t.tier })
+  try {
+    const r = await apiBuy('pt_' + t.id)
+    if (r.granted) {
+      await syncProfile()
+      selectTank(t.id)
+      track('prem_tank_bought', { tank_id: t.id, dev: !!r.dev })
+    } else if (r.link && window.Telegram?.WebApp?.openInvoice) {
+      window.Telegram.WebApp.openInvoice(r.link, (status) => {
+        if (status === 'paid')
+          setTimeout(async () => {
+            await syncProfile()
+            selectTank(t.id)
+            track('prem_tank_bought', { tank_id: t.id, dev: false })
+          }, 1200)
+      })
+    } else {
+      shake()
+    }
+  } catch {
+    track('prem_tank_buy_failed', { tank_id: t.id })
+    shake()
+  }
+}
 // пришли из ангара по «ОТКРЫТЬ ТАНК» (выбран закрытый) → сразу раскрываем его
 // чеклист; иначе обычный просмотр ветки без выбора
 const sel = ref(profile.selectedTank && !isOwned(profile.selectedTank) ? profile.selectedTank : null)
@@ -230,6 +265,29 @@ watch(selected, (t) => {
           <div v-if="!isOwned(t.id)" class="pz-chip" :style="{ color: canUnlock(t) ? 'var(--amber)' : 'var(--ink-faint)' }">
             <PzIcon name="coin" :size="13" /> {{ fmt(t.cost) }}
           </div>
+        </button>
+      </div>
+
+      <!-- ===== премиум-техника (покупка за ⭐, не исследуется) ===== -->
+      <div v-if="premiums.length" class="prem-sec">
+        <div class="prem-head pz-pixel">★ ПРЕМИУМ-ТЕХНИКА</div>
+        <button
+          v-for="t in premiums"
+          :key="t.id"
+          class="pz-plate prem-node"
+          :style="{ borderColor: isOwned(t.id) ? 'rgba(242,165,12,.5)' : 'var(--line-strong)' }"
+          @click="isOwned(t.id) ? pickPrem(t) : buyPrem(t)"
+        >
+          <TankImg :tank-id="t.id" :size="40" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)', flexShrink: 0 }" />
+          <div style="flex: 1; min-width: 0; text-align: left">
+            <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap">
+              <span class="pz-display" style="font-size: 15px">{{ t.name }}</span>
+              <span v-if="t.legend" class="legend-tag pz-pixel">ЛЕГЕНДА</span>
+            </div>
+            <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; font-weight: 500">{{ t.cls }} · ур. {{ t.tier }} · +5% опыт/кредиты, кристаллы</div>
+          </div>
+          <span v-if="isOwned(t.id)" class="pz-chip" style="color: #7cc05a; flex-shrink: 0">✓ в гараже</span>
+          <span v-else class="pz-chip prem-buy">★ {{ t.stars }}</span>
         </button>
       </div>
     </div>
@@ -460,5 +518,45 @@ watch(selected, (t) => {
   border-color: var(--amber);
   color: var(--amber);
   font-size: 12.5px;
+}
+.prem-sec {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prem-head {
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  color: var(--amber);
+  opacity: 0.85;
+  padding-left: 2px;
+}
+.prem-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  font-family: var(--font-body);
+  background: linear-gradient(90deg, rgba(242, 165, 12, 0.06), rgba(0, 0, 0, 0.3));
+}
+.legend-tag {
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  color: #1d1604;
+  background: var(--amber);
+  border-radius: 5px;
+  padding: 2px 5px 1px;
+}
+.prem-buy {
+  flex-shrink: 0;
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi, #ffce5a), var(--amber));
+  font-weight: 800;
+  padding: 5px 10px;
+  border-radius: 7px;
 }
 </style>

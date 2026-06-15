@@ -58,13 +58,28 @@ export const TANKS_BY_NATION = {
 }
 
 // плоские каталоги
-export const TANKS = Object.values(TANKS_BY_NATION).flat().map(withClass)
+// Премиум-техника: покупается за ⭐ (Telegram Stars, см. payments PRODUCTS pt_<id>),
+// НЕ исследуется. В бою даёт бонусы (PREM_TANK: +5% опыт/кредиты, 1/10 боёв +10 жетонов).
+// nation/tier — для тир-брекета и группировки; спрайт <id>.png уже в sprites/tanks.
+export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemChance: 0.1, gems: 10 }
+export const PREMIUM_TANKS = [
+  { id: 't28', nation: 'ussr', name: 'Т-28', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 99, desc: 'Легенда — трёхбашенный богатырь. Премиум: +5% опыта и кредитов, 1 из 10 боёв даёт синие кристаллы.', stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
+  { id: 't54', nation: 'ussr', name: 'Т-54', tier: 8, cls: 'Средний', premium: true, stars: 99, desc: 'Послевоенный эталон. Премиум-доход + кристаллы.', stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },
+  { id: 'pz4h', nation: 'ger', name: 'Pz. IV H', tier: 4, cls: 'Средний', premium: true, stars: 99, desc: 'Рабочая лошадка с экранами. Премиум-доход + кристаллы.', stats: { dmg: 4, rof: 5, spd: 5, mnv: 4, view: 5, hp: 4 } },
+  { id: 'maus', nation: 'ger', name: 'Maus', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, desc: 'Сверхтяж — гора брони и HP. Премиум-доход + кристаллы.', stats: { dmg: 8, rof: 3, spd: 2, mnv: 2, view: 5, hp: 10 } },
+  { id: 'ram', nation: 'usa', name: 'Ram II', tier: 4, cls: 'Средний', premium: true, stars: 99, desc: 'Канадский крейсер. Премиум-доход + кристаллы.', stats: { dmg: 3, rof: 6, spd: 5, mnv: 5, view: 4, hp: 4 } },
+  { id: 'sper', nation: 'usa', name: 'Super Pershing', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, desc: 'Бронированный «Першинг». Премиум-доход + кристаллы.', stats: { dmg: 9, rof: 5, spd: 5, mnv: 4, view: 6, hp: 9 } },
+]
+export const TANKS = [...Object.values(TANKS_BY_NATION).flat(), ...PREMIUM_TANKS].map(withClass)
 export const TANK_BY_ID = Object.fromEntries(TANKS.map((t) => [t.id, t]))
 export const tanksOfNation = (nation) => (TANKS_BY_NATION[nation] || []).map(withClass)
+export const premiumOfNation = (nation) => PREMIUM_TANKS.filter((t) => t.nation === nation).map(withClass)
 // танк, разблокированный с самого начала в каждой нации (tier 1)
 export const STARTERS = ['t26', 'pz2', 'm2l']
 export const nationOf = (tankId) =>
-  Object.keys(TANKS_BY_NATION).find((n) => TANKS_BY_NATION[n].some((t) => t.id === tankId)) || 'ussr'
+  Object.keys(TANKS_BY_NATION).find((n) => TANKS_BY_NATION[n].some((t) => t.id === tankId)) ||
+  (TANK_BY_ID[tankId] && TANK_BY_ID[tankId].nation) || // прем-танки лежат вне TANKS_BY_NATION
+  'ussr'
 
 export const STAT_LABELS = { dmg: 'Урон', rof: 'Скорострельность', spd: 'Скорость', mnv: 'Манёвр', view: 'Обзор', hp: 'Прочность' }
 

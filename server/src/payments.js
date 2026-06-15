@@ -15,6 +15,14 @@ export const PRODUCTS = {
   t3: { title: '150 жетонов', stars: 329, tokens: 150 },
   rename: { title: 'Смена позывного', stars: 50, rename: true },
   prem: { title: 'Премиум-аккаунт · 7 дней', stars: 99, premiumDays: 7 },
+  // премиум-техника (танк за ⭐99) — grantProduct добавляет tank в owned. id сверены
+  // с PREMIUM_TANKS в client/src/game/meta.js (спрайты <tank>.png уже в репо).
+  pt_t28: { title: 'Т-28 · премиум-танк', stars: 99, tank: 't28' },
+  pt_t54: { title: 'Т-54 · премиум-танк', stars: 99, tank: 't54' },
+  pt_pz4h: { title: 'Pz. IV H · премиум-танк', stars: 99, tank: 'pz4h' },
+  pt_maus: { title: 'Maus · премиум-танк', stars: 99, tank: 'maus' },
+  pt_ram: { title: 'Ram II · премиум-танк', stars: 99, tank: 'ram' },
+  pt_sper: { title: 'Super Pershing · премиум-танк', stars: 99, tank: 'sper' },
 }
 
 // позывной с клиента: режем управляющие символы, тримим, 3..16 символов.
@@ -69,6 +77,11 @@ export async function grantProduct(uid, productId, extra = {}) {
     const base = Math.max(Date.now(), profile.premiumUntil || 0)
     profile.premiumUntil = base + p.premiumDays * 86400000
   }
+  if (p.tank) {
+    // премиум-танк в гараж (один раз; повтор-покупка не дублирует)
+    if (!Array.isArray(profile.owned)) profile.owned = []
+    if (!profile.owned.includes(p.tank)) profile.owned.push(p.tank)
+  }
   if (p.rename) {
     const name = cleanName(extra.name)
     if (!name) return false // недопустимое имя — не «съедаем» оплату молча
@@ -101,6 +114,7 @@ export async function refundPayment(charge) {
     if (p.credits) profile.credits = Math.max(0, (profile.credits || 0) - p.credits)
     if (p.tokens) profile.tokens = Math.max(0, (profile.tokens || 0) - p.tokens)
     if (p.premiumDays) profile.premiumUntil = Math.max(Date.now(), (profile.premiumUntil || 0) - p.premiumDays * 86400000)
+    if (p.tank) profile.owned = (profile.owned || []).filter((id) => id !== p.tank) // рефанд — убираем танк
     await saveProfile(rec.uid, profile)
   }
   await markRefunded(charge)

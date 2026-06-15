@@ -4,7 +4,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft } from '../store.js'
 import { squad } from '../game/squad.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
 import { haptic, openSupport } from '../tg.js'
 import { track } from '../analytics.js'
 import TankImg from './ui/TankImg.vue'
@@ -97,7 +97,9 @@ const locked = computed(() => !isOwned(tank.value.id))
 // ЗАДАЧИ и ВЗВОД прячем, чтобы не размывать вход. После первого боя возвращаются.
 const firstSession = computed(() => (profile.stats?.battles || 0) === 0)
 const nationLabel = computed(() => (NATIONS.find((n) => n.id === profile.nation) || {}).label)
-const tanks = computed(() => tanksOfNation(profile.nation))
+// карусель: ветка нации + купленные прем-танки этой нации (выбираемы); не купленные
+// премы — только в «Развитии» (там покупка за ⭐)
+const tanks = computed(() => [...tanksOfNation(profile.nation), ...premiumOfNation(profile.nation).filter((t) => isOwned(t.id))])
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
 const inParty = computed(() => squad.active || !!party.token) // в лобби взвода или уже в бою с ним
@@ -212,6 +214,7 @@ onMounted(() => {
         <div style="display: flex; align-items: baseline; gap: 8px">
           <span class="pz-display" style="font-size: 30px; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8)">{{ tank.name }}</span>
           <span class="pz-pixel" style="font-size: 8px; color: var(--amber)">УР.{{ tank.tier }}</span>
+          <span v-if="tank.premium" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">★ ПРЕМ</span>
         </div>
         <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 1px">{{ tank.cls }} · {{ nationLabel }}</div>
       </div>

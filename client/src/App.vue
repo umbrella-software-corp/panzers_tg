@@ -13,6 +13,7 @@ import DailyReward from './components/DailyReward.vue'
 import Onboarding from './components/Onboarding.vue'
 import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode } from './store.js'
 import { randomMap } from './game/maps.js'
+import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
 import { track, trackScreen, setAnalyticsUserId, identifyUser, identifyAcquisition } from './analytics.js'
 
@@ -165,6 +166,8 @@ function deploy(net) {
 // награда боя + прогресс задач дня
 function bankBattle(reward) {
   if (!reward) return
+  // премиум-танк (играли в этом бою): +5% опыт/кредиты + шанс кристаллов
+  const premTank = !!(TANK_BY_ID[profile.selectedTank] && TANK_BY_ID[profile.selectedTank].premium)
   track('battle_reward_banked', {
     xp: reward.xp || 0,
     silver: reward.silver || 0,
@@ -173,11 +176,19 @@ function bankBattle(reward) {
     victory: !!reward.victory,
     survived: !!reward.survived,
     premium_bonus: isPremium() ? PREMIUM_BONUS : 0,
+    prem_tank: premTank,
   })
-  // премиум: +15% к кредитам и опыту (экипаж + ветка техники) за бой
-  const m = isPremium() ? 1 + PREMIUM_BONUS : 1
+  // премиум-аккаунт (+15%) и премиум-танк (+5%) к кредитам и опыту — стакаются
+  let m = 1
+  if (isPremium()) m += PREMIUM_BONUS
+  if (premTank) m += PREM_TANK.creditMult
   addRewards(Math.round((reward.silver || 0) * m))
   bankBattleXp(Math.round(reward.xp * m)) // 50% в ветку танка, 50% экипажу
+  // прем-танк: 1 из 10 боёв — синие кристаллы (жетоны)
+  if (premTank && Math.random() < PREM_TANK.gemChance) {
+    addRewards(0, PREM_TANK.gems)
+    track('prem_tank_gem_drop', { tank_id: profile.selectedTank, gems: PREM_TANK.gems })
+  }
   bankTaskProgress({
     damage: reward.damage,
     kills: reward.kills,
