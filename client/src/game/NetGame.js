@@ -503,6 +503,7 @@ export class NetGame {
     this.ownGfx = new Graphics() // HUD у своего танка: HP-полоска, рамка «ты», иконка видимости
     this.labels.addChildAt(this.ownGfx, 0) // под ник-плашками
     this.unitLabels = new Map()
+    this.hpLabels = new Map() // число HP под ником у каждого танка (свой — current/max)
 
     // снапшоты, накопившиеся в очереди ПОКА грузился mount, сбрасываем: мир уже
     // показан (lastState в конструкторе), а слив пачки тут выстрелил бы кучей
@@ -1229,10 +1230,54 @@ export class NetGame {
       // свой танк: ник выше (под ним влезает HP-полоска own-HUD)
       const off = u.id === this.youUnit && u.alive ? 66 : u.alive ? 50 : 40
       t.position.set(p.x, p.y - off)
+      // ЧИСЛО HP под ником (просили цифры — без них «хрень играть»). Свой —
+      // current/max и по здоровью (зелёный→жёлтый→красный); чужой — текущее белым.
+      if (u.alive) {
+        let h = this.hpLabels.get(u.id)
+        if (!h) {
+          h = this._makeHpText()
+          this.labels.addChild(h)
+          this.hpLabels.set(u.id, h)
+        }
+        const isYou = u.id === this.youUnit
+        const hp = Math.max(0, Math.round(u.hp))
+        const maxHp = u.maxHp || hp
+        h.text = isYou ? `${hp}/${maxHp}` : `${hp}`
+        const fr = hp / (maxHp || 1)
+        const fill = isYou ? (fr > 0.5 ? 0x8ee06a : fr > 0.25 ? 0xffd24a : 0xff6a5a) : 0xeef2f6
+        if (h._fill !== fill) {
+          h.style.fill = fill
+          h._fill = fill
+        }
+        h.visible = true
+        h.position.set(p.x, p.y - off + 15)
+      } else {
+        const h = this.hpLabels.get(u.id)
+        if (h) h.visible = false
+      }
     }
     for (const [id, t] of this.unitLabels) {
       if (!seen.has(id)) t.visible = false
     }
+    for (const [id, h] of this.hpLabels) {
+      if (!seen.has(id)) h.visible = false
+    }
+  }
+
+  // маленький текст числа HP под ником (экранный слой — всегда прямой, как ники)
+  _makeHpText() {
+    const t = new Text({
+      text: '',
+      style: {
+        fontFamily: 'Russo One, sans-serif',
+        fontSize: 12,
+        fill: 0xeef2f6,
+        stroke: { color: 0x000000, width: 3 },
+        letterSpacing: 0.3,
+      },
+    })
+    t.anchor.set(0.5, 0.5)
+    return t
   }
 
   // own-HUD у своего танка (дизайн Макса): HP-полоска сверху, пунктирная рамка-
