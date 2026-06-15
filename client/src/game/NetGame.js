@@ -1242,7 +1242,7 @@ export class NetGame {
         const isYou = u.id === this.youUnit
         const hp = Math.max(0, Math.round(u.hp))
         const maxHp = u.maxHp || hp
-        h.text = isYou ? `${hp}/${maxHp}` : `${hp}`
+        h.text = `${hp}/${maxHp}` // current/max у всех — видно, сколько осталось добить
         const fr = hp / (maxHp || 1)
         const fill = isYou ? (fr > 0.5 ? 0x8ee06a : fr > 0.25 ? 0xffd24a : 0xff6a5a) : 0xeef2f6
         if (h._fill !== fill) {

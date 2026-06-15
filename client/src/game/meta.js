@@ -93,7 +93,11 @@ import { TANK_CLASSES } from './config.js'
 // hp/damage классов в shared/config.js и client/src/game/config.js (TANK_CLASSES,
 // статы ботов) — менять СИНХРОННО, иначе боты и игроки разъедутся по шкале.
 export const HP_SCALE = 14.5
-export const DMG_SCALE = 7.25
+// DMG_SCALE = HP_SCALE → убийство за ~3-4 выстрела (классический темп). Было 7.25
+// («мясистее», ~6-8) — оказалось «урона не хватает, тяжело убивать». Урон ИГРОКА
+// (combatStats) множится здесь; урон БОТОВ — в TANK_CLASSES.damage (config.js, при
+// желании синхронить отдельным серверным деплоем; сейчас боты бьют мягче — в плюс игроку).
+export const DMG_SCALE = 14.5
 export function combatStats(tank) {
   const s = tank.stats
   const cls = TANK_CLASSES[tank.classId] || TANK_CLASSES.medium
