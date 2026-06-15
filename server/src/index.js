@@ -355,9 +355,12 @@ const WAIT_MS = +(process.env.WAIT_MS || 8000)
 // рекламы их много), иначе боты. Было 600мс — слишком быстро, второй живой не
 // успевал зайти и каждый падал в свой бой с ботами. Теперь 2с: концы встречаются.
 const NEWBIE_WAIT_MS = +(process.env.NEWBIE_WAIT_MS || 2000)
-// в комнате уже ≥2 живых → короткое окно ДОБОРА (наберём ещё живых до старта),
-// потом стартуем живой PvP. Под наплыв комната быстро дорастает до 14 = полный бой.
-const FILL_MS = +(process.env.FILL_MS || 2500)
+// в комнате уже ≥2 живых → окно ДОБОРА. КОПИМ живых под наплыв: каждый новый вход
+// продлевает сбор на FILL_MS (ждём, не идёт ли ещё кто), но не дольше FILL_MAX_MS от
+// появления второго живого. Пара игроков (поток иссяк) стартует через FILL_MS; под
+// наплыв комната набирается к полному 7×7 живых до потолка/14.
+const FILL_MS = +(process.env.FILL_MS || 3000)
+const FILL_MAX_MS = +(process.env.FILL_MAX_MS || 6000)
 // порог «новичка»: у кого меньше боёв — соло-старт быстрый (см. NEWBIE_WAIT_MS);
 // дальше одинокий игрок ждёт живых дольше (WAIT_MS). ≥2 живых — всегда быстрый добор.
 const INSTANT_BATTLE_BELOW = +(process.env.INSTANT_BATTLE_BELOW || 7)
@@ -745,13 +748,22 @@ function scheduleStart(room) {
     startRoom(room)
     return
   }
-  let wait
-  if (n >= 2) wait = FILL_MS // уже есть живой против живого — быстро добираем и в бой
-  else {
-    const solo = room.humans[0]
-    const newbie = !solo.party && (solo.battles | 0) < INSTANT_BATTLE_BELOW
-    wait = newbie ? NEWBIE_WAIT_MS : WAIT_MS
+  if (n >= 2) {
+    // живой PvP формируется → КОПИМ живых: окно добора FILL_MS после каждого входа,
+    // но не дольше FILL_MAX_MS от появления второго живого. Поток иссяк — старт через
+    // FILL_MS; идёт наплыв — набираем к полному 7×7 (или мгновенно при 14 выше).
+    if (!room.fillStart) room.fillStart = Date.now()
+    const deadline = Math.min(Date.now() + FILL_MS, room.fillStart + FILL_MAX_MS)
+    clearTimeout(room.waitTimer)
+    room.deadline = deadline
+    room.waitTimer = setTimeout(() => startRoom(room), Math.max(0, deadline - Date.now()))
+    return
   }
+  // соло: новичок — быстрый пулинг (NEWBIE_WAIT_MS), ветеран — дольше ждёт живых
+  // (WAIT_MS). Берём БЛИЖАЙШИЙ дедлайн (поздний вход не двигает соло-старт назад).
+  const solo = room.humans[0]
+  const newbie = !solo.party && (solo.battles | 0) < INSTANT_BATTLE_BELOW
+  const wait = newbie ? NEWBIE_WAIT_MS : WAIT_MS
   const deadline = Date.now() + wait
   if (room.waitTimer && room.deadline && room.deadline <= deadline) return // уже назначен более ранний старт
   clearTimeout(room.waitTimer)
