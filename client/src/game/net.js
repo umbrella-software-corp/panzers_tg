@@ -12,7 +12,7 @@ const WS_URL =
  * onLobby({players, you, startsIn}) — обновления комнаты ожидания,
  * onStart(msg match-start) — бой начался, onClose — соединение закрылось.
  */
-export function connectMatch({ name, tankId, tint, skin, stats, battles, party, mode, uid, onLobby, onStart, onClose }, timeoutMs = 4000) {
+export function connectMatch({ name, tankId, tint, skin, stats, battles, party, mode, uid, onLobby, onStart, onClose }, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     let settled = false
     let ws
@@ -192,7 +192,8 @@ export function connectMatch({ name, tankId, tint, skin, stats, battles, party, 
       if (!settled) {
         settled = true
         clearTimeout(timer)
-        reject(new Error('ws closed'))
+        // код закрытия в ошибку → в телеметрию (1013=busy лимит IP, 1006=обрыв и т.д.)
+        reject(new Error('ws closed:' + e.code))
       }
       // в бою на это подписан NetGame. Но если реконнект уже увёл активный сокет
       // на новый (client.ws !== ws) — этот close уже не наш, игнорируем.

@@ -155,9 +155,10 @@ async function search() {
   try {
     client = await connectMatch(connectParams())
     online.value = true
-  } catch {
+  } catch (err) {
     track('matchmaking_connection_failed', {
       reason: 'connect_rejected',
+      detail: err?.message || 'unknown', // 'ws timeout' / 'ws closed:1013' (busy) / 'ws error' — для диагностики «не подрубается»
       search_ms: searchMs(),
       try_n: tries + 1,
     })
@@ -192,7 +193,7 @@ function retry() {
     return
   }
   online.value = null
-  timers.push(setTimeout(search, 1200)) // пауза перед следующей попыткой
+  timers.push(setTimeout(search, 600)) // быстрый ретрай: «тёплый» коннект после холодного обычно встаёт сразу
 }
 
 // кнопка «Повторить» — сбрасываем счётчик и ищем заново
