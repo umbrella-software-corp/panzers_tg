@@ -1367,20 +1367,24 @@ export class NetGame {
       ctx.arc(u.x * k, u.y * k, 3.5, 0, Math.PI * 2)
       ctx.fill()
     }
-    // свой танк: крупная амбер-стрелка по направлению корпуса + тёмный контур (видно сразу)
+    // свой танк: ЯРКАЯ амбер-стрелка по направлению корпуса + светлый ореол (сразу видно себя)
     if (own) {
       const px = own.x * k
       const py = own.y * k
       const a = own.hull
-      ctx.beginPath()
-      ctx.moveTo(px + Math.cos(a) * 10, py + Math.sin(a) * 10)
-      ctx.lineTo(px + Math.cos(a + 2.5) * 7, py + Math.sin(a + 2.5) * 7)
-      ctx.lineTo(px + Math.cos(a - 2.5) * 7, py + Math.sin(a - 2.5) * 7)
+      ctx.beginPath() // светлый ореол под маркером
+      ctx.arc(px, py, 4.5, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,210,100,0.45)'
+      ctx.fill()
+      ctx.beginPath() // крупная яркая стрелка направления
+      ctx.moveTo(px + Math.cos(a) * 12, py + Math.sin(a) * 12)
+      ctx.lineTo(px + Math.cos(a + 2.5) * 8, py + Math.sin(a + 2.5) * 8)
+      ctx.lineTo(px + Math.cos(a - 2.5) * 8, py + Math.sin(a - 2.5) * 8)
       ctx.closePath()
-      ctx.fillStyle = '#f2a50c'
+      ctx.fillStyle = '#ffcf5a'
       ctx.fill()
       ctx.strokeStyle = 'rgba(0,0,0,0.55)'
-      ctx.lineWidth = 1.5
+      ctx.lineWidth = 1.3
       ctx.stroke()
     }
     ctx.strokeStyle = 'rgba(255,255,255,0.18)'

@@ -680,48 +680,33 @@ onBeforeUnmount(() => {
 
     <!-- ===== верхний HUD ===== -->
     <div class="top">
-      <button class="pausebtn" :disabled="phase !== 'fighting'" @click="pauseGame">
-        <PzIcon name="pause" :size="18" />
-      </button>
+      <!-- левая колонка-группа: пауза · карточка матча · точки · фраги/засвет · модули -->
+      <div class="hud-left">
+        <button class="pausebtn" :disabled="phase !== 'fighting'" @click="pauseGame">
+          <PzIcon name="pause" :size="18" />
+        </button>
 
-      <div class="mid-col">
-        <!-- счёт: очки + ромбики живых. Боковые группы flex:1 → таймер строго
-             по центру независимо от ширины счёта (5 vs 11) -->
-        <div class="scoreplate">
-          <div class="side left">
-            <span class="dmnds">
-              <i v-for="i in 7" :key="i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i>
-            </span>
-            <span v-if="!annihilation" class="pz-pixel num ally">{{ state.allyScore }}</span>
-          </div>
+        <!-- карточка матча: таймер + живые экипажи (синие/красные) + тонкая HP -->
+        <div class="matchcard">
           <span class="pz-display timer" :class="{ low: state.matchTime <= 60 }">⏱ {{ fmtTime(state.matchTime) }}</span>
-          <div class="side right">
-            <span v-if="!annihilation" class="pz-pixel num enemy">{{ state.enemyScore }}</span>
-            <span class="dmnds">
-              <i v-for="i in 7" :key="i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i>
-            </span>
+          <div class="alive">
+            <span class="dmnds"><i v-for="i in 7" :key="'a' + i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i></span>
+            <span v-if="!annihilation" class="pz-pixel sc"><b class="ally">{{ state.allyScore }}</b>:<b class="enemy">{{ state.enemyScore }}</b></span>
+            <span class="dmnds"><i v-for="i in 7" :key="'e' + i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i></span>
           </div>
-        </div>
-        <!-- режим «на уничтожение»: метка вместо точек захвата -->
-        <div v-if="annihilation" class="modetag pz-display">НА УНИЧТОЖЕНИЕ</div>
-        <!-- точки захвата: цвет владельца, пульс при перехвате -->
-        <div v-else-if="state.caps && state.caps.length" class="caps">
-          <span
-            v-for="c in state.caps"
-            :key="c.id"
-            class="cap"
-            :class="[c.own, { capping: c.cap && c.cap !== c.own }]"
-          >{{ c.id }}<i v-if="c.cap && c.cap !== c.own && c.p > 0" class="capbar"><b :style="{ width: c.p * 100 + '%' }"></b></i></span>
-        </div>
-        <!-- HP -->
-        <div class="hpbar">
-          <div class="hp-fill" :style="{ width: hpFrac * 100 + '%', background: hpColor }"></div>
-          <span class="pz-display hp-text">{{ tankName }} · {{ state.playerHp }} HP</span>
+          <div v-show="state.playerHp > 0" class="hpmini"><i :style="{ width: hpFrac * 100 + '%', background: hpColor }"></i></div>
         </div>
 
-        <!-- засвет: СКРЫТ (в тумане) / ЗАСВЕЧЕН (враг видит) / РАСКРЫТ (выстрел выдал) -->
-        <div v-show="isNet && phase === 'fighting' && state.playerHp > 0" class="spotchip" :class="spotState">
-          {{ spotLabel }}
+        <!-- точки захвата / режим -->
+        <div v-if="annihilation" class="modetag pz-display">НА УНИЧТОЖЕНИЕ</div>
+        <div v-else-if="state.caps && state.caps.length" class="caps">
+          <span v-for="c in state.caps" :key="c.id" class="cap" :class="[c.own, { capping: c.cap && c.cap !== c.own }]">{{ c.id }}<i v-if="c.cap && c.cap !== c.own && c.p > 0" class="capbar"><b :style="{ width: c.p * 100 + '%' }"></b></i></span>
+        </div>
+
+        <!-- фраги / засветы иконками (урон уехал в пост-гейм таблицу) -->
+        <div v-show="phase === 'fighting'" class="combaticons">
+          <span class="cic" title="Уничтожено">💀 {{ state.kills }}</span>
+          <span class="cic" title="Засвечено">👁 {{ state.spotted }}</span>
         </div>
 
         <!-- индикаторы модулей: краснеют с отсчётом починки при крите -->
@@ -736,11 +721,9 @@ onBeforeUnmount(() => {
       <canvas class="minimap" ref="minimap" width="240" height="240"></canvas>
     </div>
 
-    <!-- инфо боя: урон / засвет / фраги (слева вверху, полупрозрачная плашка) -->
-    <div v-show="phase === 'fighting'" class="combatinfo">
-      <div class="ci-row"><span class="ci-l">УРОН</span><span class="ci-v dmg">{{ state.damageDealt }}</span></div>
-      <div class="ci-row"><span class="ci-l">ЗАСВЕТ</span><span class="ci-v">{{ state.spotted }}</span></div>
-      <div class="ci-row"><span class="ci-l">ФРАГИ</span><span class="ci-v">{{ state.kills }}</span></div>
+    <!-- засвет: СКРЫТ / ЗАСВЕЧЕН / РАСКРЫТ — отдельным чипом по центру вверху -->
+    <div v-show="isNet && phase === 'fighting' && state.playerHp > 0" class="spotchip top-chip" :class="spotState">
+      {{ spotLabel }}
     </div>
 
     <!-- захват базы: отсчёт 0-100 -->
@@ -1101,6 +1084,84 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 5px;
   min-width: 0;
+}
+/* ===== редизайн HUD: левая колонка-группа ===== */
+.hud-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.matchcard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 6px 9px;
+}
+.matchcard .timer {
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.matchcard .timer.low {
+  color: var(--red);
+  animation: pz-blink 1s linear infinite;
+}
+.alive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.alive .sc {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+}
+.alive .sc .ally {
+  color: var(--team);
+}
+.alive .sc .enemy {
+  color: var(--foe);
+}
+.hpmini {
+  width: 100%;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.hpmini i {
+  display: block;
+  height: 100%;
+  transition: width 0.2s ease;
+}
+.combaticons {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  padding-left: 2px;
+}
+.combaticons .cic {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.top-chip {
+  position: absolute;
+  top: calc(var(--safe-top, 0px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
 }
 .scoreplate {
   display: flex;
