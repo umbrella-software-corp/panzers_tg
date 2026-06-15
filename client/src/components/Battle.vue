@@ -1259,13 +1259,13 @@ onBeforeUnmount(() => {
   text-shadow: 0 1px 2px #000;
 }
 .minimap {
-  width: 56px;
-  height: 56px;
+  width: 96px;
+  height: 96px;
   flex-shrink: 0;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
-  opacity: 0.9;
+  opacity: 0.92;
 }
 
 /* индикаторы критов */

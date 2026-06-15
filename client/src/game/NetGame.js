@@ -1265,41 +1265,103 @@ export class NetGame {
       ctx.arc(b.x * k, b.y * k, b.r * k, 0, Math.PI * 2)
       ctx.stroke()
     }
-    ctx.font = `bold ${Math.round(S * 0.075)}px sans-serif`
+    // ЦЕЛЬ «куда ехать» (подсказка): ближайшая НЕ наша точка (нейтрал/враг). Точек
+    // нет (на уничтожение) → ближайший засвеченный враг. Помогает новичку.
+    const own = this._own(units)
+    const caps = this.cur ? this.cur.caps : []
+    let target = null
+    if (own) {
+      let best = Infinity
+      if (caps.length) {
+        for (const cap of caps) {
+          if (cap.owner === this.side) continue // уже наша — не цель
+          const pos = this.capPos[cap.id]
+          if (!pos) continue
+          const d = (pos.x - own.x) ** 2 + (pos.y - own.y) ** 2
+          if (d < best) (best = d), (target = { x: pos.x, y: pos.y })
+        }
+      } else {
+        for (const u of units) {
+          if (!u.alive || u.team === this.side) continue
+          if (this._hiddenEnemy && this._hiddenEnemy.has(u.id)) continue
+          const d = (u.x - own.x) ** 2 + (u.y - own.y) ** 2
+          if (d < best) (best = d), (target = { x: u.x, y: u.y })
+        }
+      }
+    }
+    this.minimapT = (this.minimapT || 0) + 0.5
+    const pulse = 0.5 + 0.5 * Math.sin(this.minimapT) // плавная пульсация цели/линии
+
+    // линия-подсказка «куда ехать»: пунктир от своего танка к цели
+    if (own && target) {
+      ctx.strokeStyle = `rgba(242,165,12,${0.3 + 0.3 * pulse})`
+      ctx.lineWidth = 1.6
+      ctx.setLineDash([5, 4])
+      ctx.beginPath()
+      ctx.moveTo(own.x * k, own.y * k)
+      ctx.lineTo(target.x * k, target.y * k)
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+
+    // точки захвата: своя — залита, врага — красная, нейтрал — серое кольцо. Крупнее + буква.
+    ctx.font = `bold ${Math.round(S * 0.085)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    for (const cap of this.cur ? this.cur.caps : []) {
+    for (const cap of caps) {
       const pos = this.capPos[cap.id]
       if (!pos) continue
-      const col = cap.owner === this.side ? this.colors.ally.css : cap.owner !== null ? this.colors.enemy.css : '#9aa3b0'
-      ctx.fillStyle = col
+      const r = Math.max(7, pos.r * k * 0.6)
+      const mine = cap.owner === this.side
+      const enemy = cap.owner !== null && !mine
       ctx.beginPath()
-      ctx.arc(pos.x * k, pos.y * k, Math.max(5, pos.r * k * 0.55), 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = '#0c0f14'
+      ctx.arc(pos.x * k, pos.y * k, r, 0, Math.PI * 2)
+      if (mine) (ctx.fillStyle = this.colors.ally.css), ctx.fill()
+      else if (enemy) (ctx.fillStyle = this.colors.enemy.css), ctx.fill()
+      else {
+        ctx.fillStyle = 'rgba(154,163,176,0.25)'
+        ctx.fill()
+        ctx.strokeStyle = '#9aa3b0'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+      }
+      ctx.fillStyle = mine || enemy ? '#0c0f14' : '#cfd6e0'
       ctx.fillText(cap.id, pos.x * k, pos.y * k)
     }
+
+    // пульсирующее кольцо на ЦЕЛИ (куда ехать) — поверх точек/врага
+    if (target) {
+      ctx.strokeStyle = `rgba(242,165,12,${0.5 + 0.45 * pulse})`
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(target.x * k, target.y * k, 8 + 5 * pulse, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
     for (const u of units) {
       if (!u.alive || u.id === this.youUnit) continue
       // скрытый туманом враг не светится на миникарте
       if (u.team !== this.side && this._hiddenEnemy && this._hiddenEnemy.has(u.id)) continue
       ctx.fillStyle = (u.team === this.side ? this.colors.ally : this.colors.enemy).css
       ctx.beginPath()
-      ctx.arc(u.x * k, u.y * k, 3, 0, Math.PI * 2)
+      ctx.arc(u.x * k, u.y * k, 3.5, 0, Math.PI * 2)
       ctx.fill()
     }
-    const own = this._own(units)
+    // свой танк: крупная амбер-стрелка по направлению корпуса + тёмный контур (видно сразу)
     if (own) {
       const px = own.x * k
       const py = own.y * k
       const a = own.hull
-      ctx.fillStyle = '#f2a50c'
       ctx.beginPath()
-      ctx.moveTo(px + Math.cos(a) * 7, py + Math.sin(a) * 7)
-      ctx.lineTo(px + Math.cos(a + 2.5) * 5, py + Math.sin(a + 2.5) * 5)
-      ctx.lineTo(px + Math.cos(a - 2.5) * 5, py + Math.sin(a - 2.5) * 5)
+      ctx.moveTo(px + Math.cos(a) * 10, py + Math.sin(a) * 10)
+      ctx.lineTo(px + Math.cos(a + 2.5) * 7, py + Math.sin(a + 2.5) * 7)
+      ctx.lineTo(px + Math.cos(a - 2.5) * 7, py + Math.sin(a - 2.5) * 7)
       ctx.closePath()
+      ctx.fillStyle = '#f2a50c'
       ctx.fill()
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
     }
     ctx.strokeStyle = 'rgba(255,255,255,0.18)'
     ctx.lineWidth = 1
