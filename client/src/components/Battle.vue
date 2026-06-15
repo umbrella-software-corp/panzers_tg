@@ -694,7 +694,7 @@ onBeforeUnmount(() => {
             <span v-if="!annihilation" class="pz-pixel sc"><b class="ally">{{ state.allyScore }}</b>:<b class="enemy">{{ state.enemyScore }}</b></span>
             <span class="dmnds"><i v-for="i in 7" :key="'e' + i" :class="{ on: i <= state.enemiesAlive }" class="d enemy"></i></span>
           </div>
-          <div v-show="state.playerHp > 0" class="hpmini"><i :style="{ width: hpFrac * 100 + '%', background: hpColor }"></i></div>
+          <!-- HP-полоска переехала НАД танк (own-HUD, дизайн Макса) — в карточке убрана, чтоб не дублировать -->
         </div>
 
         <!-- точки захвата / режим -->
