@@ -3,8 +3,12 @@
 // исходное (если задано и ниже value, рисуем метку базы и «+прирост»).
 defineProps({
   label: { type: String, required: true },
-  value: { type: Number, required: true },
+  value: { type: Number, required: true }, // 0..10 — заполнение бара (визуал-сравнение)
   base: { type: Number, default: null },
+  // display — РЕАЛЬНОЕ боевое число (крупное: HP 2088, урон 297…). Если задано,
+  // показываем его вместо шкалы 1-10; displayUp — реальный прирост от прокачки.
+  display: { type: [Number, String], default: null },
+  displayUp: { type: [Number, String], default: null },
 })
 const fmt = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 </script>
@@ -17,7 +21,8 @@ const fmt = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
       <i v-if="base !== null && value - base > 0.05" class="pz-stat-base" :style="{ left: Math.min(100, base * 10) + '%' }"></i>
     </div>
     <div class="pz-stat-num">
-      {{ fmt(value) }}<span v-if="base !== null && value - base > 0.05" class="up">+{{ fmt(value - base) }}</span>
+      <template v-if="display !== null">{{ display }}<span v-if="displayUp" class="up">+{{ displayUp }}</span></template>
+      <template v-else>{{ fmt(value) }}<span v-if="base !== null && value - base > 0.05" class="up">+{{ fmt(value - base) }}</span></template>
     </div>
   </div>
 </template>

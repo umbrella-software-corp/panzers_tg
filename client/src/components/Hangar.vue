@@ -2,9 +2,9 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft } from '../store.js'
+import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats } from '../store.js'
 import { squad } from '../game/squad.js'
-import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
 import { haptic, openSupport } from '../tg.js'
 import { track } from '../analytics.js'
 import TankImg from './ui/TankImg.vue'
@@ -84,12 +84,16 @@ const STAT_MOD = { dmg: 'gun', hp: 'tur', spd: 'eng', mnv: 'trk', view: 'rad' }
 const ttxStats = computed(() => {
   const t = tank.value
   const ck = 1 + (crewLevel() - 1) * 0.01 // экипаж баффает ход/манёвр/обзор/темп
+  const real = loadoutStats(t.id) // реальные боевые статы с прокачкой (как в бою)
+  const baseReal = combatStats(t) // без модулей/экипажа — для прироста
   return Object.entries(t.stats).map(([k, base]) => {
     let m = 1
     const mod = STAT_MOD[k]
     if (mod) m *= MODULE_COMBAT[mod][tankModLevel(t.id, mod) - 1]
     if (k === 'spd' || k === 'mnv' || k === 'view' || k === 'rof') m *= ck
-    return { key: k, label: STAT_LABELS[k], base, value: Math.min(10, +(base * m).toFixed(1)) }
+    const rv = statReal(real, k) // крупное реальное число (HP 2088, урон 297…)
+    const up = rv - statReal(baseReal, k) // прирост от прокачки в реальных единицах
+    return { key: k, label: STAT_LABELS[k], base, value: Math.min(10, +(base * m).toFixed(1)), display: rv, displayUp: up > 0 ? +up.toFixed(k === 'rof' ? 1 : 0) : null }
   })
 })
 const locked = computed(() => !isOwned(tank.value.id))
@@ -232,7 +236,7 @@ onMounted(() => {
 
     <!-- ТТХ-шторка -->
     <div v-if="ttx" class="pz-plate" style="margin: 0 14px 8px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; animation: pz-slide-up 0.22s ease">
-      <StatRow v-for="s in ttxStats" :key="s.key" :label="s.label" :value="s.value" :base="s.base" />
+      <StatRow v-for="s in ttxStats" :key="s.key" :label="s.label" :value="s.value" :base="s.base" :display="s.display" :display-up="s.displayUp" />
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
     </div>
 

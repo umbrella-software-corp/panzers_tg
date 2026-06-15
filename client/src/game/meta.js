@@ -110,6 +110,28 @@ export function combatStats(tank) {
   }
 }
 
+// РЕАЛЬНОЕ боевое число статы для ТТХ-панели (крупные числа вместо шкалы 1-10 —
+// чтобы танки явно различались и совпадали с боем). cs — combatStats/loadoutStats.
+// Темп — выстр/мин, скорость — ед/с, манёвр — °/с, обзор — дальность, урон/HP — как в бою.
+export function statReal(cs, key) {
+  switch (key) {
+    case 'dmg':
+      return Math.round(cs.damage)
+    case 'rof':
+      return +(60 / cs.reload).toFixed(1)
+    case 'spd':
+      return Math.round(cs.maxSpeed)
+    case 'mnv':
+      return Math.round((cs.turnRate * 180) / Math.PI)
+    case 'view':
+      return Math.round(cs.vision)
+    case 'hp':
+      return Math.round(cs.hp)
+    default:
+      return 0
+  }
+}
+
 // ---------- модули: 5 слотов × 3 уровня (штатный → топ) ----------
 export const MODULE_DEFS = [
   { id: 'gun', label: 'Пушка', levels: ['Штатная', 'Улучшенная', 'Длинноствольная'], stats: ['базовое оснащение', 'урон +10%', 'урон +22%'] },

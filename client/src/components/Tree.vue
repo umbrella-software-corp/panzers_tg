@@ -16,7 +16,7 @@ import {
   prevTank,
   syncProfile,
 } from '../store.js'
-import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 import TankImg from './ui/TankImg.vue'
@@ -32,7 +32,10 @@ const tanks = computed(() => tanksOfNation(profile.nation))
 const premiums = computed(() => premiumOfNation(profile.nation)) // прем-техника нации (за ⭐)
 const premSel = ref(null) // развёрнутый ТТХ прем-танка (тап по строке)
 // ТТХ прем-танка (базовые статы 0..10 для оценки ДО покупки)
-const premStats = (t) => Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v }))
+const premStats = (t) => {
+  const cs = combatStats(t) // реальные боевые числа (крупные) для ТТХ
+  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v, display: statReal(cs, k) }))
+}
 
 // выбрать уже купленный прем-танк → в ангар
 function pickPrem(t) {
@@ -296,7 +299,7 @@ watch(selected, (t) => {
           </div>
           <!-- ТТХ прем-танка (тап по строке): оценить ДО покупки -->
           <div v-if="premSel === t.id" class="prem-ttx">
-            <StatRow v-for="s in premStats(t)" :key="s.key" :label="s.label" :value="s.value" />
+            <StatRow v-for="s in premStats(t)" :key="s.key" :label="s.label" :value="s.value" :display="s.display" />
             <div class="prem-desc">{{ t.desc }}</div>
           </div>
         </div>

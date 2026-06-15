@@ -5,7 +5,7 @@ import { ref, onMounted } from 'vue'
 import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank } from '../store.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
-import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS } from '../game/meta.js'
+import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
@@ -108,7 +108,10 @@ const buyCredits = (p) => buyPack(p, `${p.amount.toLocaleString('ru-RU')} кре
 const buyTokens = (p) => buyPack(p, `${p.amount} жетонов`)
 const buyPremium = () => buyPack({ id: 'prem' }, 'Премиум · 7 дней')
 const premSel = ref(null) // развёрнутый ТТХ прем-танка в магазине
-const premStats = (t) => Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v }))
+const premStats = (t) => {
+  const cs = combatStats(t) // реальные боевые числа (крупные) для ТТХ
+  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v, display: statReal(cs, k) }))
+}
 // прем-танк за ⭐: продукт pt_<id> → grantProduct кладёт в гараж (как в «Развитии»)
 async function buyPremTank(t) {
   await buyPack({ id: 'pt_' + t.id }, `${t.name} (премиум-танк)`)
@@ -179,7 +182,7 @@ onMounted(() => {
               <button v-else class="pz-cta" style="padding: 9px 13px; font-size: 13px; white-space: nowrap; width: auto; flex-shrink: 0" @click.stop="buyPremTank(t)">{{ t.stars }} ⭐</button>
             </div>
             <div v-if="premSel === t.id" style="display: flex; flex-direction: column; gap: 6px; padding: 4px 14px 12px; border-top: 1px solid var(--line)">
-              <StatRow v-for="sx in premStats(t)" :key="sx.key" :label="sx.label" :value="sx.value" />
+              <StatRow v-for="sx in premStats(t)" :key="sx.key" :label="sx.label" :value="sx.value" :display="sx.display" />
               <div style="font-size: 11px; color: var(--ink-dim); line-height: 1.4; margin-top: 2px">{{ t.desc }}</div>
             </div>
           </div>
