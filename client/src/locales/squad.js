@@ -1,0 +1,138 @@
+// Шторка взвода (SquadSheet.vue): таб ВЗВОД (реальный взвод через deep-link) и
+// таб НАГРАДЫ (рефералы). Метки рубежей (REF_MILESTONES[].label) уже локализованы
+// — переводим только обрамление. Русские формы числа задаём функциями-значениями.
+export default {
+  en: {
+    // табы
+    tabSquad: 'SQUAD',
+    tabRewards: 'REWARDS',
+    // заголовок таба ВЗВОД
+    squadHeader: 'SQUAD',
+    // тосты
+    shareChoose: 'Pick a chat — send it to a friend',
+    shareCopied: 'Link copied — drop it in a chat!',
+    shareUnavailable: 'Sharing unavailable — open the game in Telegram',
+    squadTgOnly: 'Squad is available only in Telegram',
+    inviteTgOnly: 'Invites are available only in Telegram',
+    pickTankInRange: 'Pick a vehicle within ±1 tier of the squad',
+    leftSquad: 'Left the squad',
+    warnTier: 'Different vehicle tiers — ±1 required',
+    warnRejected: 'Action rejected',
+    // share-тексты (отправляются другу)
+    shareSquad: "Let's squad up in Panzer TG — into one battle together!",
+    shareSquadMore: "Let's squad up in Panzer TG!",
+    shareRef: 'Jump into Panzer TG — tank battles in Telegram!',
+    // НЕ в лобби
+    notInLobbyHint: 'Build a squad: friends join the lobby via your link, mark ready — and the leader throws everyone into ONE battle on their side.',
+    buildSquad: 'Build squad',
+    howItWorks: 'HOW IT WORKS',
+    step1: 'Tap "Build squad" — drop the link to a friend in a chat.',
+    step2: 'Your friend opens the game via the link — lands in your lobby.',
+    step3: 'Everyone hits "Ready", the leader hits "BATTLE": you are in one battle.',
+    // в лобби — состав
+    memberReady: 'READY',
+    memberWaiting: 'waiting',
+    youSuffix: ' · you',
+    pickingTank: 'picking a vehicle…',
+    slotFree: '— free —',
+    tierShort: ({ n }) => `tier ${n}`,
+    // подсказка командиру при одиночке
+    waitingFriendHint1: 'Waiting for a friend. They must ',
+    waitingFriendHintBold: 'fully close the game',
+    waitingFriendHint2: ' (swipe it away in Telegram) and open it ',
+    waitingFriendHintBold2: 'via your link',
+    waitingFriendHint3: ' — then they show up here. If the game is already open on their side — the link will not let them in.',
+    // моя техника
+    yourTank: 'YOUR VEHICLE',
+    closeBtn: 'CLOSE',
+    swapBtn: 'SWAP',
+    tankWarn: 'Not in the squad tier range — tap "SWAP" and pick a fitting one (✓)',
+    // готовность
+    readyOn: 'CANCEL READY',
+    readyOff: 'READY',
+    // командир
+    inviteMore: 'Invite another friend',
+    launchTierBad: 'DIFFERENT VEHICLE TIERS',
+    launchGo: ({ n }) => `BATTLE ×${n}`,
+    launchWait: 'WAITING FOR EVERYONE',
+    memberLaunchHint: 'The leader starts the battle when everyone is ready',
+    disband: 'Disband squad',
+    leave: 'Leave squad',
+    // таб НАГРАДЫ
+    invitedHeader: ({ n }) => `INVITED · ${n}/5`,
+    needFriends: ({ n }) => `${n} ${n === 1 ? 'friend' : 'friends'}`,
+    claimed: '✓ received',
+    claim: 'Claim',
+    yourRecruits: 'YOUR RECRUITS',
+    noRecruits: 'No one yet — drop the link in a chat',
+    viaYourLink: 'via your link',
+    inviteByLink: 'Invite via link',
+    // тосты-награды
+    camoDrop: ({ name, tankName, credits }) => `🎁 Camo "${name}" on ${tankName} +${credits} cr`,
+    milestoneGot: ({ label }) => `${label} — received!`,
+  },
+  ru: {
+    tabSquad: 'ВЗВОД',
+    tabRewards: 'НАГРАДЫ',
+    squadHeader: 'ВЗВОД',
+    shareChoose: 'Выбери чат — отправь другу',
+    shareCopied: 'Ссылка скопирована — кидай в чат!',
+    shareUnavailable: 'Шэр недоступен — открой игру в Telegram',
+    squadTgOnly: 'Взвод доступен только в Telegram',
+    inviteTgOnly: 'Приглашение доступно только в Telegram',
+    pickTankInRange: 'Выбери технику в пределах ±1 уровня взвода',
+    leftSquad: 'Вышел из взвода',
+    warnTier: 'Разный уровень техники — нужен ±1',
+    warnRejected: 'Действие отклонено',
+    shareSquad: 'Го во взвод в Panzer TG — вместе в один бой!',
+    shareSquadMore: 'Го во взвод в Panzer TG!',
+    shareRef: 'Залетай в Panzer TG — танковые бои в Telegram!',
+    notInLobbyHint: 'Собери взвод: друзья по ссылке зайдут в лобби, отметят готовность — и командир кинет всех в ОДИН бой на своей стороне.',
+    buildSquad: 'Собрать взвод',
+    howItWorks: 'КАК ЭТО РАБОТАЕТ',
+    step1: 'Жмёшь «Собрать взвод» — кидаешь ссылку другу в чат.',
+    step2: 'Друг открывает игру по ссылке — попадает в твоё лобби.',
+    step3: 'Все жмут «Готов», командир — «В БОЙ»: вы в одном бою.',
+    memberReady: 'ГОТОВ',
+    memberWaiting: 'ждёт',
+    youSuffix: ' · ты',
+    pickingTank: 'выбирает технику…',
+    slotFree: '— свободно —',
+    tierShort: ({ n }) => `ур.${n}`,
+    waitingFriendHint1: 'Ждём друга. Он должен ',
+    waitingFriendHintBold: 'полностью закрыть игру',
+    waitingFriendHint2: ' (смахнуть в Telegram) и открыть её ',
+    waitingFriendHintBold2: 'по твоей ссылке',
+    waitingFriendHint3: ' — тогда появится здесь. Если игра у него уже открыта — по ссылке не зайдёт.',
+    yourTank: 'ТВОЯ ТЕХНИКА',
+    closeBtn: 'ЗАКРЫТЬ',
+    swapBtn: 'СМЕНИТЬ',
+    tankWarn: 'Не подходит по уровню взвода — жми «СМЕНИТЬ» и выбери из подходящих (✓)',
+    readyOn: 'ОТМЕНИТЬ ГОТОВНОСТЬ',
+    readyOff: 'ГОТОВ',
+    inviteMore: 'Позвать ещё друга',
+    launchTierBad: 'РАЗНЫЙ УРОВЕНЬ ТЕХНИКИ',
+    launchGo: ({ n }) => `В БОЙ ×${n}`,
+    launchWait: 'ЖДЁМ ГОТОВНОСТИ ВСЕХ',
+    memberLaunchHint: 'Командир запустит бой, когда все готовы',
+    disband: 'Распустить взвод',
+    leave: 'Покинуть взвод',
+    invitedHeader: ({ n }) => `ПРИГЛАШЕНО · ${n}/5`,
+    needFriends: ({ n }) => {
+      const m10 = n % 10
+      const m100 = n % 100
+      let w = 'друзей'
+      if (m10 === 1 && m100 !== 11) w = 'друг'
+      else if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) w = 'друга'
+      return `${n} ${w}`
+    },
+    claimed: '✓ получено',
+    claim: 'Забрать',
+    yourRecruits: 'ТВОИ РЕКРУТЫ',
+    noRecruits: 'Пока никого — кинь ссылку в чат',
+    viaYourLink: 'по твоей ссылке',
+    inviteByLink: 'Пригласить по ссылке',
+    camoDrop: ({ name, tankName, credits }) => `🎁 Камуфляж «${name}» на ${tankName} +${credits} кр`,
+    milestoneGot: ({ label }) => `${label} — получено!`,
+  },
+}

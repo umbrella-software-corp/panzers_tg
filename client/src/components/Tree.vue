@@ -19,6 +19,7 @@ import {
 import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
+import { t as tr } from '../i18n.js' // алиас: `t` занят как переменная-танк в шаблоне/скрипте
 import TankImg from './ui/TankImg.vue'
 import StatRow from './ui/StatRow.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
@@ -81,26 +82,26 @@ const maxedCount = (tankId) => modsMaxedCount(profile.modules, tankId)
 // чеклист разблокировки выбранной (некупленной) машины: каждое условие со ✓/✗.
 // Заменяет «серую кнопку без объяснения» — игрок видит, что выполнено и что нет.
 const checklist = computed(() => {
-  const t = selected.value
-  if (!t || isOwned(t.id)) return []
-  const prev = prevTank(t)
+  const tk = selected.value
+  if (!tk || isOwned(tk.id)) return []
+  const prev = prevTank(tk)
   const rows = []
   if (prev) {
-    rows.push({ done: isOwned(prev.id), label: `Исследовать ${prev.name}` })
+    rows.push({ done: isOwned(prev.id), label: tr('tree.checkResearch', { name: prev.name }) })
     const maxed = Math.min(5, maxedCount(prev.id))
-    rows.push({ done: maxed >= 5, label: `Топ-модули ${prev.name}`, value: `${maxed}/5` })
+    rows.push({ done: maxed >= 5, label: tr('tree.checkTopModules', { name: prev.name }), value: `${maxed}/5` })
   }
-  rows.push({ done: profile.credits >= (t.cost || 0), label: 'Кредиты', value: `${fmt(profile.credits)} / ${fmt(t.cost || 0)}` })
+  rows.push({ done: profile.credits >= (tk.cost || 0), label: tr('tree.checkCredits'), value: `${fmt(profile.credits)} / ${fmt(tk.cost || 0)}` })
   return rows
 })
 // шаг, к которому ведёт кнопка «→»: пред. танк (открыть его) либо его модули
 const gotoStep = computed(() => {
-  const t = selected.value
-  if (!t || isOwned(t.id)) return null
-  const prev = prevTank(t)
+  const tk = selected.value
+  if (!tk || isOwned(tk.id)) return null
+  const prev = prevTank(tk)
   if (!prev) return null
-  if (!isOwned(prev.id)) return { id: prev.id, label: `Открыть ${prev.name}` }
-  if (maxedCount(prev.id) < 5) return { id: prev.id, label: `К модулям ${prev.name}` }
+  if (!isOwned(prev.id)) return { id: prev.id, label: tr('tree.stepUnlock', { name: prev.name }) }
+  if (maxedCount(prev.id) < 5) return { id: prev.id, label: tr('tree.stepModules', { name: prev.name }) }
   return null
 })
 // перейти к пред. танку: раскрыть его док (там либо его модули, либо его чеклист)
@@ -211,7 +212,7 @@ watch(selected, (t) => {
 <template>
   <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.88), rgba(13, 15, 10, 0.94)), url('/sprites/bg_tree.png') center / cover no-repeat">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
-      <div class="pz-display" style="font-size: 17px">РАЗВИТИЕ</div>
+      <div class="pz-display" style="font-size: 17px">{{ tr('tree.title') }}</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
     </header>
 
@@ -255,16 +256,16 @@ watch(selected, (t) => {
           <div>
             <div style="display: flex; align-items: baseline; gap: 7px">
               <span class="pz-display" style="font-size: 15.5px">{{ t.name }}</span>
-              <span style="font-size: 11px; color: var(--ink-dim); font-weight: 500">{{ t.cls }} · ур. {{ t.tier }}</span>
+              <span style="font-size: 11px; color: var(--ink-dim); font-weight: 500">{{ tr('tree.classTier', { cls: tr('game.classes.' + t.classId), tier: t.tier }) }}</span>
             </div>
             <div style="font-size: 11px; color: var(--ink-faint); margin-top: 2px; font-weight: 500; display: flex; align-items: center; gap: 6px">
               <template v-if="isOwned(t.id)">
                 <span style="display: flex; gap: 3px">
                   <span v-for="m in MODULE_DEFS" :key="m.id" class="diamond" :style="{ background: diamondColor(t.id, m.id) }"></span>
                 </span>
-                топ-модули {{ maxedCount(t.id) }}/{{ MODULE_DEFS.length }}
+                {{ tr('tree.topModules', { n: maxedCount(t.id), total: MODULE_DEFS.length }) }}
               </template>
-              <template v-else-if="canUnlock(t)">Доступен к исследованию</template>
+              <template v-else-if="canUnlock(t)">{{ tr('tree.available') }}</template>
               <template v-else>{{ unlockReason(t) }}</template>
             </div>
           </div>
@@ -277,7 +278,7 @@ watch(selected, (t) => {
 
       <!-- ===== премиум-техника (покупка за ⭐, не исследуется) ===== -->
       <div v-if="premiums.length" class="prem-sec">
-        <div class="prem-head pz-pixel">★ ПРЕМИУМ-ТЕХНИКА</div>
+        <div class="prem-head pz-pixel">{{ tr('tree.premHead') }}</div>
         <div
           v-for="t in premiums"
           :key="t.id"
@@ -289,12 +290,12 @@ watch(selected, (t) => {
             <div style="flex: 1; min-width: 0; text-align: left">
               <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap">
                 <span class="pz-display" style="font-size: 15px">{{ t.name }}</span>
-                <span v-if="t.legend" class="legend-tag pz-pixel">ЛЕГЕНДА</span>
-                <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint)">ТТХ {{ premSel === t.id ? '▾' : '▸' }}</span>
+                <span v-if="t.legend" class="legend-tag pz-pixel">{{ tr('tree.legend') }}</span>
+                <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint)">{{ tr('tree.spec') }} {{ premSel === t.id ? '▾' : '▸' }}</span>
               </div>
-              <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; font-weight: 500">{{ t.cls }} · ур. {{ t.tier }} · +5% опыт/кредиты, кристаллы</div>
+              <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; font-weight: 500">{{ tr('tree.premPerk', { cls: tr('game.classes.' + t.classId), tier: t.tier }) }}</div>
             </div>
-            <button v-if="isOwned(t.id)" class="prem-act owned" @click.stop="pickPrem(t)">✓ в гараже</button>
+            <button v-if="isOwned(t.id)" class="prem-act owned" @click.stop="pickPrem(t)">{{ tr('tree.inGarage') }}</button>
             <button v-else class="prem-act prem-buy" @click.stop="buyPrem(t)">★ {{ t.stars }}</button>
           </div>
           <!-- ТТХ прем-танка (тап по строке): оценить ДО покупки -->
@@ -313,7 +314,7 @@ watch(selected, (t) => {
         <div style="flex: 1">
           <div class="pz-display" style="font-size: 16px">{{ selected.name }}</div>
           <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.4; margin-top: 2px">
-            {{ isOwned(selected.id) ? 'Изучи все топ-модули, чтобы открыть следующую машину ветки.' : selected.desc }}
+            {{ isOwned(selected.id) ? tr('tree.ownedHint') : selected.desc }}
           </div>
         </div>
       </div>
@@ -367,7 +368,7 @@ watch(selected, (t) => {
               <div style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500">{{ mod.stats[li] }}</div>
             </div>
             <span v-if="li + 1 <= tankModLevel(selected.id, mod.id)" class="pz-chip" style="color: var(--amber); font-size: 10.5px">
-              {{ li + 1 === tankModLevel(selected.id, mod.id) ? 'Установлен ★' : '✓' }}
+              {{ li + 1 === tankModLevel(selected.id, mod.id) ? tr('tree.installed') : '✓' }}
             </span>
             <button
               v-else-if="li + 1 === tankModLevel(selected.id, mod.id) + 1"
@@ -378,11 +379,11 @@ watch(selected, (t) => {
             >
               <PzIcon name="coin" :size="12" /> {{ moduleCost(selected.tier, li + 1) }}
             </button>
-            <span v-else class="pz-chip" style="color: var(--ink-faint); font-size: 10.5px"><PzIcon name="lock" :size="10" /> закрыто</span>
+            <span v-else class="pz-chip" style="color: var(--ink-faint); font-size: 10.5px"><PzIcon name="lock" :size="10" /> {{ tr('tree.locked') }}</span>
           </div>
         </div>
 
-        <button class="pz-btn2" @click="pickInHangar">Выбрать в ангаре</button>
+        <button class="pz-btn2" @click="pickInHangar">{{ tr('tree.pickInHangar') }}</button>
       </template>
 
       <template v-else>
@@ -404,9 +405,9 @@ watch(selected, (t) => {
           :disabled="!canUnlock(selected)"
           @click="research(selected)"
         >
-          <template v-if="!canUnlock(selected)">ВЫПОЛНИ УСЛОВИЯ ВЫШЕ</template>
-          <template v-else-if="profile.credits < selected.cost">НУЖНО <PzIcon name="coin" :size="15" /> {{ fmt(selected.cost) }}</template>
-          <template v-else>ИССЛЕДОВАТЬ · {{ fmt(selected.cost) }}</template>
+          <template v-if="!canUnlock(selected)">{{ tr('tree.meetConditions') }}</template>
+          <template v-else-if="profile.credits < selected.cost">{{ tr('tree.need') }} <PzIcon name="coin" :size="15" /> {{ fmt(selected.cost) }}</template>
+          <template v-else>{{ tr('tree.research', { cost: fmt(selected.cost) }) }}</template>
         </button>
       </template>
     </div>

@@ -1,0 +1,56 @@
+// Поиск боя: заголовки экрана, фазы подбора, состав отряда 7×7, статус связи.
+// fillers — реалистичные ники для добитых слотов (неотличимы от живых игроков):
+// в ru оставляем исходный набор, в en — правдоподобные англоязычные позывные.
+export default {
+  en: {
+    titleNoConnection: 'NO CONNECTION',
+    titleFound: 'BATTLE FOUND',
+    titleSearching: 'SEARCHING',
+    youFallback: 'YOU',
+    battle7x7: '7×7 battle',
+    battle7x7Caps: '7×7 BATTLE',
+    tiers: ({ range }) => `tiers ${range}`,
+    deployNote: 'map and side announced by HQ on deployment',
+    serverDown: 'server unavailable — try again or return to garage',
+    // статус под радаром
+    statusServerDown: 'SERVER UNAVAILABLE',
+    statusConnecting: 'CONNECTING TO SERVER…',
+    statusSearching: 'LOOKING FOR PLAYERS…',
+    statusFilling: 'PLAYERS CONNECTING…',
+    statusDeploying: 'DEPLOYING',
+    // состав отряда
+    yourSquad: 'YOUR SQUAD',
+    opponent: 'OPPONENT',
+    searchingSlot: 'searching…',
+    gathering: 'gathering squad…',
+    gathered: 'squad ready',
+    // кнопки
+    cancelSearch: 'Cancel search',
+    intoBattle: '▸ TO BATTLE',
+    fillers: ['Shadow', 'Reaper', 'Maverick', 'Ghost', 'Hammer', 'Bear', 'NightOwl', 'red_baron', 'Specter', 'Predator', 'Falcon', 'Viking', 'IronMax', 'Lynx', 'Thunder', 'Ash', 'Wolf_K', 'Trooper'],
+  },
+  ru: {
+    titleNoConnection: 'НЕТ СВЯЗИ',
+    titleFound: 'БОЙ НАЙДЕН',
+    titleSearching: 'ПОИСК БОЯ',
+    youFallback: 'ВЫ',
+    battle7x7: 'бой 7×7',
+    battle7x7Caps: 'БОЙ 7×7',
+    tiers: ({ range }) => `уровни ${range}`,
+    deployNote: 'карту и сторону объявит штаб при развёртывании',
+    serverDown: 'сервер недоступен — попробуй ещё раз или вернись в ангар',
+    statusServerDown: 'СЕРВЕР НЕДОСТУПЕН',
+    statusConnecting: 'СОЕДИНЕНИЕ С СЕРВЕРОМ…',
+    statusSearching: 'ИЩЕМ ИГРОКОВ…',
+    statusFilling: 'ИГРОКИ ПОДКЛЮЧАЮТСЯ…',
+    statusDeploying: 'РАЗВЁРТЫВАНИЕ',
+    yourSquad: 'ВАШ ОТРЯД',
+    opponent: 'ПРОТИВНИК',
+    searchingSlot: 'поиск…',
+    gathering: 'идёт сбор отряда…',
+    gathered: 'отряд в сборе',
+    cancelSearch: 'Отменить поиск',
+    intoBattle: '▸ В БОЙ',
+    fillers: ['Shadow', 'Reaper', 'Барон', 'Гроза', 'Стальной', 'Медведь', 'NightOwl', 'red_baron', 'Призрак', 'Хищник', 'Сокол', 'Викинг', 'IronMax', 'Рысь', 'Гром', 'Серый', 'Wolf_K', 'Танкист'],
+  },
+}

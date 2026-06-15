@@ -3,14 +3,29 @@
 // TANK_CLASSES) — он управляет поведением в Pixi-бою. Поля name/tier/cls/desc/
 // stats/cost — для мета-экранов (ангар/прокачка).
 
-const CLS = { Лёгкий: 'light', Средний: 'medium', Тяжёлый: 'heavy' }
-const withClass = (t) => ({ ...t, classId: CLS[t.cls] || 'medium' })
+import { t } from '../i18n.js'
 
-export const NATIONS = [
-  { id: 'ussr', label: 'СССР' },
-  { id: 'ger', label: 'ГЕРМАНИЯ' },
-  { id: 'usa', label: 'США' },
-]
+// привязать локализованные поля к объекту через геттеры: при чтении o.name (и т.п.)
+// берётся строка из словаря активного языка (locales/game.js). getters —
+// { поле: (o) => 'ключ-в-словаре' }. Это даёт двуязычие без правок компонентов:
+// они по-прежнему читают tank.name / medal.desc / rank.name, но значение —
+// локализованное. Язык фиксируется на старте (initLocale в main.js).
+function defLoc(obj, getters) {
+  for (const field in getters) {
+    const keyOf = getters[field]
+    Object.defineProperty(obj, field, { enumerable: true, configurable: true, get: () => t(keyOf(obj)) })
+  }
+  return obj
+}
+
+const CLS = { Лёгкий: 'light', Средний: 'medium', Тяжёлый: 'heavy' }
+const withClass = (tk) =>
+  defLoc({ ...tk, classId: CLS[tk.cls] || 'medium' }, {
+    name: (o) => `game.tanks.${o.id}.name`,
+    desc: (o) => `game.tanks.${o.id}.desc`,
+  })
+
+export const NATIONS = [{ id: 'ussr' }, { id: 'ger' }, { id: 'usa' }].map((n) => defLoc(n, { label: (o) => `game.nations.${o.id}` }))
 
 // Статы 0..10 (dmg/rof/spd/mnv/view/hp) — шкала растянута на 10 уровней
 // до новейших машин: тир-1 — честное днище (1-3), топ-10 — 9-10.
@@ -20,40 +35,40 @@ export const NATIONS = [
 export const MAX_TIER = 10
 export const TANKS_BY_NATION = {
   ussr: [
-    { id: 't26', name: 'Т-26', tier: 1, cls: 'Лёгкий', desc: 'Учебная парта танкиста. Лёгкий, простой, везде успевает.', stats: { dmg: 1, rof: 3, spd: 3, mnv: 3, view: 2, hp: 1 } },
-    { id: 'bt7', name: 'БТ-7', tier: 2, cls: 'Лёгкий', desc: 'Самый быстрый в довоенной линейке. Жалит и уходит.', stats: { dmg: 2, rof: 4, spd: 5, mnv: 4, view: 3, hp: 2 }, cost: 200 },
-    { id: 't34', name: 'Т-34', tier: 3, cls: 'Средний', desc: 'Золотая середина: броня, ход и орудие без слабых мест.', stats: { dmg: 3, rof: 5, spd: 5, mnv: 4, view: 4, hp: 3 }, cost: 600 },
-    { id: 't3485', name: 'Т-34-85', tier: 4, cls: 'Средний', desc: 'Тот же корпус — новая башня. Пробивает то, что Т-34 не брал.', stats: { dmg: 4, rof: 5, spd: 5, mnv: 5, view: 5, hp: 4 }, cost: 1500 },
-    { id: 'kv1', name: 'КВ-1', tier: 5, cls: 'Тяжёлый', desc: 'Стальная стена. Медленный, но держит удар за всю команду.', stats: { dmg: 6, rof: 3, spd: 3, mnv: 3, view: 4, hp: 6 }, cost: 25000 },
-    { id: 'is2', name: 'ИС-2', tier: 6, cls: 'Тяжёлый', desc: 'Зверобой. 122-мм аргумент, после которого спор окончен.', stats: { dmg: 7, rof: 3, spd: 4, mnv: 4, view: 5, hp: 7 }, cost: 70000 },
-    { id: 't72', name: 'Т-72', tier: 7, cls: 'Средний', desc: 'Рабочая лошадь холодной войны: автомат заряжания, низкий силуэт.', stats: { dmg: 7, rof: 6, spd: 7, mnv: 6, view: 7, hp: 6 }, cost: 200000 },
-    { id: 't90', name: 'Т-90', tier: 8, cls: 'Средний', desc: 'Современный ОБТ: тепловизор, динамическая защита, точность.', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 7 }, cost: 550000 },
-    { id: 't80u', name: 'Т-80У', tier: 9, cls: 'Средний', desc: 'Газотурбинная молния. Врывается первым и уходит до ответа.', stats: { dmg: 8, rof: 7, spd: 9, mnv: 8, view: 8, hp: 7 }, cost: 1400000 },
-    { id: 't14', name: 'Т-14 Армата', tier: 10, cls: 'Тяжёлый', desc: 'Необитаемая башня, «Афганит». Танк из будущего — уже здесь.', stats: { dmg: 10, rof: 7, spd: 8, mnv: 7, view: 10, hp: 10 }, cost: 3500000 },
+    { id: 't26', tier: 1, cls: 'Лёгкий', stats: { dmg: 1, rof: 3, spd: 3, mnv: 3, view: 2, hp: 1 } },
+    { id: 'bt7', tier: 2, cls: 'Лёгкий', stats: { dmg: 2, rof: 4, spd: 5, mnv: 4, view: 3, hp: 2 }, cost: 200 },
+    { id: 't34', tier: 3, cls: 'Средний', stats: { dmg: 3, rof: 5, spd: 5, mnv: 4, view: 4, hp: 3 }, cost: 600 },
+    { id: 't3485', tier: 4, cls: 'Средний', stats: { dmg: 4, rof: 5, spd: 5, mnv: 5, view: 5, hp: 4 }, cost: 1500 },
+    { id: 'kv1', tier: 5, cls: 'Тяжёлый', stats: { dmg: 6, rof: 3, spd: 3, mnv: 3, view: 4, hp: 6 }, cost: 25000 },
+    { id: 'is2', tier: 6, cls: 'Тяжёлый', stats: { dmg: 7, rof: 3, spd: 4, mnv: 4, view: 5, hp: 7 }, cost: 70000 },
+    { id: 't72', tier: 7, cls: 'Средний', stats: { dmg: 7, rof: 6, spd: 7, mnv: 6, view: 7, hp: 6 }, cost: 200000 },
+    { id: 't90', tier: 8, cls: 'Средний', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 7 }, cost: 550000 },
+    { id: 't80u', tier: 9, cls: 'Средний', stats: { dmg: 8, rof: 7, spd: 9, mnv: 8, view: 8, hp: 7 }, cost: 1400000 },
+    { id: 't14', tier: 10, cls: 'Тяжёлый', stats: { dmg: 10, rof: 7, spd: 8, mnv: 7, view: 10, hp: 10 }, cost: 3500000 },
   ],
   ger: [
-    { id: 'pz2', name: 'Pz. II', tier: 1, cls: 'Лёгкий', desc: 'Скорострельная малокалиберка. Шквал огня на ближней дистанции.', stats: { dmg: 1, rof: 4, spd: 3, mnv: 3, view: 2, hp: 1 } },
-    { id: 'pz3', name: 'Pz. III', tier: 2, cls: 'Лёгкий', desc: 'Точный и дисциплинированный. Дуэлянт на средней дистанции.', stats: { dmg: 2, rof: 4, spd: 4, mnv: 4, view: 3, hp: 2 }, cost: 200 },
-    { id: 'pz4', name: 'Pz. IV', tier: 3, cls: 'Средний', desc: 'Рабочая лошадь вермахта. Стабильный урон в любой ситуации.', stats: { dmg: 3, rof: 4, spd: 4, mnv: 4, view: 4, hp: 3 }, cost: 600 },
-    { id: 'pnt', name: 'Panther', tier: 4, cls: 'Средний', desc: 'Длинная пушка, точность снайпера. Контроль линии огня.', stats: { dmg: 4, rof: 4, spd: 5, mnv: 4, view: 6, hp: 4 }, cost: 1500 },
-    { id: 'tgr', name: 'Tiger', tier: 5, cls: 'Тяжёлый', desc: 'Легенда страха. Один выстрел решает перестрелку.', stats: { dmg: 6, rof: 3, spd: 3, mnv: 3, view: 5, hp: 6 }, cost: 25000 },
-    { id: 'tgr2', name: 'Tiger II', tier: 6, cls: 'Тяжёлый', desc: 'Королевский тигр: лоб, который не пробивается в принципе.', stats: { dmg: 7, rof: 3, spd: 4, mnv: 3, view: 5, hp: 7 }, cost: 70000 },
-    { id: 'leo1', name: 'Leopard 1', tier: 7, cls: 'Средний', desc: 'Скорость вместо брони. Стреляй первым — и тебя не достанут.', stats: { dmg: 7, rof: 6, spd: 8, mnv: 7, view: 7, hp: 5 }, cost: 200000 },
-    { id: 'leo2', name: 'Leopard 2', tier: 8, cls: 'Средний', desc: 'Эталон современного ОБТ: оптика, стабилизация, немецкая точность.', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 8 }, cost: 550000 },
-    { id: 'leo2a7', name: 'Leopard 2A7', tier: 9, cls: 'Средний', desc: 'Цифровое поле боя: видит всё, попадает с первого выстрела.', stats: { dmg: 9, rof: 7, spd: 8, mnv: 7, view: 9, hp: 8 }, cost: 1400000 },
-    { id: 'kf51', name: 'KF51 Panther', tier: 10, cls: 'Средний', desc: 'Новая «Пантера»: 130-мм орудие и дроны-разведчики на борту.', stats: { dmg: 10, rof: 8, spd: 9, mnv: 8, view: 10, hp: 8 }, cost: 3500000 },
+    { id: 'pz2', tier: 1, cls: 'Лёгкий', stats: { dmg: 1, rof: 4, spd: 3, mnv: 3, view: 2, hp: 1 } },
+    { id: 'pz3', tier: 2, cls: 'Лёгкий', stats: { dmg: 2, rof: 4, spd: 4, mnv: 4, view: 3, hp: 2 }, cost: 200 },
+    { id: 'pz4', tier: 3, cls: 'Средний', stats: { dmg: 3, rof: 4, spd: 4, mnv: 4, view: 4, hp: 3 }, cost: 600 },
+    { id: 'pnt', tier: 4, cls: 'Средний', stats: { dmg: 4, rof: 4, spd: 5, mnv: 4, view: 6, hp: 4 }, cost: 1500 },
+    { id: 'tgr', tier: 5, cls: 'Тяжёлый', stats: { dmg: 6, rof: 3, spd: 3, mnv: 3, view: 5, hp: 6 }, cost: 25000 },
+    { id: 'tgr2', tier: 6, cls: 'Тяжёлый', stats: { dmg: 7, rof: 3, spd: 4, mnv: 3, view: 5, hp: 7 }, cost: 70000 },
+    { id: 'leo1', tier: 7, cls: 'Средний', stats: { dmg: 7, rof: 6, spd: 8, mnv: 7, view: 7, hp: 5 }, cost: 200000 },
+    { id: 'leo2', tier: 8, cls: 'Средний', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 8 }, cost: 550000 },
+    { id: 'leo2a7', tier: 9, cls: 'Средний', stats: { dmg: 9, rof: 7, spd: 8, mnv: 7, view: 9, hp: 8 }, cost: 1400000 },
+    { id: 'kf51', tier: 10, cls: 'Средний', stats: { dmg: 10, rof: 8, spd: 9, mnv: 8, view: 10, hp: 8 }, cost: 3500000 },
   ],
   usa: [
-    { id: 'm2l', name: 'M2 Light', tier: 1, cls: 'Лёгкий', desc: 'Юркий разведчик. Пулемётный шквал по лёгкой броне.', stats: { dmg: 1, rof: 4, spd: 4, mnv: 3, view: 2, hp: 1 } },
-    { id: 'stu', name: 'Stuart', tier: 2, cls: 'Лёгкий', desc: 'Быстрый фланговый нож. Кружи и жаль в корму.', stats: { dmg: 2, rof: 5, spd: 5, mnv: 5, view: 3, hp: 2 }, cost: 200 },
-    { id: 'sher', name: 'Sherman', tier: 3, cls: 'Средний', desc: 'Массовый и надёжный. Стабильная линия огня команды.', stats: { dmg: 3, rof: 4, spd: 4, mnv: 4, view: 4, hp: 3 }, cost: 600 },
-    { id: 'e8', name: 'Easy 8', tier: 4, cls: 'Средний', desc: 'Шерман на максималках: ход, стабилизация, темп.', stats: { dmg: 4, rof: 5, spd: 5, mnv: 5, view: 5, hp: 4 }, cost: 1500 },
-    { id: 'per', name: 'Pershing', tier: 5, cls: 'Тяжёлый', desc: 'Ответ Тигру. Тяжёлая башня, убойный первый выстрел.', stats: { dmg: 5, rof: 4, spd: 4, mnv: 4, view: 5, hp: 5 }, cost: 25000 },
-    { id: 'm48', name: 'M48 Patton', tier: 6, cls: 'Средний', desc: 'Универсал поствоенной школы: всего по чуть-чуть, и всё работает.', stats: { dmg: 6, rof: 5, spd: 5, mnv: 5, view: 6, hp: 5 }, cost: 70000 },
-    { id: 'm60', name: 'M60', tier: 7, cls: 'Средний', desc: 'Патруль холодной войны. Надёжный, зоркий, везде успевает.', stats: { dmg: 7, rof: 6, spd: 6, mnv: 6, view: 7, hp: 6 }, cost: 200000 },
-    { id: 'abr', name: 'M1 Abrams', tier: 8, cls: 'Тяжёлый', desc: 'Газотурбинный монстр: композитная броня и убойный темп.', stats: { dmg: 9, rof: 6, spd: 7, mnv: 6, view: 9, hp: 9 }, cost: 550000 },
-    { id: 'm1a2', name: 'M1A2 SEP', tier: 9, cls: 'Тяжёлый', desc: 'Абрамс с цифровой начинкой: тепловизоры третьего поколения.', stats: { dmg: 9, rof: 6, spd: 7, mnv: 7, view: 9, hp: 9 }, cost: 1400000 },
-    { id: 'abrx', name: 'AbramsX', tier: 10, cls: 'Тяжёлый', desc: 'Гибридный прототип: тише, злее, автомат заряжания на 30 тонн легче.', stats: { dmg: 10, rof: 8, spd: 8, mnv: 7, view: 10, hp: 9 }, cost: 3500000 },
+    { id: 'm2l', tier: 1, cls: 'Лёгкий', stats: { dmg: 1, rof: 4, spd: 4, mnv: 3, view: 2, hp: 1 } },
+    { id: 'stu', tier: 2, cls: 'Лёгкий', stats: { dmg: 2, rof: 5, spd: 5, mnv: 5, view: 3, hp: 2 }, cost: 200 },
+    { id: 'sher', tier: 3, cls: 'Средний', stats: { dmg: 3, rof: 4, spd: 4, mnv: 4, view: 4, hp: 3 }, cost: 600 },
+    { id: 'e8', tier: 4, cls: 'Средний', stats: { dmg: 4, rof: 5, spd: 5, mnv: 5, view: 5, hp: 4 }, cost: 1500 },
+    { id: 'per', tier: 5, cls: 'Тяжёлый', stats: { dmg: 5, rof: 4, spd: 4, mnv: 4, view: 5, hp: 5 }, cost: 25000 },
+    { id: 'm48', tier: 6, cls: 'Средний', stats: { dmg: 6, rof: 5, spd: 5, mnv: 5, view: 6, hp: 5 }, cost: 70000 },
+    { id: 'm60', tier: 7, cls: 'Средний', stats: { dmg: 7, rof: 6, spd: 6, mnv: 6, view: 7, hp: 6 }, cost: 200000 },
+    { id: 'abr', tier: 8, cls: 'Тяжёлый', stats: { dmg: 9, rof: 6, spd: 7, mnv: 6, view: 9, hp: 9 }, cost: 550000 },
+    { id: 'm1a2', tier: 9, cls: 'Тяжёлый', stats: { dmg: 9, rof: 6, spd: 7, mnv: 7, view: 9, hp: 9 }, cost: 1400000 },
+    { id: 'abrx', tier: 10, cls: 'Тяжёлый', stats: { dmg: 10, rof: 8, spd: 8, mnv: 7, view: 10, hp: 9 }, cost: 3500000 },
   ],
 }
 
@@ -63,13 +78,13 @@ export const TANKS_BY_NATION = {
 // nation/tier — для тир-брекета и группировки; спрайт <id>.png уже в sprites/tanks.
 export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemChance: 0.1, gems: 10 }
 export const PREMIUM_TANKS = [
-  { id: 't28', nation: 'ussr', name: 'Т-28', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 99, desc: 'Легенда — трёхбашенный богатырь. Премиум: +5% опыта и кредитов, 1 из 10 боёв даёт синие кристаллы.', stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
-  { id: 't54', nation: 'ussr', name: 'Т-54', tier: 8, cls: 'Средний', premium: true, stars: 99, desc: 'Послевоенный эталон. Премиум-доход + кристаллы.', stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },
-  { id: 'pz4h', nation: 'ger', name: 'Pz. IV H', tier: 4, cls: 'Средний', premium: true, stars: 99, desc: 'Рабочая лошадка с экранами. Премиум-доход + кристаллы.', stats: { dmg: 4, rof: 5, spd: 5, mnv: 4, view: 5, hp: 4 } },
-  { id: 'maus', nation: 'ger', name: 'Maus', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, desc: 'Сверхтяж — гора брони и HP. Премиум-доход + кристаллы.', stats: { dmg: 8, rof: 2, spd: 2, mnv: 2, view: 5, hp: 8 } },
-  { id: 'ram', nation: 'usa', name: 'Ram II', tier: 4, cls: 'Средний', premium: true, stars: 99, desc: 'Канадский крейсер. Премиум-доход + кристаллы.', stats: { dmg: 3, rof: 6, spd: 5, mnv: 5, view: 4, hp: 4 } },
-  { id: 'sper', nation: 'usa', name: 'Super Pershing', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, desc: 'Бронированный «Першинг». Премиум-доход + кристаллы.', stats: { dmg: 9, rof: 5, spd: 5, mnv: 4, view: 6, hp: 9 } },
-]
+  { id: 't28', nation: 'ussr', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 99, stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
+  { id: 't54', nation: 'ussr', tier: 8, cls: 'Средний', premium: true, stars: 99, stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },
+  { id: 'pz4h', nation: 'ger', tier: 4, cls: 'Средний', premium: true, stars: 99, stats: { dmg: 4, rof: 5, spd: 5, mnv: 4, view: 5, hp: 4 } },
+  { id: 'maus', nation: 'ger', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, stats: { dmg: 8, rof: 2, spd: 2, mnv: 2, view: 5, hp: 8 } },
+  { id: 'ram', nation: 'usa', tier: 4, cls: 'Средний', premium: true, stars: 99, stats: { dmg: 3, rof: 6, spd: 5, mnv: 5, view: 4, hp: 4 } },
+  { id: 'sper', nation: 'usa', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, stats: { dmg: 9, rof: 5, spd: 5, mnv: 4, view: 6, hp: 9 } },
+].map(withClass) // withClass: classId + локализованные геттеры name/desc (прем-танки тоже)
 export const TANKS = [...Object.values(TANKS_BY_NATION).flat(), ...PREMIUM_TANKS].map(withClass)
 export const TANK_BY_ID = Object.fromEntries(TANKS.map((t) => [t.id, t]))
 export const tanksOfNation = (nation) => (TANKS_BY_NATION[nation] || []).map(withClass)
@@ -81,7 +96,8 @@ export const nationOf = (tankId) =>
   (TANK_BY_ID[tankId] && TANK_BY_ID[tankId].nation) || // прем-танки лежат вне TANKS_BY_NATION
   'ussr'
 
-export const STAT_LABELS = { dmg: 'Урон', rof: 'Скорострельность', spd: 'Скорость', mnv: 'Манёвр', view: 'Обзор', hp: 'Прочность' }
+export const STAT_LABELS = {}
+for (const k of ['dmg', 'rof', 'spd', 'mnv', 'view', 'hp']) Object.defineProperty(STAT_LABELS, k, { enumerable: true, get: () => t(`game.stats.${k}`) })
 
 // ---------- реальные боевые статы танка (deg-форма для движка) ----------
 // Сектор/линия сведения/допуск — характер класса; остальное считается из
@@ -137,13 +153,13 @@ export function statReal(cs, key) {
 }
 
 // ---------- модули: 5 слотов × 3 уровня (штатный → топ) ----------
-export const MODULE_DEFS = [
-  { id: 'gun', label: 'Пушка', levels: ['Штатная', 'Улучшенная', 'Длинноствольная'], stats: ['базовое оснащение', 'урон +10%', 'урон +22%'] },
-  { id: 'tur', label: 'Башня', levels: ['Штатная', 'Усиленная', 'Командирская'], stats: ['базовое оснащение', 'прочность +8%', 'прочность +18%'] },
-  { id: 'eng', label: 'Двигатель', levels: ['Штатный', 'Форсированный', 'Дизельный'], stats: ['базовое оснащение', 'скорость +8%', 'скорость +16%'] },
-  { id: 'trk', label: 'Гусеницы', levels: ['Штатные', 'Усиленные', 'Маневровые'], stats: ['базовое оснащение', 'манёвр +8%', 'манёвр +16%'] },
-  { id: 'rad', label: 'Рация', levels: ['Штатная', 'Дальняя', 'Командирская'], stats: ['базовое оснащение', 'обзор +12%', 'обзор +24%'] },
-]
+export const MODULE_DEFS = ['gun', 'tur', 'eng', 'trk', 'rad'].map((id) =>
+  defLoc({ id }, {
+    label: (o) => `game.modules.${o.id}.label`,
+    levels: (o) => `game.modules.${o.id}.levels`,
+    stats: (o) => `game.modules.${o.id}.stats`,
+  }),
+)
 
 // множители на боевые статы класса по уровню модуля (1=штатный)
 export const MODULE_COMBAT = {
@@ -157,24 +173,29 @@ export const MODULE_COMBAT = {
 // ---------- экипаж: 5 специалистов, у каждого перк 0..3 ранга ----------
 // Ранг перка стоит 1 очко навыка (+1 очко за уровень экипажа после первого,
 // см. store) и кредиты. Очков меньше, чем рангов всего, — выбор имеет цену.
-export const CREW_MEMBERS = [
-  { id: 'cmd', role: 'Командир', name: 'к-н Орлов', icon: 'star', perk: 'Боевое братство', effect: '+1% к темпу, обзору, ходу и манёвру за ранг' },
-  { id: 'gnr', role: 'Наводчик', name: 'ст. с-т Зайцев', icon: 'gun', perk: 'Снайпер', effect: '+3% к урону за ранг' },
-  { id: 'lod', role: 'Заряжающий', name: 'ефр. Котов', icon: 'ammo', perk: 'Досылатель', effect: '−3% к перезарядке за ранг' },
-  { id: 'drv', role: 'Мехвод', name: 'с-т Громов', icon: 'trk', perk: 'Виртуоз', effect: '+3% к ходу и манёвру за ранг' },
-  { id: 'rad', role: 'Радист', name: 'мл. с-т Соколов', icon: 'rad', perk: 'Орлиный глаз', effect: '+4% к обзору за ранг' },
-]
+const CREW_ICONS = { cmd: 'star', gnr: 'gun', lod: 'ammo', drv: 'trk', rad: 'rad' }
+export const CREW_MEMBERS = ['cmd', 'gnr', 'lod', 'drv', 'rad'].map((id) =>
+  defLoc({ id, icon: CREW_ICONS[id] }, {
+    role: (o) => `game.crew.${o.id}.role`,
+    name: (o) => `game.crew.${o.id}.name`,
+    perk: (o) => `game.crew.${o.id}.perk`,
+    effect: (o) => `game.crew.${o.id}.effect`,
+  }),
+)
 export const CREW_PERK_MAX = 3
 export const CREW_PERK_COSTS = [800, 2000, 4500] // кредиты за ранг I/II/III
 export const crewPerkCost = (curLevel) => CREW_PERK_COSTS[curLevel] ?? Infinity
 
 // ---------- рефералы (взвод/друзья — через реальные Telegram deep-link'и, без фейка) ----------
 export const REF_MILESTONES = [
-  { need: 1, label: '500 кредитов', credits: 500, tokens: 0 },
+  { need: 1, credits: 500, tokens: 0 },
   // оф-ящик: реальный дроп камуфляжа + кредиты+жетоны (crate:true в claimRefMilestone)
-  { need: 3, label: 'Офицерский ящик', credits: 1000, tokens: 5, crate: true },
-  { need: 5, label: '25 жетонов', credits: 0, tokens: 25 },
-]
+  { need: 3, credits: 1000, tokens: 5, crate: true },
+  { need: 5, credits: 0, tokens: 25 },
+].map((m, i) => {
+  Object.defineProperty(m, 'label', { enumerable: true, get: () => t('game.refMilestones')[i] })
+  return m
+})
 
 // модули дёшевы (быстрый апгрейд, не гейт прогресса) — вес прогрессии на цене
 // танка. Прокачка 5 модулей = 600×tier кредитов (было 5250×tier).
@@ -192,13 +213,13 @@ export const GOLD_AMMO_PACKS = [
 // blocked/wins/battles. Блок бронёй копится только в боях с ботами (в PvP
 // брони пока нет).
 export const DAILY_TASKS = [
-  { id: 'dmg600', label: 'Нанеси 4500 урона', goal: 4500, key: 'damage', credits: 400 },
-  { id: 'kills3', label: 'Уничтожь 3 машины', goal: 3, key: 'kills', credits: 500 },
-  { id: 'light2', label: 'Уничтожь 2 лёгких танка', goal: 2, key: 'lightKills', tokens: 5 },
-  { id: 'block3', label: 'Заблокируй 3 снаряда бронёй', goal: 3, key: 'blocked', credits: 350 },
-  { id: 'win1', label: 'Одержи победу', goal: 1, key: 'wins', credits: 600 },
-  { id: 'battles3', label: 'Сыграй 3 боя', goal: 3, key: 'battles', credits: 300 },
-]
+  { id: 'dmg600', goal: 4500, key: 'damage', credits: 400 },
+  { id: 'kills3', goal: 3, key: 'kills', credits: 500 },
+  { id: 'light2', goal: 2, key: 'lightKills', tokens: 5 },
+  { id: 'block3', goal: 3, key: 'blocked', credits: 350 },
+  { id: 'win1', goal: 1, key: 'wins', credits: 600 },
+  { id: 'battles3', goal: 3, key: 'battles', credits: 300 },
+].map((d) => defLoc(d, { label: (o) => `game.tasks.${o.id}` }))
 export const TASKS_PER_DAY = 3
 
 // детерминированный выбор трёх задач дня (у всех игроков одинаковые)
@@ -224,16 +245,16 @@ export const DAILY_REWARDS = [
 // узор поверх спрайта (см. game/camo.js): spots — пятна, digital — пиксельная
 // цифра, stripes — тигровые полосы. colors — палитра узора, alpha — плотность.
 export const SKINS = [
-  { id: 'std', name: 'Штатный', tint: 0xffffff, costTokens: 0 },
-  { id: 'winter', name: 'Зимний', tint: 0xdce8ff, costTokens: 15, camo: { type: 'spots', colors: ['#e9eef5', '#b9c6d6', '#8794a6'], alpha: 0.6 } },
-  { id: 'desert', name: 'Пустынный', tint: 0xffd9a0, costTokens: 15, camo: { type: 'spots', colors: ['#d8b87c', '#b08a50', '#8a683c'], alpha: 0.55 } },
-  { id: 'forest', name: 'Лесной', tint: 0xa8cc8e, costTokens: 15, camo: { type: 'spots', colors: ['#5e7a3e', '#3c572c', '#7d6a45'], alpha: 0.55 } },
-  { id: 'night', name: 'Ночной', tint: 0x9aa0ad, costTokens: 25, camo: { type: 'digital', colors: ['#3a4150', '#262c38', '#4d5666'], alpha: 0.62 } },
-  { id: 'digital', name: 'Цифра', tint: 0xa9bba1, costTokens: 35, camo: { type: 'digital', colors: ['#7d8f72', '#55654e', '#a3b39a'], alpha: 0.6 } },
-  { id: 'urban', name: 'Городской', tint: 0xc4c8cf, costTokens: 35, camo: { type: 'digital', colors: ['#9aa0a8', '#686d74', '#c9ced6'], alpha: 0.6 } },
-  { id: 'tiger', name: 'Тигровый', tint: 0xd8b56a, costTokens: 45, camo: { type: 'stripes', colors: ['#c8a35e', '#332c1e'], alpha: 0.62 } },
-  { id: 'gold', name: 'Парадный', tint: 0xffd24a, costTokens: 60 },
-]
+  { id: 'std', tint: 0xffffff, costTokens: 0 },
+  { id: 'winter', tint: 0xdce8ff, costTokens: 15, camo: { type: 'spots', colors: ['#e9eef5', '#b9c6d6', '#8794a6'], alpha: 0.6 } },
+  { id: 'desert', tint: 0xffd9a0, costTokens: 15, camo: { type: 'spots', colors: ['#d8b87c', '#b08a50', '#8a683c'], alpha: 0.55 } },
+  { id: 'forest', tint: 0xa8cc8e, costTokens: 15, camo: { type: 'spots', colors: ['#5e7a3e', '#3c572c', '#7d6a45'], alpha: 0.55 } },
+  { id: 'night', tint: 0x9aa0ad, costTokens: 25, camo: { type: 'digital', colors: ['#3a4150', '#262c38', '#4d5666'], alpha: 0.62 } },
+  { id: 'digital', tint: 0xa9bba1, costTokens: 35, camo: { type: 'digital', colors: ['#7d8f72', '#55654e', '#a3b39a'], alpha: 0.6 } },
+  { id: 'urban', tint: 0xc4c8cf, costTokens: 35, camo: { type: 'digital', colors: ['#9aa0a8', '#686d74', '#c9ced6'], alpha: 0.6 } },
+  { id: 'tiger', tint: 0xd8b56a, costTokens: 45, camo: { type: 'stripes', colors: ['#c8a35e', '#332c1e'], alpha: 0.62 } },
+  { id: 'gold', tint: 0xffd24a, costTokens: 60 },
+].map((s) => defLoc(s, { name: (o) => `game.skins.${o.id}` }))
 export const SKIN_BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]))
 
 // ---------- камуфляжи (3 на КАЖДЫЙ танк, AI-спрайты, не CSS) ----------
@@ -241,14 +262,17 @@ export const SKIN_BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]))
 // (наш танк top-down, перекрашенный flux-kontext, на той же магенте — кеится
 // в рантайме как обычный танк). id '' — заводская окраска (базовый спрайт).
 export const CAMOS = [
-  { id: '', name: 'Заводская', short: 'СТД', cost: 0 },
-  { id: 'woodland', name: 'Лес', short: 'ЛЕС', cost: 25 },
-  { id: 'desert', name: 'Пустыня', short: 'ПУСТ', cost: 25 },
-  { id: 'winter', name: 'Зима', short: 'ЗИМА', cost: 25 },
-  { id: 'tiger', name: 'Тигр', short: 'ТИГР', cost: 40 },
-  { id: 'predator', name: 'Хищник', short: 'ХИЩ', cost: 40 },
-  { id: 'magma', name: 'Магма', short: 'МАГМА', cost: 40 },
-]
+  { id: '', cost: 0 },
+  { id: 'woodland', cost: 25 },
+  { id: 'desert', cost: 25 },
+  { id: 'winter', cost: 25 },
+  { id: 'tiger', cost: 40 },
+  { id: 'predator', cost: 40 },
+  { id: 'magma', cost: 40 },
+].map((c) => {
+  const key = c.id || 'stock' // заводская окраска (id '') живёт под ключом 'stock'
+  return defLoc(c, { name: () => `game.camos.${key}.name`, short: () => `game.camos.${key}.short` })
+})
 export const CAMO_BY_ID = Object.fromEntries(CAMOS.map((c) => [c.id, c]))
 export const CAMO_IDS = CAMOS.map((c) => c.id).filter(Boolean)
 // смена позывного — за Telegram Stars (цена авторитетна на сервере, PRODUCTS.rename)
@@ -258,21 +282,24 @@ export const RENAME_COST_STARS = 50
 // Награда (credits/tokens) выдаётся ОДИН раз за каждое новое звание. Звание
 // видно в карточке игрока, профиле и поиске боя.
 export const RANKS = [
-  { name: 'Рядовой', battles: 0, credits: 0 },
-  { name: 'Ефрейтор', battles: 5, credits: 300 },
-  { name: 'Мл. сержант', battles: 15, credits: 600 },
-  { name: 'Сержант', battles: 30, credits: 1000, tokens: 2 },
-  { name: 'Ст. сержант', battles: 50, credits: 1500, tokens: 3 },
-  { name: 'Старшина', battles: 80, credits: 2200, tokens: 4 },
-  { name: 'Прапорщик', battles: 120, credits: 3000, tokens: 5 },
-  { name: 'Лейтенант', battles: 175, credits: 4200, tokens: 6 },
-  { name: 'Ст. лейтенант', battles: 250, credits: 5800, tokens: 8 },
-  { name: 'Капитан', battles: 350, credits: 7500, tokens: 10 },
-  { name: 'Майор', battles: 500, credits: 9500, tokens: 12 },
-  { name: 'Подполковник', battles: 700, credits: 13000, tokens: 16 },
-  { name: 'Полковник', battles: 1000, credits: 18000, tokens: 22 },
-  { name: 'Генерал', battles: 1500, credits: 28000, tokens: 35 },
-]
+  { battles: 0, credits: 0 },
+  { battles: 5, credits: 300 },
+  { battles: 15, credits: 600 },
+  { battles: 30, credits: 1000, tokens: 2 },
+  { battles: 50, credits: 1500, tokens: 3 },
+  { battles: 80, credits: 2200, tokens: 4 },
+  { battles: 120, credits: 3000, tokens: 5 },
+  { battles: 175, credits: 4200, tokens: 6 },
+  { battles: 250, credits: 5800, tokens: 8 },
+  { battles: 350, credits: 7500, tokens: 10 },
+  { battles: 500, credits: 9500, tokens: 12 },
+  { battles: 700, credits: 13000, tokens: 16 },
+  { battles: 1000, credits: 18000, tokens: 22 },
+  { battles: 1500, credits: 28000, tokens: 35 },
+].map((r, i) => {
+  Object.defineProperty(r, 'name', { enumerable: true, get: () => t('game.rankNames')[i] })
+  return r
+})
 // звание по числу боёв (+ индекс в списке)
 export function rankByBattles(battles) {
   let idx = 0
@@ -318,17 +345,17 @@ export function battleScore(agg) {
 
 // градации рейтинга — подпись и цвет (наша шкала, откалибрована под expectedBattle)
 export const RATING_BANDS = [
-  { min: 2900, label: 'АС', color: '#c64bff' },
-  { min: 2000, label: 'ОТЛИЧНО', color: '#4aa3ff' },
-  { min: 1500, label: 'ХОРОШО', color: '#5fd35f' },
-  { min: 900, label: 'СРЕДНЕ', color: '#f2c14b' },
-  { min: 400, label: 'НИЖЕ СРЕДНЕГО', color: '#e0853c' },
-  { min: 0, label: 'НОВИЧОК', color: '#c2553f' },
-]
+  { id: 'ace', min: 2900, color: '#c64bff' },
+  { id: 'great', min: 2000, color: '#4aa3ff' },
+  { id: 'good', min: 1500, color: '#5fd35f' },
+  { id: 'avg', min: 900, color: '#f2c14b' },
+  { id: 'below', min: 400, color: '#e0853c' },
+  { id: 'novice', min: 0, color: '#c2553f' },
+].map((b) => defLoc(b, { label: (o) => `game.ratingBands.${o.id}` }))
 export const ratingBand = (score) => RATING_BANDS.find((b) => score >= b.min) || RATING_BANDS[RATING_BANDS.length - 1]
 
-// фейковые соперники лидерборда (бэкенда пока нет)
-export const RATING_RIVALS = ['Kolyan_T34', 'дед_максим', 'Shtorm_88', 'Виталя_98', 'KOT_B_TANKE', 'Лёха77', 'sn1per_x', 'Бородач', 'MaxPower', 'Кефир']
+// фейковые соперники лидерборда (бэкенда пока нет) — локализованы (game.ratingRivals)
+export const ratingRivals = () => t('game.ratingRivals')
 export const modLevel = (modules, tankId, modId) => ((modules || {})[tankId] || {})[modId] || 1
 export const modsMaxed = (modules, tankId) => MODULE_DEFS.every((m) => modLevel(modules, tankId, m.id) >= 3)
 export const modsMaxedCount = (modules, tankId) => MODULE_DEFS.filter((m) => modLevel(modules, tankId, m.id) >= 3).length
@@ -341,21 +368,21 @@ export const modsMaxedCount = (modules, tankId) => MODULE_DEFS.filter((m) => mod
 // glyph — символ-фоллбэк, если спрайт /sprites/medals/<id>.png ещё не подгрузился.
 export const MEDALS = [
   // боевые — за один бой
-  { id: 'warrior', name: 'Воин', desc: '3+ фрага за бой', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150 } },
-  { id: 'sniper', name: 'Снайпер раунда', desc: '5+ фрагов за бой', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2 } },
-  { id: 'firestorm', name: 'Огневой вал', desc: '8000+ урона за бой', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1 } },
-  { id: 'wall', name: 'Стальная стена', desc: '2000+ урона отражено бронёй', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blocked', need: 2000, reward: { credits: 300, tokens: 1 } },
-  { id: 'scout', name: 'Орлиный глаз', desc: '2+ фрага по засвеченным', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200 } },
-  { id: 'survivor', name: 'Уцелевший', desc: 'Выжил в бою (одна жизнь)', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150 } },
-  { id: 'triumph', name: 'Чистая победа', desc: 'Победа без потери машины', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3 } },
+  { id: 'warrior', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150 } },
+  { id: 'sniper', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2 } },
+  { id: 'firestorm', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1 } },
+  { id: 'wall', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blocked', need: 2000, reward: { credits: 300, tokens: 1 } },
+  { id: 'scout', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200 } },
+  { id: 'survivor', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150 } },
+  { id: 'triumph', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3 } },
   // карьерные — рубежи
-  { id: 'recruit', name: 'Новобранец', desc: '10 боёв', tier: 'bronze', glyph: '➀', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
-  { id: 'veteran', name: 'Ветеран', desc: '100 боёв', tier: 'silver', glyph: '➁', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
-  { id: 'guards', name: 'Гвардеец', desc: '500 боёв', tier: 'gold', glyph: '➂', kind: 'career', metric: 'battles', need: 500, reward: { credits: 1500, tokens: 5 } },
-  { id: 'hunter', name: 'Истребитель', desc: '100 уничтоженных машин', tier: 'silver', glyph: '⊗', kind: 'career', metric: 'kills', need: 100, reward: { credits: 600, tokens: 2 } },
-  { id: 'ace', name: 'Ас войны', desc: '1000 уничтоженных машин', tier: 'gold', glyph: '✺', kind: 'career', metric: 'kills', need: 1000, reward: { credits: 2000, tokens: 8 } },
-  { id: 'legend', name: 'Легенда', desc: 'Рейтинг 1500', tier: 'gold', glyph: '♛', kind: 'career', metric: 'rating', need: 1500, reward: { credits: 1500, tokens: 5 } },
-]
+  { id: 'recruit', tier: 'bronze', glyph: '➀', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
+  { id: 'veteran', tier: 'silver', glyph: '➁', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
+  { id: 'guards', tier: 'gold', glyph: '➂', kind: 'career', metric: 'battles', need: 500, reward: { credits: 1500, tokens: 5 } },
+  { id: 'hunter', tier: 'silver', glyph: '⊗', kind: 'career', metric: 'kills', need: 100, reward: { credits: 600, tokens: 2 } },
+  { id: 'ace', tier: 'gold', glyph: '✺', kind: 'career', metric: 'kills', need: 1000, reward: { credits: 2000, tokens: 8 } },
+  { id: 'legend', tier: 'gold', glyph: '♛', kind: 'career', metric: 'rating', need: 1500, reward: { credits: 1500, tokens: 5 } },
+].map((m) => defLoc(m, { name: (o) => `game.medals.${o.id}.name`, desc: (o) => `game.medals.${o.id}.desc` }))
 export const MEDAL_BY_ID = Object.fromEntries(MEDALS.map((m) => [m.id, m]))
 export const MEDAL_TIER_COLOR = { bronze: '#c08349', silver: '#cfd4da', gold: '#f2a50c' }
 

@@ -5,9 +5,10 @@
 // стабильные между заходами, чтобы таблица не скакала.
 import { computed, ref, onMounted, watch } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft, playerRank } from '../store.js'
-import { RATING_RIVALS, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS } from '../game/meta.js'
+import { ratingRivals, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS } from '../game/meta.js'
 import { apiRename, apiLeaderboard, apiPlayer, apiClans, apiCreateClan, apiJoinClan, apiLeaveClan, apiTournaments, apiJoinTournament, apiLeaveTournament } from '../api.js'
 import { haptic, tgUserId } from '../tg.js'
+import { t as tr, fmtDate } from '../i18n.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PlayerCard from './PlayerCard.vue'
@@ -19,7 +20,7 @@ import ClanEmblem from './ui/ClanEmblem.vue'
 const emit = defineEmits(['go'])
 const tab = ref(0)
 const selMedal = ref(null) // открытая модалка медали (витрина)
-const TABS = ['ПРОФИЛЬ', 'РЕЙТИНГ', 'КЛАНЫ', 'ТУРНИРЫ']
+const TABS = computed(() => [tr('rating.tabProfile'), tr('rating.tabRating'), tr('rating.tabClans'), tr('rating.tabTournaments')])
 // кланы и турниры пока «Скоро» — не палим недоделанное на трафике. Весь функционал
 // ниже сохранён, прячется за этим флагом; запуск — поставить false.
 const COMING_SOON = true
@@ -29,11 +30,11 @@ const renaming = ref(false)
 // Без бота (dev/браузер) сервер ставит имя сразу. Цена авторитетна на сервере.
 async function rename() {
   if (renaming.value) return
-  const name = window.prompt(`Новый позывной (3–16 символов) — ${RENAME_COST_STARS} ⭐:`, profile.name)
+  const name = window.prompt(tr('rating.renamePrompt', { cost: RENAME_COST_STARS }), profile.name)
   if (name === null) return
   const clean = String(name).trim().slice(0, 16)
   if (clean.length < 3) {
-    window.alert('Слишком короткий позывной (минимум 3 символа)')
+    window.alert(tr('rating.renameTooShort'))
     return
   }
   if (clean === profile.name) return
@@ -44,7 +45,7 @@ async function rename() {
       // dev-режим: сервер уже сохранил имя — фиксируем локально
       setCustomName(clean)
       await syncProfile()
-      window.alert(`Позывной изменён${r.dev ? ' (dev)' : ''}`)
+      window.alert(tr('rating.renameDone', { dev: r.dev }))
     } else if (r.link && window.Telegram?.WebApp?.openInvoice) {
       window.Telegram.WebApp.openInvoice(r.link, (status) => {
         if (status === 'paid') {
@@ -53,12 +54,12 @@ async function rename() {
         }
       })
     } else if (r.error) {
-      window.alert(`Не вышло: ${r.error === 'bad name' ? 'недопустимый позывной' : r.error}`)
+      window.alert(tr('rating.renameFailed', { reason: r.error === 'bad name' ? tr('rating.renameBadName') : r.error }))
     } else {
-      window.alert('Оплата звёздами недоступна')
+      window.alert(tr('rating.renameNoStars'))
     }
   } catch {
-    window.alert('Сервер недоступен')
+    window.alert(tr('rating.serverUnavailable'))
   } finally {
     renaming.value = false
   }
@@ -97,10 +98,11 @@ const board = computed(() => {
   }
   // фоллбэк: детерминированные «соперники» вокруг моего рейтинга
   const mine = profile.stats.wn8
-  const rows = RATING_RIVALS.map((name, i) => {
+  const rivals = ratingRivals()
+  const rows = rivals.map((name, i) => {
     let h = 0
     for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 997
-    const delta = ((h % 21) - 10) * 18 + (i - RATING_RIVALS.length / 2) * 9
+    const delta = ((h % 21) - 10) * 18 + (i - rivals.length / 2) * 9
     return { name, rating: Math.max(120, Math.round(mine + delta)), you: false, premium: h % 5 === 0, live: false }
   })
   rows.push({ name: profile.name, rating: mine, you: true, premium: isPremium(), live: false })
@@ -159,7 +161,7 @@ function showClanErr(t) {
   clanErrTimer = setTimeout(() => (clanErr.value = ''), 2600)
 }
 const clanErrText = (e) =>
-  ({ 'tag taken': 'Такой тег уже занят', 'bad tag': 'Тег — 2–5 букв/цифр', 'bad name': 'Название — минимум 3 символа', 'bad emblem': 'Выбери эмблему', 'already in clan': 'Ты уже в клане', full: 'Клан заполнен', 'no profile': 'Профиль не найден' })[e] || 'Не получилось'
+  ({ 'tag taken': tr('rating.errTagTaken'), 'bad tag': tr('rating.errBadTag'), 'bad name': tr('rating.errBadName'), 'bad emblem': tr('rating.errBadEmblem'), 'already in clan': tr('rating.errAlreadyInClan'), full: tr('rating.errFull'), 'no profile': tr('rating.errNoProfile') })[e] || tr('rating.errGeneric')
 
 async function loadClans() {
   clanLoading.value = true
@@ -181,12 +183,15 @@ watch(tab, (t) => {
 
 // ===== турниры =====
 const CLS_INFO = {
-  light: { label: 'Лёгкие', col: '#5fd35f' },
-  medium: { label: 'Средние', col: '#4aa3ff' },
-  heavy: { label: 'Тяжёлые', col: '#e0853c' },
-  any: { label: 'Все классы', col: 'var(--amber)' },
+  light: { key: 'clsLight', col: '#5fd35f' },
+  medium: { key: 'clsMedium', col: '#4aa3ff' },
+  heavy: { key: 'clsHeavy', col: '#e0853c' },
+  any: { key: 'clsAny', col: 'var(--amber)' },
 }
-const clsInfo = (c) => CLS_INFO[c] || CLS_INFO.any
+const clsInfo = (c) => {
+  const e = CLS_INFO[c] || CLS_INFO.any
+  return { label: tr('rating.' + e.key), col: e.col }
+}
 const tournaments = ref([])
 const tournLoading = ref(false)
 const tournBusy = ref('') // id турнира в процессе записи
@@ -211,10 +216,10 @@ async function toggleTournament(t) {
       const i = tournaments.value.findIndex((x) => x.id === t.id)
       if (i >= 0) tournaments.value[i] = r.tournament
     } else if (r.error) {
-      showClanErr('Не получилось')
+      showClanErr(tr('rating.errGeneric'))
     }
   } catch {
-    showClanErr('Сервер недоступен')
+    showClanErr(tr('rating.serverUnavailable'))
   } finally {
     tournBusy.value = ''
   }
@@ -223,8 +228,8 @@ async function toggleTournament(t) {
 async function doCreateClan() {
   const name = cForm.value.name.trim()
   const tag = cForm.value.tag.trim()
-  if (name.length < 3) return showClanErr('Название — минимум 3 символа')
-  if (!/^[A-Za-zА-Яа-я0-9]{2,5}$/.test(tag)) return showClanErr('Тег — 2–5 букв/цифр')
+  if (name.length < 3) return showClanErr(tr('rating.errBadName'))
+  if (!/^[A-Za-zА-Яа-я0-9]{2,5}$/.test(tag)) return showClanErr(tr('rating.errBadTag'))
   clanBusy.value = true
   try {
     const r = await apiCreateClan(name, tag, cForm.value.emblem)
@@ -238,7 +243,7 @@ async function doCreateClan() {
     await syncProfile()
     await loadClans()
   } catch {
-    showClanErr('Сервер недоступен')
+    showClanErr(tr('rating.serverUnavailable'))
   } finally {
     clanBusy.value = false
   }
@@ -256,13 +261,13 @@ async function doJoinClan(id) {
     await syncProfile()
     await loadClans()
   } catch {
-    showClanErr('Сервер недоступен')
+    showClanErr(tr('rating.serverUnavailable'))
   } finally {
     clanBusy.value = false
   }
 }
 async function doLeaveClan() {
-  if (clanBusy.value || !window.confirm('Выйти из клана?')) return
+  if (clanBusy.value || !window.confirm(tr('rating.leaveClanConfirm'))) return
   clanBusy.value = true
   try {
     await apiLeaveClan()
@@ -270,29 +275,29 @@ async function doLeaveClan() {
     await syncProfile()
     await loadClans()
   } catch {
-    showClanErr('Сервер недоступен')
+    showClanErr(tr('rating.serverUnavailable'))
   } finally {
     clanBusy.value = false
   }
 }
 
 const RES = {
-  victory: { label: 'ПОБЕДА', color: 'var(--green)' },
-  draw: { label: 'НИЧЬЯ', color: 'var(--ink-dim)' },
-  defeat: { label: 'ПОРАЖЕНИЕ', color: 'var(--red)' },
+  victory: { key: 'common.victory', color: 'var(--green)' },
+  draw: { key: 'common.draw', color: 'var(--ink-dim)' },
+  defeat: { key: 'common.defeat', color: 'var(--red)' },
 }
 const fmtTime = (t) => {
   const d = new Date(t)
   const today = new Date().toDateString() === d.toDateString()
   const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  return today ? hm : `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')} ${hm}`
+  return today ? hm : `${fmtDate(d)} ${hm}`
 }
 </script>
 
 <template>
   <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.88), rgba(13, 15, 10, 0.94)), url('/sprites/bg_rating.png') center / cover no-repeat">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 8px">
-      <div class="pz-display" style="font-size: 17px">РЕЙТИНГ</div>
+      <div class="pz-display" style="font-size: 17px">{{ tr('rating.title') }}</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
     </header>
 
@@ -305,28 +310,24 @@ const fmtTime = (t) => {
         :class="{ on: tab === i, soon: COMING_SOON && i >= 2 }"
         @click="haptic('select'); tab = i"
       >
-        {{ t }}<i v-if="COMING_SOON && i >= 2" class="soon-tag">скоро</i>
+        {{ t }}<i v-if="COMING_SOON && i >= 2" class="soon-tag">{{ tr('rating.soon') }}</i>
       </button>
     </div>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
       <!-- ===== КЛАНЫ / ТУРНИРЫ — пока «Скоро» (тизер) ===== -->
       <section v-if="COMING_SOON && (tab === 2 || tab === 3)" class="soon-screen">
-        <div class="soon-stamp pz-display">СКОРО</div>
-        <div class="soon-feat pz-display">{{ tab === 2 ? 'КЛАНЫ' : 'ТУРНИРЫ' }}</div>
+        <div class="soon-stamp pz-display">{{ tr('rating.soonStamp') }}</div>
+        <div class="soon-feat pz-display">{{ tab === 2 ? tr('rating.tabClans') : tr('rating.tabTournaments') }}</div>
         <p class="soon-text">
-          {{
-            tab === 2
-              ? 'Создавай клан, собирай состав и поднимай клановый рейтинг. Уже на подходе — готовь отряд.'
-              : 'Турниры 2×2, 3×3 и 5×5 по классам техники. Совсем скоро — точи машину.'
-          }}
+          {{ tab === 2 ? tr('rating.soonClans') : tr('rating.soonTournaments') }}
         </p>
       </section>
 
       <!-- ===== ТУРНИРЫ: запись + счётчик «участвую» ===== -->
       <section v-if="tab === 3 && !COMING_SOON" class="clans">
-        <p class="hint" style="margin-bottom: 4px">Жми «УЧАСТВУЮ» в нужном формате — как наберётся состав, турнир стартует. Видно, сколько уже записалось.</p>
-        <div v-if="tournLoading" class="clan-empty">загрузка…</div>
+        <p class="hint" style="margin-bottom: 4px">{{ tr('rating.tournHint') }}</p>
+        <div v-if="tournLoading" class="clan-empty">{{ tr('rating.loading') }}</div>
         <div v-else style="display: flex; flex-direction: column; gap: 8px">
           <div v-for="t in tournaments" :key="t.id" class="tour-card" :class="{ joined: t.joined }">
             <div class="tour-top">
@@ -340,10 +341,10 @@ const fmtTime = (t) => {
             <div class="tour-bar"><b :style="{ width: Math.min(100, (t.count / t.need) * 100) + '%', background: t.count >= t.need ? 'var(--green)' : 'var(--amber)' }"></b></div>
             <div class="tour-foot">
               <span class="tour-status" :style="{ color: t.count >= t.need ? 'var(--green)' : 'var(--ink-dim)' }">
-                {{ t.count >= t.need ? '✓ состав набран — ждём старта' : `нужно ещё ${t.need - t.count}` }}
+                {{ t.count >= t.need ? tr('rating.tournReady') : tr('rating.tournNeedMore', { n: t.need - t.count }) }}
               </span>
               <button class="tour-btn" :class="{ on: t.joined }" :disabled="tournBusy === t.id" @click="toggleTournament(t)">
-                {{ t.joined ? 'ВЫ В ЗАЯВКЕ ✓' : 'УЧАСТВУЮ' }}
+                {{ t.joined ? tr('rating.tournJoined') : tr('rating.tournJoin') }}
               </button>
             </div>
           </div>
@@ -360,57 +361,57 @@ const fmtTime = (t) => {
               <ClanEmblem :emblem="myClan.emblem" :size="54" />
               <div style="flex: 1; min-width: 0">
                 <div class="clan-name pz-display">{{ myClan.name }} <span class="clan-tag">[{{ myClan.tag }}]</span></div>
-                <div class="clan-sub">рейтинг <b style="color: var(--amber)">{{ myClan.rating }}</b> · {{ myClan.size }}/20 бойцов</div>
+                <div class="clan-sub">{{ tr('rating.clanRatingPre') }}<b style="color: var(--amber)">{{ myClan.rating }}</b>{{ tr('rating.clanFightersPost', { size: myClan.size }) }}</div>
               </div>
             </div>
-            <div class="pz-stencil-h" style="margin: 14px 0 8px">СОСТАВ</div>
+            <div class="pz-stencil-h" style="margin: 14px 0 8px">{{ tr('rating.clanRoster') }}</div>
             <div class="clan-members">
               <div v-for="m in myClan.members" :key="m.uid" class="cmem" :class="{ me: m.uid === myUid }">
                 <PzIcon v-if="m.leader" name="star" :size="12" color="var(--amber)" />
-                <span class="cmem-name">{{ m.name }}<span v-if="m.uid === myUid" style="color: var(--ink-faint)"> · ты</span></span>
+                <span class="cmem-name">{{ m.name }}<span v-if="m.uid === myUid" style="color: var(--ink-faint)"> · {{ tr('rating.you') }}</span></span>
                 <span class="cmem-rating pz-display">{{ m.rating }}</span>
               </div>
             </div>
-            <button class="pz-btn2" style="width: 100%; margin-top: 14px" :disabled="clanBusy" @click="doLeaveClan">Покинуть клан</button>
+            <button class="pz-btn2" style="width: 100%; margin-top: 14px" :disabled="clanBusy" @click="doLeaveClan">{{ tr('rating.leaveClan') }}</button>
           </div>
         </template>
 
         <!-- не в клане: создать + список -->
         <template v-else>
           <button v-if="!createOpen" class="pz-cta" style="width: 100%; gap: 8px; font-size: 14px; padding: 13px 16px" @click="haptic('select'); createOpen = true">
-            <PzIcon name="star" :size="15" color="currentColor" /> Создать клан
+            <PzIcon name="star" :size="15" color="currentColor" /> {{ tr('rating.createClan') }}
           </button>
 
           <!-- форма создания -->
           <div v-else class="pz-plate clan-create">
-            <div class="pz-stencil-h" style="margin-bottom: 10px">НОВЫЙ КЛАН</div>
-            <input v-model="cForm.name" class="cinput" maxlength="22" placeholder="Название клана" />
-            <input v-model="cForm.tag" class="cinput" maxlength="5" placeholder="Тег · 2–5 символов (СТК)" style="margin-top: 8px; text-transform: uppercase" />
-            <div class="pz-pixel emb-label">ЭМБЛЕМА</div>
+            <div class="pz-stencil-h" style="margin-bottom: 10px">{{ tr('rating.newClan') }}</div>
+            <input v-model="cForm.name" class="cinput" maxlength="22" :placeholder="tr('rating.clanNamePlaceholder')" />
+            <input v-model="cForm.tag" class="cinput" maxlength="5" :placeholder="tr('rating.clanTagPlaceholder')" style="margin-top: 8px; text-transform: uppercase" />
+            <div class="pz-pixel emb-label">{{ tr('rating.emblem') }}</div>
             <div class="emblems">
               <button v-for="e in CLAN_EMBLEMS" :key="e.id" class="emb-pick" :class="{ on: cForm.emblem === e.id }" @click="cForm.emblem = e.id">
                 <ClanEmblem :emblem="e.id" :size="40" />
               </button>
             </div>
             <div style="display: flex; gap: 8px; margin-top: 14px">
-              <button class="pz-btn2" style="flex: 1" @click="createOpen = false">Отмена</button>
-              <button class="pz-cta" style="flex: 1.5; padding: 11px" :disabled="clanBusy" @click="doCreateClan">Создать</button>
+              <button class="pz-btn2" style="flex: 1" @click="createOpen = false">{{ tr('common.cancel') }}</button>
+              <button class="pz-cta" style="flex: 1.5; padding: 11px" :disabled="clanBusy" @click="doCreateClan">{{ tr('common.create') }}</button>
             </div>
           </div>
 
           <!-- таблица кланов -->
-          <div class="pz-stencil-h" style="margin: 16px 0 8px">КЛАНЫ <span v-if="clans.length" style="color: var(--amber)">{{ clans.length }}</span></div>
-          <div v-if="clanLoading" class="clan-empty">загрузка…</div>
-          <div v-else-if="!clans.length" class="clan-empty">Кланов пока нет — создай первый!</div>
+          <div class="pz-stencil-h" style="margin: 16px 0 8px">{{ tr('rating.clansHeader') }} <span v-if="clans.length" style="color: var(--amber)">{{ clans.length }}</span></div>
+          <div v-if="clanLoading" class="clan-empty">{{ tr('rating.loading') }}</div>
+          <div v-else-if="!clans.length" class="clan-empty">{{ tr('rating.noClans') }}</div>
           <div v-else style="display: flex; flex-direction: column; gap: 6px">
             <div v-for="(c, i) in clans" :key="c.id" class="clan-row">
               <span class="pz-pixel cr-place" :style="{ color: i < 3 ? 'var(--amber)' : 'var(--ink-faint)' }">{{ i + 1 }}</span>
               <ClanEmblem :emblem="c.emblem" :size="32" />
               <div style="flex: 1; min-width: 0">
                 <div class="cr-name">{{ c.name }} <span class="clan-tag">[{{ c.tag }}]</span></div>
-                <div class="cr-sub">{{ c.size }}/20 · рейтинг {{ c.rating }}</div>
+                <div class="cr-sub">{{ tr('rating.clanSize', { size: c.size, rating: c.rating }) }}</div>
               </div>
-              <button class="pz-btn2 cr-join" :disabled="clanBusy" @click="doJoinClan(c.id)">Вступить</button>
+              <button class="pz-btn2 cr-join" :disabled="clanBusy" @click="doJoinClan(c.id)">{{ tr('rating.joinClan') }}</button>
             </div>
           </div>
         </template>
@@ -420,21 +421,21 @@ const fmtTime = (t) => {
 
       <!-- ===== ПРОФИЛЬ: всё про меня ===== -->
       <section v-if="tab === 0">
-        <div class="pz-stencil-h">ПОЗЫВНОЙ</div>
+        <div class="pz-stencil-h">{{ tr('rating.callsign') }}</div>
         <div class="pz-plate" style="margin-top: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 10px">
           <span class="pz-display" style="font-size: 18px" :style="{ color: isPremium() ? 'var(--amber-hi)' : 'var(--ink)' }">
             <span v-if="isPremium()" class="prem-crown">♛</span>{{ profile.name }}
           </span>
-          <span v-if="isPremium()" class="prem-badge pz-pixel">ПРЕМИУМ · {{ premiumDaysLeft() }} дн</span>
+          <span v-if="isPremium()" class="prem-badge pz-pixel">{{ tr('rating.premiumDays', { n: premiumDaysLeft() }) }}</span>
           <span style="flex: 1"></span>
-          <button class="pz-btn2" style="padding: 7px 12px; font-size: 11px" :disabled="renaming" @click="rename">Сменить · {{ RENAME_COST_STARS }} ⭐</button>
+          <button class="pz-btn2" style="padding: 7px 12px; font-size: 11px" :disabled="renaming" @click="rename">{{ tr('rating.changeName', { cost: RENAME_COST_STARS }) }}</button>
         </div>
-        <button v-if="!isPremium()" class="prem-cta pz-display" @click="emit('go', 'shop')">★ ОФОРМИТЬ ПРЕМИУМ — бонусы к опыту и кредитам</button>
+        <button v-if="!isPremium()" class="prem-cta pz-display" @click="emit('go', 'shop')">{{ tr('rating.premiumCta') }}</button>
       </section>
 
       <!-- моя карточка (тап — открыть карточку профиля) -->
       <section v-if="tab === 0">
-        <div class="pz-stencil-h">МОЯ СТАТИСТИКА</div>
+        <div class="pz-stencil-h">{{ tr('rating.myStats') }}</div>
         <div class="pz-plate pz-brackets me" style="--bk: var(--amber); cursor: pointer" @click="openMe">
           <div style="display: flex; align-items: center; gap: 12px">
             <img src="/sprites/trophy.png" class="rank-badge" style="object-fit: cover" />
@@ -444,21 +445,21 @@ const fmtTime = (t) => {
                 <span class="pz-display" style="font-size: 10px; letter-spacing: 0.08em" :style="{ color: ratingBand(profile.stats.wn8).color }">{{ ratingBand(profile.stats.wn8).label }}</span>
                 <span class="pz-display" style="font-size: 12px; color: var(--amber)">{{ playerRank().name }}</span>
               </div>
-              <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500">боевой рейтинг · место {{ myPlace }} · открыть профиль ▸</div>
+              <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500">{{ tr('rating.battleRating', { place: myPlace }) }}</div>
             </div>
           </div>
           <div class="cells">
-            <div class="cell"><b class="pz-display">{{ profile.stats.battles }}</b><span>боёв</span></div>
-            <div class="cell"><b class="pz-display">{{ profile.stats.wins }}</b><span>побед</span></div>
-            <div class="cell"><b class="pz-display">{{ winrate }}%</b><span>винрейт</span></div>
-            <div class="cell"><b class="pz-display">{{ profile.stats.kills }}</b><span>фрагов</span></div>
+            <div class="cell"><b class="pz-display">{{ profile.stats.battles }}</b><span>{{ tr('rating.statBattles') }}</span></div>
+            <div class="cell"><b class="pz-display">{{ profile.stats.wins }}</b><span>{{ tr('rating.statWins') }}</span></div>
+            <div class="cell"><b class="pz-display">{{ winrate }}%</b><span>{{ tr('rating.statWinrate') }}</span></div>
+            <div class="cell"><b class="pz-display">{{ profile.stats.kills }}</b><span>{{ tr('rating.statKills') }}</span></div>
           </div>
         </div>
       </section>
 
       <!-- витрина медалей -->
       <section v-if="tab === 0">
-        <div class="pz-stencil-h">МЕДАЛИ <span style="color: var(--amber)">{{ medalsEarnedCount() }}</span><span style="color: var(--ink-faint)">/{{ medalsTotal() }}</span></div>
+        <div class="pz-stencil-h">{{ tr('rating.medals') }} <span style="color: var(--amber)">{{ medalsEarnedCount() }}</span><span style="color: var(--ink-faint)">/{{ medalsTotal() }}</span></div>
         <div class="medal-shelf">
           <div v-for="m in medalShelf" :key="m.def.id" class="shelf-item" @click="haptic('select'); selMedal = m">
             <Medal :medal="m.def" :count="m.count" :size="46" :locked="m.count === 0" />
@@ -469,17 +470,17 @@ const fmtTime = (t) => {
 
       <!-- история боёв -->
       <section v-if="tab === 0">
-        <div class="pz-stencil-h">ИСТОРИЯ БОЁВ</div>
+        <div class="pz-stencil-h">{{ tr('rating.battleHistory') }}</div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
           <div v-if="!profile.history.length" style="font-size: 12px; color: var(--ink-faint); text-align: center; padding: 10px 0; font-weight: 500">
-            Ещё нет боёв — жми В БОЙ в ангаре
+            {{ tr('rating.noHistory') }}
           </div>
           <div v-for="(h, i) in profile.history" :key="i" class="row">
             <span class="pz-display" style="font-size: 10.5px; width: 86px; flex-shrink: 0; letter-spacing: 0.08em" :style="{ color: RES[h.result].color }">
-              {{ RES[h.result].label }}
+              {{ tr(RES[h.result].key) }}
             </span>
             <span style="flex: 1; font-size: 12.5px; font-weight: 600">{{ h.tank }} <span style="color: var(--ink-dim)">· {{ h.score }}</span></span>
-            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 600">урон {{ h.damage ?? 0 }}</span>
+            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 600">{{ tr('rating.damage', { n: h.damage ?? 0 }) }}</span>
             <span style="font-size: 10px; color: var(--ink-faint); font-weight: 500">{{ fmtTime(h.t) }}</span>
           </div>
         </div>
@@ -487,19 +488,19 @@ const fmtTime = (t) => {
 
       <!-- таблица -->
       <section v-if="tab === 1">
-        <div class="pz-stencil-h">ТАБЛИЦА ЛИДЕРОВ</div>
+        <div class="pz-stencil-h">{{ tr('rating.leaderboard') }}</div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
           <div v-for="(r, i) in board" :key="r.name + '-' + i" class="row" :class="{ you: r.you, tappable: r.live }" @click="openPlayer(r)">
             <span class="pz-pixel place" :style="{ color: i < 3 ? 'var(--amber)' : 'var(--ink-faint)' }">{{ i + 1 }}</span>
             <span class="lb-name" :style="{ color: r.premium ? 'var(--amber-hi)' : r.you ? 'var(--amber)' : 'var(--ink)' }">
-              <span v-if="r.premium" class="prem-crown" title="Премиум">♛</span>{{ r.name }}
+              <span v-if="r.premium" class="prem-crown" :title="tr('rating.premiumTitle')">♛</span>{{ r.name }}
             </span>
             <span v-if="r.live" style="font-size: 10.5px; color: var(--ink-dim); font-weight: 600; margin-right: 6px">{{ r.winrate }}%</span>
             <span class="pz-display" :style="{ fontSize: '13.5px', color: ratingBand(r.rating).color }">{{ r.rating }}</span>
           </div>
         </div>
         <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 8px; font-weight: 500; text-align: center">
-          победа +24 · ничья +2 · поражение −16
+          {{ tr('rating.scoring') }}
         </div>
       </section>
     </div>

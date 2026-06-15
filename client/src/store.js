@@ -4,6 +4,7 @@
 import { reactive, watch } from 'vue'
 import { apiLoadProfile, apiSaveProfile, apiConfig } from './api.js'
 import { tgUser } from './tg.js'
+import { t } from './i18n.js'
 
 // серверный конфиг (флаги админки: турниры вкл/выкл)
 export const serverConfig = reactive({ tournaments: false })
@@ -136,7 +137,7 @@ if (!Array.isArray(profile.camoOwned)) {
 // звание: rankClaimed — индекс последнего выданного звания. Существующим игрокам
 // ставим текущее (без задним числом награды за все ступени сразу), новым — 0.
 if (typeof profile.rankClaimed !== 'number') profile.rankClaimed = rankByBattles((profile.stats || {}).battles || 0).index
-if (typeof profile.name !== 'string' || !profile.name) profile.name = 'Боец'
+if (typeof profile.name !== 'string' || !profile.name) profile.name = t('game.defaultName')
 if (typeof profile.nameCustom !== 'boolean') profile.nameCustom = false // имя сменено платно (за звёзды)
 if (!Array.isArray(profile.skins)) profile.skins = ['std'] // купленные камуфляжи
 if (!profile.tasks || typeof profile.tasks !== 'object') profile.tasks = { date: '', progress: {}, claimed: [] } // задачи дня
@@ -218,9 +219,9 @@ export function canUnlock(tank) {
 
 export function unlockReason(tank) {
   const prev = prevTank(tank)
-  if (prev && !isOwned(prev.id)) return `Исследуйте ${prev.name}`
+  if (prev && !isOwned(prev.id)) return t('game.unlock.research', { name: prev.name })
   if (prev && modsMaxedCount(profile.modules, prev.id) < 5)
-    return `Изучите модули ${prev.name} (${modsMaxedCount(profile.modules, prev.id)}/5)`
+    return t('game.unlock.modules', { name: prev.name, n: modsMaxedCount(profile.modules, prev.id) })
   return null
 }
 

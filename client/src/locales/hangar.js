@@ -1,0 +1,43 @@
+// Ангар: ID-плашка танка, ТТХ/ЭКИПАЖ/КАМУФЛЯЖ, выбор режима, CTA В БОЙ/ВЗВОД/ЗАДАЧИ.
+// Тех-данные (имя/описание танка, нации, статы, камо-имена) уже локализованы в
+// meta.js getters и читаются как есть — здесь только chrome ангара.
+export default {
+  en: {
+    bay: 'B-01',
+    premiumActive: 'Premium active',
+    support: 'Support',
+    tier: ({ n }) => `T.${n}`,
+    premBadge: '★ PREM',
+    crew: ({ n }) => `CREW ${n} ▸`,
+    ttx: 'STATS',
+    openCrew: 'Open crew training',
+    camo: 'CAMO',
+    buy: 'BUY',
+    modeCaptureSub: 'points · quick match',
+    modeAnnihilationSub: 'fight to the last',
+    tasks: 'TASKS',
+    platoon: 'PLATOON',
+    openTank: 'UNLOCK TANK ▸',
+    openTankSub: 'in Tech Tree',
+    battlePlatoon: ' · PLATOON',
+  },
+  ru: {
+    bay: 'Б-01',
+    premiumActive: 'Премиум активен',
+    support: 'Поддержка',
+    tier: ({ n }) => `УР.${n}`,
+    premBadge: '★ ПРЕМ',
+    crew: ({ n }) => `ЭКИПАЖ ${n} ▸`,
+    ttx: 'ТТХ',
+    openCrew: 'Открыть прокачку экипажа',
+    camo: 'КАМУФЛЯЖ',
+    buy: 'КУПИТЬ',
+    modeCaptureSub: 'точки · быстрая катка',
+    modeAnnihilationSub: 'бой до последнего',
+    tasks: 'ЗАДАЧИ',
+    platoon: 'ВЗВОД',
+    openTank: 'ОТКРЫТЬ ТАНК ▸',
+    openTankSub: 'в «Развитии»',
+    battlePlatoon: ' · ВЗВОД',
+  },
+}

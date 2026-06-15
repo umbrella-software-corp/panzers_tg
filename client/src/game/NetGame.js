@@ -1,8 +1,9 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, Texture, TilingSprite } from 'pixi.js'
-import { TANK_CLASSES, DEFAULT_CLASS, MAP_SIZE, SCORE_LIMIT, classToRadians } from './config.js'
+import { TANK_CLASSES, DEFAULT_CLASS, MAP_SIZE, SCORE_LIMIT, REVERSE_MULT, classToRadians } from './config.js'
 import { MAP_BY_ID, MAPS } from './maps.js'
 import { SKIN_BY_ID } from './meta.js'
 import { applyCamo } from './camo.js'
+import { t as tr } from '../i18n.js' // alias: `t` уже занят под юнит-переменные в этом файле
 
 // камуфляж с узором (для скинов-оттенков и неизвестных id — null)
 const camoOf = (skinId) => (skinId && SKIN_BY_ID[skinId] ? SKIN_BY_ID[skinId].camo || null : null)
@@ -246,7 +247,7 @@ export class NetGame {
       // кто и откуда меня бьёт — для экрана смерти (последнее попадание по мне)
       if (ev.hit && ev.target === this.youUnit) {
         const sh = this._units.get(ev.unit)
-        this._lastHitBy = { name: sh ? sh.name : 'враг', cls: sh ? sh.cls : null, x: ev.x1, y: ev.y1 }
+        this._lastHitBy = { name: sh ? sh.name : tr('game.enemy'), cls: sh ? sh.cls : null, x: ev.x1, y: ev.y1 }
         // индикатор направления урона в HUD: угол на стрелявшего относительно
         // корпуса (0 = спереди). Камера повёрнута с танком → угол сразу экранный.
         const own = this._units.get(this.youUnit)
@@ -302,14 +303,15 @@ export class NetGame {
           while (d > Math.PI) d -= 2 * Math.PI
           while (d < -Math.PI) d += 2 * Math.PI
           const ad = Math.abs(d)
-          dir = ad < Math.PI / 4 ? 'спереди' : ad > (3 * Math.PI) / 4 ? 'сзади' : d > 0 ? 'справа' : 'слева'
+          // ключ направления (front/rear/right/left) — слово подставит Battle.vue по локали
+          dir = ad < Math.PI / 4 ? 'front' : ad > (3 * Math.PI) / 4 ? 'rear' : d > 0 ? 'right' : 'left'
         }
-        this._deathInfo = { by: (killer && killer.name) || (src && src.name) || 'врагом', cls: (killer && killer.cls) || (src && src.cls) || null, dir }
+        this._deathInfo = { by: (killer && killer.name) || (src && src.name) || tr('game.enemy'), cls: (killer && killer.cls) || (src && src.cls) || null, dir }
       }
       if (ev.killer === this.youUnit) {
         const v = this._units.get(ev.victim)
         if (v && v.cls === 'light') this.lightKills++
-        this.onKill(v ? v.name : 'враг')
+        this.onKill(v ? v.name : tr('game.enemy'))
       }
     }
   }
@@ -402,7 +404,7 @@ export class NetGame {
     if (cr && cr.engine > 0) throttle = 0
     const cls = this.cls
     this._pred.hull += steer * cls.turnRate * dt
-    const target = cls.maxSpeed * (throttle >= 0 ? throttle : throttle * 0.5)
+    const target = cls.maxSpeed * (throttle >= 0 ? throttle : throttle * REVERSE_MULT)
     const da = cls.accel * dt
     if (this._pred.speed < target) this._pred.speed = Math.min(target, this._pred.speed + da)
     else this._pred.speed = Math.max(target, this._pred.speed - da * 1.4)

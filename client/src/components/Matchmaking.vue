@@ -8,6 +8,7 @@ import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { connectMatch } from '../game/net.js'
 import { tgUserId } from '../tg.js'
 import { track } from '../analytics.js'
+import { t } from '../i18n.js'
 import TankTopDown from './ui/TankTopDown.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -21,7 +22,7 @@ const TEAM = 7
 
 // заполнение слотов в экране подбора — реалистичные ники (как у живых игроков),
 // без воинских званий: добитые слоты неотличимы от настоящих бойцов, зашедших в бой
-const MM_FILLERS = ['Shadow', 'Reaper', 'Барон', 'Гроза', 'Стальной', 'Медведь', 'NightOwl', 'red_baron', 'Призрак', 'Хищник', 'Сокол', 'Викинг', 'IronMax', 'Рысь', 'Гром', 'Серый', 'Wolf_K', 'Танкист']
+const MM_FILLERS = t('matchmaking.fillers')
 
 const secs = ref(0)
 const teamSize = ref(TEAM)
@@ -37,7 +38,7 @@ const tierRange = computed(() => {
   const t = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
   return `${Math.max(1, t - 1)}–${Math.min(MAX_TIER, t + 1)}`
 })
-const modeLabel = computed(() => (profile.battleMode === 'annihilation' ? 'НА УНИЧТОЖЕНИЕ' : 'ЗАХВАТ ТОЧЕК'))
+const modeLabel = computed(() => (profile.battleMode === 'annihilation' ? t('common.modeAnnihilation') : t('common.modeCapturePoints')))
 
 const liveTotal = computed(() => 1 + myTeam.value.length + foeTeam.value.length) // живых из 14
 const botTotal = computed(() => Math.max(0, teamSize.value * 2 - liveTotal.value)) // ботов добьём
@@ -48,7 +49,7 @@ const filledCount = computed(() => (phase.value === 'search' ? liveTotal.value :
 // слоты команды: я (своя) + живые игроки; пустое добиваем бойцами (в фазе поиска — «поиск…»).
 // добитые слоты неотличимы от живых (kind: 'player') — игрок видит полный отряд людей, не «ботов».
 function teamSlots(live, withMe) {
-  const out = withMe ? [{ name: profile.name || 'ВЫ', kind: 'you' }] : []
+  const out = withMe ? [{ name: profile.name || t('matchmaking.youFallback'), kind: 'you' }] : []
   for (const p of live) out.push(p)
   let bi = withMe ? 0 : 9
   while (out.length < teamSize.value) out.push(phase.value === 'search' ? null : { name: MM_FILLERS[bi++ % MM_FILLERS.length], kind: 'player' })
@@ -57,7 +58,7 @@ function teamSlots(live, withMe) {
 const mySlots = computed(() => teamSlots(myTeam.value, true))
 const foeSlots = computed(() => teamSlots(foeTeam.value, false))
 const blips = computed(() => [...myTeam.value, ...foeTeam.value]) // живые на радаре
-const slotName = (s) => (!s ? (phase.value === 'search' ? 'поиск…' : '—') : s.kind === 'you' ? profile.name || 'ВЫ' : s.name)
+const slotName = (s) => (!s ? (phase.value === 'search' ? t('matchmaking.searchingSlot') : '—') : s.kind === 'you' ? profile.name || t('matchmaking.youFallback') : s.name)
 const slotDot = (s) => (!s ? 'transparent' : s.kind === 'you' ? 'var(--amber)' : s.kind === 'bot' ? 'var(--ink-faint)' : 'var(--green)')
 
 const botsEta = computed(() => botsEtaOnline.value)
@@ -247,23 +248,23 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
   <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.82), rgba(13, 15, 10, 0.92)), url('/sprites/bg_mm.png') center / cover no-repeat">
     <!-- шапка -->
     <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 0">
-      <div class="pz-display" style="font-size: 17px">{{ failed ? 'НЕТ СВЯЗИ' : phase === 'go' ? 'БОЙ НАЙДЕН' : 'ПОИСК БОЯ' }}</div>
+      <div class="pz-display" style="font-size: 17px">{{ failed ? t('matchmaking.titleNoConnection') : phase === 'go' ? t('matchmaking.titleFound') : t('matchmaking.titleSearching') }}</div>
       <span class="pz-chip" style="color: var(--ink-dim)">
         <span
           v-if="online"
           class="pz-pixel"
           style="font-size: 7px; margin-right: 4px; color: var(--green)"
-        >ОНЛАЙН</span>
+        >{{ t('common.online') }}</span>
         <span class="pz-pixel" style="font-size: 9px" :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ mmss }}</span>
       </span>
     </div>
     <div style="font-size: 11.5px; color: var(--ink-dim); font-weight: 500; padding: 4px 14px 0">
-      {{ tankName }} · бой 7×7 · уровни {{ tierRange }}
+      {{ tankName }} · {{ t('matchmaking.battle7x7') }} · {{ t('matchmaking.tiers', { range: tierRange }) }}
       <span class="pz-display" style="color: var(--amber); font-size: 10.5px; margin-left: 4px">· {{ modeLabel }}</span>
     </div>
     <!-- онлайн-онли: карту и сторону объявляет сервер при развёртывании -->
     <div style="font-size: 11.5px; font-weight: 500; padding: 2px 14px 0; color: var(--ink-faint)">
-      {{ failed ? 'сервер недоступен — попробуй ещё раз или вернись в ангар' : 'карту и сторону объявит штаб при развёртывании' }}
+      {{ failed ? t('matchmaking.serverDown') : t('matchmaking.deployNote') }}
     </div>
 
     <!-- радар -->
@@ -297,14 +298,14 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
       style="text-align: center; font-size: 12px; letter-spacing: 0.18em; padding: 0 14px 10px"
       :style="{ color: failed ? 'var(--red)' : phase === 'go' ? 'var(--green)' : 'var(--ink-dim)', animation: failed || phase === 'go' ? 'none' : 'pz-blink 1.2s linear infinite' }"
     >
-      {{ failed ? 'СЕРВЕР НЕДОСТУПЕН' : online === null ? 'СОЕДИНЕНИЕ С СЕРВЕРОМ…' : phase === 'search' ? 'ИЩЕМ ИГРОКОВ…' : phase === 'fill' ? 'ИГРОКИ ПОДКЛЮЧАЮТСЯ…' : 'РАЗВЁРТЫВАНИЕ' }}
+      {{ failed ? t('matchmaking.statusServerDown') : online === null ? t('matchmaking.statusConnecting') : phase === 'search' ? t('matchmaking.statusSearching') : phase === 'fill' ? t('matchmaking.statusFilling') : t('matchmaking.statusDeploying') }}
     </div>
 
     <!-- состав боя 7×7: твой отряд и противник; живые на сторонах, пустое — боты -->
     <div style="padding: 0 14px; flex: 1; display: flex; flex-direction: column">
       <div class="teams">
         <div class="team-col">
-          <div class="pz-stencil-h ally-h">ВАШ ОТРЯД</div>
+          <div class="pz-stencil-h ally-h">{{ t('matchmaking.yourSquad') }}</div>
           <div v-for="(s, i) in mySlots" :key="'a' + i" class="mslot" :class="{ me: s && s.kind === 'you', bot: s && s.kind === 'bot', empty: !s }">
             <span class="mdot" :style="{ background: slotDot(s) }"></span>
             <span class="mname">{{ slotName(s) }}</span>
@@ -312,7 +313,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
           </div>
         </div>
         <div class="team-col">
-          <div class="pz-stencil-h foe-h">ПРОТИВНИК</div>
+          <div class="pz-stencil-h foe-h">{{ t('matchmaking.opponent') }}</div>
           <div v-for="(s, i) in foeSlots" :key="'e' + i" class="mslot foe" :class="{ bot: s && s.kind === 'bot', empty: !s }">
             <span class="mdot" :style="{ background: s && s.kind === 'player' ? 'var(--red)' : slotDot(s) }"></span>
             <span class="mname">{{ slotName(s) }}</span>
@@ -320,19 +321,19 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
         </div>
       </div>
       <div class="live-summary">
-        БОЙ 7×7 · <b :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ filledCount }}/{{ teamSize * 2 }}</b>
-        · {{ phase === 'search' ? 'идёт сбор отряда…' : 'отряд в сборе' }}
+        {{ t('matchmaking.battle7x7Caps') }} · <b :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ filledCount }}/{{ teamSize * 2 }}</b>
+        · {{ phase === 'search' ? t('matchmaking.gathering') : t('matchmaking.gathered') }}
       </div>
     </div>
 
     <!-- отмена / в бой -->
     <div style="padding: 8px 14px 18px">
       <div v-if="failed" style="display: flex; gap: 8px">
-        <button class="pz-btn2" style="flex: 1" @click="cancel">В ангар</button>
-        <button class="pz-cta" style="flex: 1.5; padding: 11px" @click="retryNow">Повторить</button>
+        <button class="pz-btn2" style="flex: 1" @click="cancel">{{ t('common.toHangar') }}</button>
+        <button class="pz-cta" style="flex: 1.5; padding: 11px" @click="retryNow">{{ t('common.retry') }}</button>
       </div>
-      <div v-else-if="phase === 'go'" class="pz-display" style="text-align: center; font-size: 15px; letter-spacing: 0.12em; color: var(--green); padding: 12px 0; animation: pz-pop 0.3s ease">▸ В БОЙ</div>
-      <button v-else class="pz-btn2" style="width: 100%" @click="cancel">Отменить поиск</button>
+      <div v-else-if="phase === 'go'" class="pz-display" style="text-align: center; font-size: 15px; letter-spacing: 0.12em; color: var(--green); padding: 12px 0; animation: pz-pop 0.3s ease">{{ t('matchmaking.intoBattle') }}</div>
+      <button v-else class="pz-btn2" style="width: 100%" @click="cancel">{{ t('matchmaking.cancelSearch') }}</button>
     </div>
   </div>
 </template>

@@ -2,6 +2,7 @@
 // Нижняя навигация (порт BottomNav): Ангар / Прокачка / Магазин.
 import PzIcon from './PzIcon.vue'
 import { haptic } from '../../tg.js'
+import { t } from '../../i18n.js'
 defineProps({ screen: { type: String, required: true } })
 const emit = defineEmits(['go'])
 const tap = (id) => {
@@ -9,11 +10,11 @@ const tap = (id) => {
   emit('go', id)
 }
 const items = [
-  { id: 'hangar', label: 'Ангар', icon: 'hangar' },
-  { id: 'tree', label: 'Развитие', icon: 'tree' },
-  { id: 'crew', label: 'Экипаж', icon: 'crew' },
-  { id: 'shop', label: 'Магазин', icon: 'shop' },
-  { id: 'rating', label: 'Рейтинг', icon: 'rank' },
+  { id: 'hangar', label: t('nav.hangar'), icon: 'hangar' },
+  { id: 'tree', label: t('nav.tree'), icon: 'tree' },
+  { id: 'crew', label: t('nav.crew'), icon: 'crew' },
+  { id: 'shop', label: t('nav.shop'), icon: 'shop' },
+  { id: 'rating', label: t('nav.rating'), icon: 'rank' },
 ]
 </script>
 

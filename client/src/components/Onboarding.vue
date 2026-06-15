@@ -7,36 +7,21 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { haptic } from '../tg.js'
 import { track } from '../analytics.js'
+import { t } from '../i18n.js'
 
 const emit = defineEmits(['play', 'skip'])
 
+// логика шага (подсветка) — здесь; тексты (title/body/cta) — в onboarding.steps[i]
 const STEPS = [
-  {
-    sel: '[data-tut="tank"]',
-    title: 'Это твой танк',
-    body: 'Твоя боевая машина. Внизу — вся техника: листай, выбирай, открывай новую в «Развитии».',
-    pad: 14,
-    cta: 'Дальше ▸',
-  },
-  {
-    sel: '[data-tut="mode"]',
-    title: 'Режим боя',
-    body: 'ЗАХВАТ — быстрая катка на точки, самое то для старта. НА УНИЧТОЖЕНИЕ — бой до последнего.',
-    pad: 8,
-    cta: 'Дальше ▸',
-  },
-  {
-    sel: '[data-tut="play"]',
-    title: 'Заверши первый бой → +1000 кредитов',
-    body: 'Жми — и поехали. Первые бои лёгкие: целься в зелёную рамку и стреляй. Доведи бой до конца — получишь награду.',
-    pad: 8,
-    cta: 'В БОЙ ▸',
-  },
+  { sel: '[data-tut="tank"]', pad: 14 },
+  { sel: '[data-tut="mode"]', pad: 8 },
+  { sel: '[data-tut="play"]', pad: 8 },
 ]
+const stepText = (idx) => t('onboarding.steps')[idx] || {}
 
 const i = ref(0)
 const rect = ref(null) // прямоугольник подсветки (с паддингом) или null → центр
-const step = computed(() => STEPS[i.value])
+const step = computed(() => stepText(i.value))
 const isLast = computed(() => i.value === STEPS.length - 1)
 
 function measure() {
@@ -120,11 +105,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', measure))
 
     <!-- карточка-пояснение -->
     <div class="tut-card" :style="cardStyle">
-      <div class="tut-step pz-pixel">ШАГ {{ i + 1 }}/{{ STEPS.length }}</div>
+      <div class="tut-step pz-pixel">{{ t('onboarding.step', { n: i + 1, total: STEPS.length }) }}</div>
       <div class="tut-title pz-display">{{ step.title }}</div>
       <div class="tut-body">{{ step.body }}</div>
       <div class="tut-row">
-        <button class="tut-skip" @click="skip">Пропустить</button>
+        <button class="tut-skip" @click="skip">{{ t('onboarding.skip') }}</button>
         <button class="pz-cta tut-next" :class="{ 'pz-cta--hazard': isLast }" @click="next">{{ step.cta }}</button>
       </div>
     </div>

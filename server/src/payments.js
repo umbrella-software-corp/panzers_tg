@@ -4,6 +4,7 @@
 import { botToken, hasBot } from './auth.js'
 import { loadProfile, saveProfile, paymentSeen, markPayment, listPayments, markRefunded } from './db.js'
 import { setPushEnabled } from './notifications.js'
+import { t, pickLang } from './i18n.js'
 
 // каталог: что начисляем за звёзды
 export const PRODUCTS = {
@@ -54,12 +55,16 @@ export async function createInvoice(uid, productId, extra = {}) {
     if (!name) return { error: 'bad name' }
   }
   if (!hasBot()) return { dev: true } // локальная разработка — без оплаты
+  // заголовок/описание счёта — на языке покупателя (lang приходит из index.js)
+  const lang = pickLang(extra.lang)
+  const loc = t('products.' + productId, lang)
+  const title = loc === 'products.' + productId ? p.title : loc
   const res = await api('createInvoiceLink', {
-    title: p.title,
-    description: p.rename ? `Panzer TG · новый позывной «${name}»` : `Panzer TG · ${p.title}`,
+    title,
+    description: p.rename ? t('invoiceRename', lang, { name }) : t('invoiceDesc', lang, { title }),
     payload: JSON.stringify(name ? { uid, productId, name } : { uid, productId }),
     currency: 'XTR',
-    prices: [{ label: p.title, amount: p.stars }],
+    prices: [{ label: title, amount: p.stars }],
   })
   if (!res.ok) return { error: res.description || 'invoice failed' }
   return { link: res.result }
@@ -124,12 +129,21 @@ export async function refundPayment(charge) {
 
 // приветствие бота: на /start — кнопка, открывающая Mini App
 const WEBAPP_URL = process.env.WEBAPP_URL || 'https://panzertg.online'
-async function greet(chatId) {
+async function greet(chatId, lang) {
   await api('sendMessage', {
     chat_id: chatId,
-    text: 'Panzer TG — танковые бои 7×7 прямо в Telegram. Жми «Играть» и в бой! 🎖',
-    reply_markup: { inline_keyboard: [[{ text: '🎮 Играть', web_app: { url: WEBAPP_URL } }]] },
+    text: t('greet', lang),
+    reply_markup: { inline_keyboard: [[{ text: t('greetButton', lang), web_app: { url: WEBAPP_URL } }]] },
   })
+}
+
+// сохранить язык юзера на профиле (если он уже есть) — для будущих пушей/счетов
+async function storeLang(uid, lang) {
+  const p = await loadProfile(uid)
+  if (p && p.lang !== lang) {
+    p.lang = lang
+    await saveProfile(uid, p)
+  }
 }
 
 // поллинг бота: подтверждаем pre_checkout и начисляем по successful_payment
@@ -152,12 +166,14 @@ export function startPaymentsLoop() {
             const text = u.message.text.trim()
             const chatId = u.message.chat.id
             const uid = `tg_${chatId}`
+            const lang = pickLang(u.message.from && u.message.from.language_code)
             if (text.startsWith('/start')) {
               await setPushEnabled(uid, true) // /start = вовлечение → (пере)подписываем на уведомления
-              await greet(chatId)
+              await storeLang(uid, lang) // запомнить язык для пушей/счетов
+              await greet(chatId, lang)
             } else if (text === '/stop' || text.startsWith('/stop')) {
               await setPushEnabled(uid, false)
-              await api('sendMessage', { chat_id: chatId, text: 'Уведомления выключены 🔕 Включить снова — отправь /start' })
+              await api('sendMessage', { chat_id: chatId, text: t('stopConfirm', lang) })
             }
           }
           const sp = u.message && u.message.successful_payment

@@ -12,6 +12,7 @@
 // maxSpeed    — максимальная скорость хода (px/сек, двигатель)
 // accel       — ускорение (px/сек^2, двигатель)
 // turnRate    — скорость поворота корпуса (рад/сек, гусеницы)
+import { t } from '../i18n.js'
 const DEG = Math.PI / 180
 
 export const TANK_CLASSES = {
@@ -65,6 +66,9 @@ export const TANK_CLASSES = {
 export const DEFAULT_CLASS = 'medium'
 export const MAP_SIZE = 2400 // карта больше экрана; камера едет за танком
 export const VISION_RADIUS = 560 // радиус обзора (туман войны)
+// задний ход медленнее переднего, но не вдвое (было ×0.5). СИНХРОН с shared/config.js
+// и серверным sim — используется в клиентском предикте своего танка (NetGame).
+export const REVERSE_MULT = 0.7
 
 // Рельеф, стены, базы и точки захвата теперь живут в maps.js (6 карт);
 // какая карта в бою — решает жребий в App.play().
@@ -94,13 +98,9 @@ export const CRIT_CHANCE = 0.35
 export const CRIT_TIME = 4.5
 export const RADIO_CRIT_MULT = 0.5
 export const CRIT_SLOTS = ['gun', 'turret', 'engine', 'tracks', 'radio']
-export const CRIT_LABELS = {
-  gun: 'ПУШКА',
-  turret: 'БАШНЯ',
-  engine: 'ДВИГАТЕЛЬ',
-  tracks: 'ГУСЕНИЦЫ',
-  radio: 'РАЦИЯ',
-}
+// ярлыки модулей для крит-индикаторов — локализованы (game.critLabels.<slot>)
+export const CRIT_LABELS = {}
+for (const s of CRIT_SLOTS) Object.defineProperty(CRIT_LABELS, s, { enumerable: true, get: () => t(`game.critLabels.${s}`) })
 
 // Общие параметры ИИ ботов. Боевые статы (hp/урон/скорость/перезарядка)
 // бот берёт из СВОЕГО класса TANK_CLASSES — состав команды в BOT_CLASS_MIX.

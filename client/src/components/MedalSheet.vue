@@ -4,6 +4,7 @@
 // (получена N раз / ещё нет). Стиль — как PlayerCard (плашка с кронштейнами).
 import { computed } from 'vue'
 import { MEDAL_TIER_COLOR } from '../game/meta.js'
+import { t } from '../i18n.js'
 import Medal from './ui/Medal.vue'
 import PzIcon from './ui/PzIcon.vue'
 
@@ -14,18 +15,10 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const tierColor = computed(() => MEDAL_TIER_COLOR[props.medal.tier] || MEDAL_TIER_COLOR.bronze)
-const tierName = computed(() => ({ bronze: 'Бронза', silver: 'Серебро', gold: 'Золото' })[props.medal.tier] || '')
+const tierName = computed(() => t(`game.medalTiers.${props.medal.tier}`) || '')
 const career = computed(() => props.medal.kind === 'career')
 const earned = computed(() => props.count > 0)
 const reward = computed(() => props.medal.reward || {})
-// «раз / раза» по числу (1 раз, 2 раза, 5 раз, 11 раз)
-const razWord = computed(() => {
-  const a = props.count % 100
-  const b = props.count % 10
-  if (a >= 11 && a <= 14) return 'раз'
-  if (b >= 2 && b <= 4) return 'раза'
-  return 'раз'
-})
 </script>
 
 <template>
@@ -39,17 +32,17 @@ const razWord = computed(() => {
       <div class="name pz-display" :style="{ color: tierColor }">{{ medal.name }}</div>
       <div class="chips">
         <span class="chip" :style="{ color: tierColor, borderColor: tierColor }">{{ tierName }}</span>
-        <span class="chip dim">{{ career ? 'Карьерная' : 'Боевая' }}</span>
+        <span class="chip dim">{{ career ? t('medals.typeCareer') : t('medals.typeBattle') }}</span>
       </div>
 
       <div class="block">
-        <div class="pz-pixel blabel">КАК ПОЛУЧИТЬ</div>
+        <div class="pz-pixel blabel">{{ t('medals.howTo') }}</div>
         <div class="cond">{{ medal.desc }}</div>
-        <div class="hint">{{ career ? 'Рубеж по суммарной статистике — выдаётся один раз.' : 'Начисляется за каждый подходящий бой.' }}</div>
+        <div class="hint">{{ career ? t('medals.hintCareer') : t('medals.hintBattle') }}</div>
       </div>
 
       <div v-if="reward.credits || reward.tokens" class="block">
-        <div class="pz-pixel blabel">НАГРАДА <span class="rsub">за первое получение</span></div>
+        <div class="pz-pixel blabel">{{ t('medals.reward') }} <span class="rsub">{{ t('medals.rewardSub') }}</span></div>
         <div class="rrow">
           <span v-if="reward.credits" class="ritem"><PzIcon name="coin" :size="15" />{{ reward.credits.toLocaleString('ru-RU') }}</span>
           <span v-if="reward.tokens" class="ritem"><PzIcon name="token" :size="15" />{{ reward.tokens }}</span>
@@ -57,8 +50,8 @@ const razWord = computed(() => {
       </div>
 
       <div class="status" :class="{ on: earned }">
-        <template v-if="earned">✓ {{ career ? 'Получена' : `Получена ${count} ${razWord}` }}</template>
-        <template v-else>Ещё не получена</template>
+        <template v-if="earned">{{ career ? t('medals.earnedOnce') : t('medals.timesGot', { n: count }) }}</template>
+        <template v-else>{{ t('medals.notEarned') }}</template>
       </div>
     </div>
   </div>

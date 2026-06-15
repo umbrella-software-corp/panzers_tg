@@ -9,6 +9,7 @@ import { REF_MILESTONES, TANK_BY_ID } from '../game/meta.js'
 import { tgUserId, inviteLink, shareLink } from '../tg.js'
 import { squad, connectSquad, squadSetReady, squadLaunch, closeSquad, isSquadLeader, myReady, allReady, myTankCompatible, squadTierOk, memberTierBad, tierFitsSquad } from '../game/squad.js'
 import { track } from '../analytics.js'
+import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -26,8 +27,8 @@ const isLeader = computed(() => isSquadLeader())
 const picker = ref(false)
 const mySelId = computed(() => profile.selectedTank)
 const myTankName = computed(() => {
-  const t = selectedTank()
-  return t ? `${t.name} · ур.${t.tier}` : '—'
+  const sel = selectedTank()
+  return sel ? `${sel.name} · ${t('squad.tierShort', { n: sel.tier })}` : '—'
 })
 const myTanks = computed(() => (profile.owned || []).map((id) => TANK_BY_ID[id]).filter(Boolean).sort((a, b) => a.tier - b.tier))
 function pickTank(id) {
@@ -46,26 +47,26 @@ function showToast(text) {
 
 // результат шэра ссылки → понятный тост
 function afterShare(kind) {
-  if (kind === 'share') showToast('Выбери чат — отправь другу')
-  else if (kind === 'copied') showToast('Ссылка скопирована — кидай в чат!')
-  else showToast('Шэр недоступен — открой игру в Telegram')
+  if (kind === 'share') showToast(t('squad.shareChoose'))
+  else if (kind === 'copied') showToast(t('squad.shareCopied'))
+  else showToast(t('squad.shareUnavailable'))
 }
 
 // собрать взвод: стать командиром (зайти в своё лобби) и пригласить друга
 function createSquad() {
-  if (!myId.value) return showToast('Взвод доступен только в Telegram')
+  if (!myId.value) return showToast(t('squad.squadTgOnly'))
   connectSquad(myId.value, profile.name)
   track('squad_create_clicked', {
     tank_id: profile.selectedTank,
     tank_tier: selectedTank()?.tier || null,
   })
-  const shareResult = shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG — вместе в один бой!')
+  const shareResult = shareLink(inviteLink(`sq_${myId.value}`), t('squad.shareSquad'))
   track('squad_share_attempted', { share_result: shareResult, kind: 'squad' })
   afterShare(shareResult)
 }
 function inviteMore() {
   if (!myId.value) return
-  const shareResult = shareLink(inviteLink(`sq_${myId.value}`), 'Го во взвод в Panzer TG!')
+  const shareResult = shareLink(inviteLink(`sq_${myId.value}`), t('squad.shareSquadMore'))
   track('squad_share_attempted', {
     share_result: shareResult,
     kind: 'squad_more',
@@ -76,7 +77,7 @@ function inviteMore() {
 function toggleReady() {
   // готовлюсь, но техника не в пределах ±1 уровня — открываем пикер смены танка
   if (!myReady() && !myTankCompatible()) {
-    showToast('Выбери технику в пределах ±1 уровня взвода')
+    showToast(t('squad.pickTankInRange'))
     picker.value = true
     return
   }
@@ -101,13 +102,13 @@ function launch() {
 }
 function leaveSquad() {
   closeSquad()
-  showToast('Вышел из взвода')
+  showToast(t('squad.leftSquad'))
 }
 
 // постоянная реф-ссылка: кто зайдёт по ней — засчитается тебе в рекруты на сервере
 function inviteFriend() {
-  if (!myId.value) return showToast('Приглашение доступно только в Telegram')
-  const shareResult = shareLink(inviteLink(`ref_${myId.value}`), 'Залетай в Panzer TG — танковые бои в Telegram!')
+  if (!myId.value) return showToast(t('squad.inviteTgOnly'))
+  const shareResult = shareLink(inviteLink(`ref_${myId.value}`), t('squad.shareRef'))
   track('invite_friend_clicked', {
     share_result: shareResult,
     referrals_count: profile.referrals.length,
@@ -126,14 +127,12 @@ function claim(i) {
     camo: r.camo ? true : false,
   })
   // оф-ящик с дропом камуфляжа — показываем что именно выпало
-  if (r.camo) showToast(`🎁 Камуфляж «${r.camo.name}» на ${r.camo.tankName} +${r.credits} кр`)
-  else showToast(`${REF_MILESTONES[i].label} — получено!`)
+  if (r.camo) showToast(t('squad.camoDrop', { name: r.camo.name, tankName: r.camo.tankName, credits: r.credits }))
+  else showToast(t('squad.milestoneGot', { label: REF_MILESTONES[i].label }))
 }
 
-const needWord = (n) => (n === 1 ? 'друг' : n < 5 ? 'друга' : 'друзей')
-
 // сервер отклонил старт (разный уровень техники) — показываем тостом
-squad.onWarn = (reason) => showToast(reason === 'tier' ? 'Разный уровень техники — нужен ±1' : 'Действие отклонено')
+squad.onWarn = (reason) => showToast(reason === 'tier' ? t('squad.warnTier') : t('squad.warnRejected'))
 
 onUnmounted(() => {
   clearTimeout(toastTimer)
@@ -150,29 +149,29 @@ onUnmounted(() => {
 
       <!-- табы -->
       <div style="display: flex; gap: 6px; margin-bottom: 12px">
-        <button class="pz-display tabbtn" :class="{ on: tab === 0 }" @click="tab = 0">ВЗВОД</button>
-        <button class="pz-display tabbtn" :class="{ on: tab === 1 }" @click="tab = 1">НАГРАДЫ{{ rewardsDot ? ' •' : '' }}</button>
+        <button class="pz-display tabbtn" :class="{ on: tab === 0 }" @click="tab = 0">{{ t('squad.tabSquad') }}</button>
+        <button class="pz-display tabbtn" :class="{ on: tab === 1 }" @click="tab = 1">{{ t('squad.tabRewards') }}{{ rewardsDot ? ' •' : '' }}</button>
       </div>
 
       <!-- ===== таб ВЗВОД ===== -->
       <template v-if="tab === 0">
-        <div class="pz-stencil-h" style="margin-bottom: 10px">ВЗВОД{{ squad.active ? ` · ${squad.members.length}/3` : '' }}</div>
+        <div class="pz-stencil-h" style="margin-bottom: 10px">{{ t('squad.squadHeader') }}{{ squad.active ? ` · ${squad.members.length}/3` : '' }}</div>
 
         <!-- НЕ в лобби -->
         <template v-if="!squad.active">
-          <p class="hint">Собери взвод: друзья по ссылке зайдут в лобби, отметят готовность — и командир кинет всех в ОДИН бой на своей стороне.</p>
+          <p class="hint">{{ t('squad.notInLobbyHint') }}</p>
           <button class="pz-cta" style="width: 100%; gap: 8px; font-size: 14px; padding: 13px 16px" @click="createSquad">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
               <path d="M10 14l8.5-8.5M13 5h6v6" /><path d="M19 14v5a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h5" />
             </svg>
-            Собрать взвод
+            {{ t('squad.buildSquad') }}
           </button>
           <div class="howto">
-            <div class="pz-stencil-h" style="margin-bottom: 8px">КАК ЭТО РАБОТАЕТ</div>
+            <div class="pz-stencil-h" style="margin-bottom: 8px">{{ t('squad.howItWorks') }}</div>
             <ol class="steps">
-              <li>Жмёшь «Собрать взвод» — кидаешь ссылку другу в чат.</li>
-              <li>Друг открывает игру по ссылке — попадает в твоё лобби.</li>
-              <li>Все жмут «Готов», командир — «В БОЙ»: вы в одном бою.</li>
+              <li>{{ t('squad.step1') }}</li>
+              <li>{{ t('squad.step2') }}</li>
+              <li>{{ t('squad.step3') }}</li>
             </ol>
           </div>
         </template>
@@ -186,44 +185,44 @@ onUnmounted(() => {
                 <div class="sl-info">
                   <div class="sl-name">
                     <PzIcon v-if="squad.members[i - 1].leader" name="star" :size="11" color="var(--amber)" />
-                    {{ squad.members[i - 1].name }}<span v-if="String(squad.members[i - 1].id) === String(myId)" style="color: var(--ink-faint); font-weight: 600"> · ты</span>
+                    {{ squad.members[i - 1].name }}<span v-if="String(squad.members[i - 1].id) === String(myId)" style="color: var(--ink-faint); font-weight: 600">{{ t('squad.youSuffix') }}</span>
                   </div>
                   <div class="sl-tank" :class="{ bad: memberTierBad(squad.members[i - 1]) }">
-                    <template v-if="squad.members[i - 1].tank">{{ squad.members[i - 1].tank.name }} · ур.{{ squad.members[i - 1].tank.tier }}</template>
-                    <template v-else>выбирает технику…</template>
+                    <template v-if="squad.members[i - 1].tank">{{ squad.members[i - 1].tank.name }} · {{ t('squad.tierShort', { n: squad.members[i - 1].tank.tier }) }}</template>
+                    <template v-else>{{ t('squad.pickingTank') }}</template>
                   </div>
                 </div>
-                <span class="sl-state" :class="{ ready: squad.members[i - 1].ready }">{{ squad.members[i - 1].ready ? 'ГОТОВ' : 'ждёт' }}</span>
+                <span class="sl-state" :class="{ ready: squad.members[i - 1].ready }">{{ squad.members[i - 1].ready ? t('squad.memberReady') : t('squad.memberWaiting') }}</span>
               </template>
-              <span v-else class="sl-free">— свободно —</span>
+              <span v-else class="sl-free">{{ t('squad.slotFree') }}</span>
             </div>
           </div>
 
           <!-- командир один: подсказка как затащить друга (частый затык — кеш/открытая игра) -->
           <p v-if="isLeader && squad.members.length < 2" class="hint" style="margin: 10px 0 0; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(0,0,0,.25)">
-            Ждём друга. Он должен <b>полностью закрыть игру</b> (смахнуть в Telegram) и открыть её <b>по твоей ссылке</b> — тогда появится здесь. Если игра у него уже открыта — по ссылке не зайдёт.
+            {{ t('squad.waitingFriendHint1') }}<b>{{ t('squad.waitingFriendHintBold') }}</b>{{ t('squad.waitingFriendHint2') }}<b>{{ t('squad.waitingFriendHintBold2') }}</b>{{ t('squad.waitingFriendHint3') }}
           </p>
 
           <!-- моя техника + смена прямо во взводе (подогнать под уровень взвода) -->
           <div class="mytank">
             <div class="mt-row">
-              <span class="mt-lbl">ТВОЯ ТЕХНИКА</span>
+              <span class="mt-lbl">{{ t('squad.yourTank') }}</span>
               <span class="mt-name" :class="{ bad: !myTankCompatible() }">{{ myTankName }}</span>
-              <button class="mt-swap" @click="picker = !picker">{{ picker ? 'ЗАКРЫТЬ' : 'СМЕНИТЬ' }}</button>
+              <button class="mt-swap" @click="picker = !picker">{{ picker ? t('squad.closeBtn') : t('squad.swapBtn') }}</button>
             </div>
-            <p v-if="!myTankCompatible() && !picker" class="mt-warn">Не подходит по уровню взвода — жми «СМЕНИТЬ» и выбери из подходящих (✓)</p>
+            <p v-if="!myTankCompatible() && !picker" class="mt-warn">{{ t('squad.tankWarn') }}</p>
             <transition name="pz-fade">
               <div v-if="picker" class="tank-picker pz-noscroll">
                 <button
-                  v-for="t in myTanks"
-                  :key="t.id"
+                  v-for="tk in myTanks"
+                  :key="tk.id"
                   class="tp-cell"
-                  :class="{ on: t.id === mySelId, fit: tierFitsSquad(t.tier), unfit: !tierFitsSquad(t.tier) }"
-                  @click="pickTank(t.id)"
+                  :class="{ on: tk.id === mySelId, fit: tierFitsSquad(tk.tier), unfit: !tierFitsSquad(tk.tier) }"
+                  @click="pickTank(tk.id)"
                 >
-                  <span class="tp-name">{{ t.name }}</span>
-                  <span class="tp-tier">ур.{{ t.tier }}</span>
-                  <span class="tp-mark">{{ t.id === mySelId ? '●' : tierFitsSquad(t.tier) ? '✓' : '✗' }}</span>
+                  <span class="tp-name">{{ tk.name }}</span>
+                  <span class="tp-tier">{{ t('squad.tierShort', { n: tk.tier }) }}</span>
+                  <span class="tp-mark">{{ tk.id === mySelId ? '●' : tierFitsSquad(tk.tier) ? '✓' : '✗' }}</span>
                 </button>
               </div>
             </transition>
@@ -231,23 +230,23 @@ onUnmounted(() => {
 
           <!-- моя готовность: лейбл по ДЕЙСТВИЮ (зелёный = уже готов) -->
           <button class="ready-toggle" :class="{ on: myReady() }" @click="toggleReady">
-            {{ myReady() ? 'ОТМЕНИТЬ ГОТОВНОСТЬ' : 'ГОТОВ' }}
+            {{ myReady() ? t('squad.readyOn') : t('squad.readyOff') }}
           </button>
 
           <!-- командир: позвать ещё + старт; участник — подсказка -->
-          <button v-if="isLeader && !squad.full" class="pz-btn2" style="width: 100%; margin-top: 8px" @click="inviteMore">Позвать ещё друга</button>
+          <button v-if="isLeader && !squad.full" class="pz-btn2" style="width: 100%; margin-top: 8px" @click="inviteMore">{{ t('squad.inviteMore') }}</button>
           <button v-if="isLeader" class="pz-cta pz-cta--hazard" style="width: 100%; margin-top: 8px; padding: 13px" :disabled="!allReady() || !squadTierOk()" :style="{ opacity: allReady() && squadTierOk() ? 1 : 0.5 }" @click="launch">
-            {{ !squadTierOk() ? 'РАЗНЫЙ УРОВЕНЬ ТЕХНИКИ' : allReady() ? `В БОЙ ×${squad.members.length}` : 'ЖДЁМ ГОТОВНОСТИ ВСЕХ' }}
+            {{ !squadTierOk() ? t('squad.launchTierBad') : allReady() ? t('squad.launchGo', { n: squad.members.length }) : t('squad.launchWait') }}
           </button>
-          <div v-else class="hint" style="text-align: center; margin-top: 10px">Командир запустит бой, когда все готовы</div>
+          <div v-else class="hint" style="text-align: center; margin-top: 10px">{{ t('squad.memberLaunchHint') }}</div>
 
-          <button class="pz-btn2" style="width: 100%; margin-top: 8px" @click="leaveSquad">{{ isLeader ? 'Распустить взвод' : 'Покинуть взвод' }}</button>
+          <button class="pz-btn2" style="width: 100%; margin-top: 8px" @click="leaveSquad">{{ isLeader ? t('squad.disband') : t('squad.leave') }}</button>
         </template>
       </template>
 
       <!-- ===== таб НАГРАДЫ ===== -->
       <template v-else>
-        <div class="pz-stencil-h" style="margin-bottom: 10px">ПРИГЛАШЕНО · {{ profile.referrals.length }}/5</div>
+        <div class="pz-stencil-h" style="margin-bottom: 10px">{{ t('squad.invitedHeader', { n: profile.referrals.length }) }}</div>
 
         <!-- прогресс -->
         <div style="display: flex; align-items: center; gap: 4px; margin: 2px 4px 14px">
@@ -269,10 +268,10 @@ onUnmounted(() => {
             :class="{ ready: !profile.claimedRef.includes(i) && profile.referrals.length >= m.need }"
           >
             <span class="pz-display" style="font-size: 11px; width: 56px; flex-shrink: 0" :style="{ color: !profile.claimedRef.includes(i) && profile.referrals.length >= m.need ? 'var(--amber)' : 'var(--ink-faint)' }">
-              {{ m.need }} {{ needWord(m.need) }}
+              {{ t('squad.needFriends', { n: m.need }) }}
             </span>
             <span style="flex: 1; font-size: 12.5px; font-weight: 600" :style="{ color: profile.claimedRef.includes(i) ? 'var(--ink-faint)' : 'var(--ink)' }">{{ m.label }}</span>
-            <span v-if="profile.claimedRef.includes(i)" class="pz-chip" style="color: var(--green); font-size: 10.5px">✓ получено</span>
+            <span v-if="profile.claimedRef.includes(i)" class="pz-chip" style="color: var(--green); font-size: 10.5px">{{ t('squad.claimed') }}</span>
             <button
               v-else
               class="pz-btn2"
@@ -285,20 +284,20 @@ onUnmounted(() => {
               }"
               @click="claim(i)"
             >
-              Забрать
+              {{ t('squad.claim') }}
             </button>
           </div>
         </div>
 
-        <div class="pz-stencil-h" style="margin-bottom: 8px">ТВОИ РЕКРУТЫ</div>
+        <div class="pz-stencil-h" style="margin-bottom: 8px">{{ t('squad.yourRecruits') }}</div>
         <div class="pz-noscroll" style="overflow-y: auto; display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0">
           <div v-if="profile.referrals.length === 0" style="font-size: 12px; color: var(--ink-faint); text-align: center; padding: 14px 0; font-weight: 500">
-            Пока никого — кинь ссылку в чат
+            {{ t('squad.noRecruits') }}
           </div>
           <div v-for="(name, i) in profile.referrals" :key="i" class="friend-row">
             <span class="prog on" style="flex-shrink: 0"><PzIcon name="star" :size="10" color="var(--amber)" /></span>
             <div style="flex: 1; font-size: 13px; font-weight: 600">{{ name }}</div>
-            <span class="pz-chip" style="color: var(--ink-dim); font-size: 10.5px">по твоей ссылке</span>
+            <span class="pz-chip" style="color: var(--ink-dim); font-size: 10.5px">{{ t('squad.viaYourLink') }}</span>
           </div>
         </div>
       </template>
@@ -309,7 +308,7 @@ onUnmounted(() => {
           <path d="M10 14l8.5-8.5M13 5h6v6" />
           <path d="M19 14v5a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2h5" />
         </svg>
-        Пригласить по ссылке
+        {{ t('squad.inviteByLink') }}
       </button>
 
       <!-- тост над шторкой -->

@@ -12,6 +12,7 @@
 //    с жёстким троттлингом отправителя (фильтр автоматически отсекает реф-ферму).
 import { botToken, hasBot } from './auth.js'
 import { listProfiles, loadProfile, saveProfile } from './db.js'
+import { t, langOf } from './i18n.js'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -27,7 +28,7 @@ const WEBAPP_URL = process.env.WEBAPP_URL || 'https://panzertg.online'
 const DRY_RUN = process.env.PUSH_DRY_RUN === '1' // тест: не слать реально, только лог
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const playButton = { inline_keyboard: [[{ text: '🎮 В БОЙ', web_app: { url: WEBAPP_URL } }]] }
+const playButton = (lang) => ({ inline_keyboard: [[{ text: t('playButton', lang), web_app: { url: WEBAPP_URL } }]] })
 
 const api = (method, body) =>
   fetch(`https://api.telegram.org/bot${botToken()}/${method}`, {
@@ -46,11 +47,9 @@ export const tgIdOf = (uid) => {
 }
 export const mskDay = (ts) => new Date((ts || 0) + MSK_OFFSET).toISOString().slice(0, 10) // YYYY-MM-DD по МСК
 export const mskHour = (ts) => new Date((ts || 0) + MSK_OFFSET).getUTCHours()
-// текст дейли: винбэк, если давно не заходил, иначе обычная «награда+задачи»
-export const digestText = (daysAway) =>
-  daysAway >= 2
-    ? '🎖 Командир, тебя давно не было — экипаж скучает! Ежедневная награда копится, новые задачи ждут в ангаре. Заскочи на пару боёв 🔥\n\n/stop — отписаться'
-    : '🎁 Командир, ежедневная награда доступна, а задачи дня обновились! Быстрый бой за пару минут — залетай 🔥\n\n/stop — отписаться'
+// текст дейли: винбэк, если давно не заходил, иначе обычная «награда+задачи».
+// lang — язык получателя (по умолчанию ru для легаси-профилей без языка)
+export const digestText = (daysAway, lang = 'ru') => t(daysAway >= 2 ? 'digestWinback' : 'digestRegular', lang)
 // кого включаем в дейли-рассылку (строка из listProfiles): реальный игрок, с tg-id,
 // не игравший сегодня. Лимит 1/сутки и opt-out проверяются позже при самой отправке.
 export function shouldDigest(row, today) {
@@ -68,19 +67,23 @@ export function friendOk(fp, now) {
 }
 
 // ---------- отправка с уважением opt-out / blocked / 1-в-сутки ----------
-async function sendPush(uid, text, { now = Date.now(), force = false } = {}) {
+// body — строка ИЛИ функция (lang) => строка: текст собирается на языке получателя
+// (langOf(p)) уже после загрузки профиля
+async function sendPush(uid, body, { now = Date.now(), force = false } = {}) {
   const chatId = tgIdOf(uid)
   if (!chatId) return false
   const p = await loadProfile(uid)
   if (!p || p.pushOff || p.pushBlocked) return false
   if (!force && p.lastPushAt && now - p.lastPushAt < PUSH_COOLDOWN) return false
+  const lang = langOf(p)
+  const text = typeof body === 'function' ? body(lang) : body
   if (DRY_RUN) {
     console.log(`[push:dry] → ${uid}: ${text.split('\n')[0]}`)
     p.lastPushAt = now
     await saveProfile(uid, p)
     return true
   }
-  const res = await api('sendMessage', { chat_id: chatId, text, reply_markup: playButton, disable_web_page_preview: true })
+  const res = await api('sendMessage', { chat_id: chatId, text, reply_markup: playButton(lang), disable_web_page_preview: true })
   if (res && res.ok) {
     p.lastPushAt = now
     await saveProfile(uid, p)
@@ -102,7 +105,7 @@ export async function runDailyDigest(now = Date.now()) {
   for (const row of profs) {
     if (!shouldDigest(row, today)) continue
     const daysAway = Math.floor((now - (row.lastSeen || now)) / DAY)
-    if (await sendPush(row.uid, digestText(daysAway), { now })) {
+    if (await sendPush(row.uid, (lang) => digestText(daysAway, lang), { now })) {
       sent++
       await sleep(70) // ~14 msg/с — с запасом под лимит Telegram (~30/с)
     }
@@ -137,7 +140,7 @@ export async function notifyFriendsInBattle(player) {
     seen.add(fuid)
     const fp = await loadProfile(fuid)
     if (!friendOk(fp, now)) continue // только реальные недавно-активные (ферма отсеивается)
-    if (await sendPush(fuid, `🔥 Твой друг ${me.name || 'боец'} сейчас в бою! Залетай вместе ⚔️\n\n/stop — отписаться`, { now })) pinged++
+    if (await sendPush(fuid, (lang) => t('friendInBattle', lang, { name: me.name || t('defaultName', lang) }), { now })) pinged++
   }
 }
 

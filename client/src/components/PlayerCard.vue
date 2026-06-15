@@ -3,6 +3,7 @@
 // любимая техника. Медали добавятся, когда будет система медалей.
 import { computed, ref } from 'vue'
 import { TANK_BY_ID, MEDALS, rankByBattles, ratingBand } from '../game/meta.js'
+import { t } from '../i18n.js'
 import TankImg from './ui/TankImg.vue'
 import Medal from './ui/Medal.vue'
 import MedalSheet from './MedalSheet.vue'
@@ -28,32 +29,32 @@ const medals = computed(() => {
       <div class="pz-display" style="font-size: 19px; text-align: center; padding: 0 20px" :style="{ color: p.premium ? 'var(--amber-hi)' : undefined }">
         <span v-if="p.premium" style="text-shadow: 0 0 6px rgba(242,165,12,.6)">♛ </span>{{ p.name }}
       </div>
-      <div v-if="p.premium" class="pz-pixel" style="text-align: center; font-size: 7px; color: var(--amber); letter-spacing: 0.14em; margin-top: 3px">ПРЕМИУМ-АККАУНТ</div>
+      <div v-if="p.premium" class="pz-pixel" style="text-align: center; font-size: 7px; color: var(--amber); letter-spacing: 0.14em; margin-top: 3px">{{ t('player.premiumAccount') }}</div>
       <div class="rank-chip pz-display">{{ rank.name }}</div>
-      <div v-if="p.place" class="pz-pixel place">МЕСТО {{ p.place }} В РЕЙТИНГЕ</div>
+      <div v-if="p.place" class="pz-pixel place">{{ t('player.placeInRating', { n: p.place }) }}</div>
 
       <div class="rating-big pz-display" :style="{ color: ratingBand(p.rating).color }">{{ p.rating }}<span class="unit" :style="{ color: ratingBand(p.rating).color }">{{ ratingBand(p.rating).label }}</span></div>
 
       <div class="grid">
-        <div class="cell"><div class="v pz-display">{{ p.battles }}</div><div class="l">боёв</div></div>
-        <div class="cell"><div class="v pz-display">{{ winrate }}%</div><div class="l">винрейт</div></div>
-        <div class="cell"><div class="v pz-display">{{ p.kills }}</div><div class="l">фрагов</div></div>
+        <div class="cell"><div class="v pz-display">{{ p.battles }}</div><div class="l">{{ t('player.statBattles') }}</div></div>
+        <div class="cell"><div class="v pz-display">{{ winrate }}%</div><div class="l">{{ t('player.statWinrate') }}</div></div>
+        <div class="cell"><div class="v pz-display">{{ p.kills }}</div><div class="l">{{ t('player.statKills') }}</div></div>
       </div>
 
       <div v-if="p.tank || p.favoriteTank" class="tank">
         <TankImg v-if="p.tank" :tank-id="p.tank" :size="50" />
         <div style="flex: 1; min-width: 0">
-          <div class="pz-pixel label">ЛЮБИМАЯ ТЕХНИКА</div>
+          <div class="pz-pixel label">{{ t('player.favoriteTank') }}</div>
           <div class="pz-display" style="font-size: 15px">{{ tankName }}</div>
         </div>
       </div>
 
       <div class="medals">
-        <div class="pz-pixel label">МЕДАЛИ <span v-if="medals.length" style="color: var(--amber)">{{ medals.length }}</span></div>
+        <div class="pz-pixel label">{{ t('player.medals') }} <span v-if="medals.length" style="color: var(--amber)">{{ medals.length }}</span></div>
         <div v-if="medals.length" class="medal-grid">
           <Medal v-for="m in medals" :key="m.def.id" :medal="m.def" :count="m.count" :size="42" style="cursor: pointer" @click="selMedal = m" />
         </div>
-        <div v-else style="font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 500">пока нет — впереди бои и подвиги</div>
+        <div v-else style="font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 500">{{ t('player.noMedals') }}</div>
       </div>
     </div>
 

@@ -7,6 +7,7 @@ import { squad } from '../game/squad.js'
 import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
 import { haptic, openSupport } from '../tg.js'
 import { track } from '../analytics.js'
+import { t } from '../i18n.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -170,7 +171,7 @@ onMounted(() => {
       <!-- размеченный отсек (бочки/пятна убраны — фон ангара уже фотореальный) -->
       <div class="bay">
         <span v-for="i in 4" :key="i" class="bay-tick" :class="'c' + i"></span>
-        <div class="bay-num pz-display">Б-01</div>
+        <div class="bay-num pz-display">{{ t('hangar.bay') }}</div>
         <div class="bay-hazard"></div>
       </div>
 
@@ -195,11 +196,11 @@ onMounted(() => {
       <div style="display: flex; align-items: center; gap: 8px; min-width: 0">
         <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
         <!-- премиум активен: корона на главной (тап → магазин) -->
-        <button v-if="isPremium()" class="prem-badge pz-display" title="Премиум активен" @click="emit('go', 'shop')">♛ ПРЕМ<i>{{ premiumDaysLeft() }}д</i></button>
+        <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive')" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}<i>{{ t('common.days', { n: premiumDaysLeft() }) }}</i></button>
       </div>
       <div style="display: flex; align-items: center; gap: 8px">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
-        <button class="support-btn" title="Поддержка" aria-label="Поддержка" @click="openSupportTracked">
+        <button class="support-btn" :title="t('hangar.support')" :aria-label="t('hangar.support')" @click="openSupportTracked">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
             <rect x="2.5" y="13" width="4" height="6" rx="1.6" />
@@ -217,19 +218,19 @@ onMounted(() => {
       <div>
         <div style="display: flex; align-items: baseline; gap: 8px">
           <span class="pz-display" style="font-size: 30px; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8)">{{ tank.name }}</span>
-          <span class="pz-pixel" style="font-size: 8px; color: var(--amber)">УР.{{ tank.tier }}</span>
-          <span v-if="tank.premium" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">★ ПРЕМ</span>
+          <span class="pz-pixel" style="font-size: 8px; color: var(--amber)">{{ t('hangar.tier', { n: tank.tier }) }}</span>
+          <span v-if="tank.premium" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">{{ t('hangar.premBadge') }}</span>
         </div>
-        <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 1px">{{ tank.cls }} · {{ nationLabel }}</div>
+        <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 1px">{{ t('game.classes.' + tank.classId) }} · {{ nationLabel }}</div>
       </div>
       <div style="display: flex; gap: 6px; align-items: center">
         <!-- экипаж: один на все танки, уровень баффает машину; клик — прокачка -->
-        <button class="crew-badge pz-display" title="Открыть прокачку экипажа" @click="emit('go', 'crew')">
-          <span>ЭКИПАЖ {{ crewLevel() }} ▸</span>
+        <button class="crew-badge pz-display" :title="t('hangar.openCrew')" @click="emit('go', 'crew')">
+          <span>{{ t('hangar.crew', { n: crewLevel() }) }}</span>
           <i class="bar"><b :style="{ width: crewProgress() * 100 + '%' }"></b></i>
         </button>
         <button class="pz-btn2" style="padding: 8px 12px; font-size: 11.5px" :style="{ borderColor: ttx ? 'var(--amber)' : 'var(--line-strong)', color: ttx ? 'var(--amber)' : 'var(--ink)' }" @click="track('ttx_opened', { tank_id: tank.id, open_to: !ttx }); ttx = !ttx">
-          ТТХ {{ ttx ? '▾' : '▸' }}
+          {{ t('hangar.ttx') }} {{ ttx ? '▾' : '▸' }}
         </button>
       </div>
     </div>
@@ -243,7 +244,7 @@ onMounted(() => {
     <!-- камуфляж: 3 схемы + заводская, на КАЖДЫЙ танк. Превью — сам танк в этом
          камо; разблокировка за жетоны (заводская бесплатна) -->
     <div class="camo-head">
-      <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">КАМУФЛЯЖ</span>
+      <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">{{ t('hangar.camo') }}</span>
     </div>
     <div class="camo-dots pz-noscroll">
       <button
@@ -266,7 +267,7 @@ onMounted(() => {
     <div v-if="previewCamo && previewDef" class="camo-buy">
       <span class="camo-buy-name pz-display">{{ previewDef.name }}</span>
       <button class="pz-cta camo-buy-btn" @click="buyPreview">
-        КУПИТЬ <PzIcon name="token" :size="11" /> {{ previewDef.cost }}
+        {{ t('hangar.buy') }} <PzIcon name="token" :size="11" /> {{ previewDef.cost }}
       </button>
     </div>
 
@@ -305,12 +306,12 @@ onMounted(() => {
     <!-- режим боя -->
     <div class="modepick" data-tut="mode" style="padding: 6px 14px 0; flex-shrink: 0; display: flex; gap: 6px">
       <button class="modeopt" :class="{ on: profile.battleMode === 'capture' }" @click="pickMode('capture')">
-        <span class="pz-display mlabel">ЗАХВАТ</span>
-        <span class="msub">точки · быстрая катка</span>
+        <span class="pz-display mlabel">{{ t('common.modeCapture') }}</span>
+        <span class="msub">{{ t('hangar.modeCaptureSub') }}</span>
       </button>
       <button class="modeopt" :class="{ on: profile.battleMode === 'annihilation' }" @click="pickMode('annihilation')">
-        <span class="pz-display mlabel">НА УНИЧТОЖЕНИЕ</span>
-        <span class="msub">бой до последнего</span>
+        <span class="pz-display mlabel">{{ t('common.modeAnnihilation') }}</span>
+        <span class="msub">{{ t('hangar.modeAnnihilationSub') }}</span>
       </button>
     </div>
 
@@ -321,7 +322,7 @@ onMounted(() => {
           <PzIcon name="tasks" :size="18" />
           <i v-if="tasksClaimable() > 0" class="task-dot"></i>
         </span>
-        ЗАДАЧИ
+        {{ t('hangar.tasks') }}
       </button>
       <button v-if="!firstSession" class="pz-btn2 squad-btn" @click="openSquadSheet">
         <span class="dots">
@@ -329,15 +330,15 @@ onMounted(() => {
           <span class="slot" :class="{ filled: inParty }"></span>
           <span class="slot" :class="{ filled: inParty }"></span>
         </span>
-        ВЗВОД
+        {{ t('hangar.platoon') }}
       </button>
       <button class="pz-cta pz-cta--hazard playbtn" data-tut="play" @click="locked ? emit('go', 'tree') : emit('play')">
         <span v-if="locked" class="play-stack">
-          <span class="play-main">ОТКРЫТЬ ТАНК ▸</span>
-          <span class="play-sub">в «Развитии»</span>
+          <span class="play-main">{{ t('hangar.openTank') }}</span>
+          <span class="play-sub">{{ t('hangar.openTankSub') }}</span>
         </span>
         <span v-else class="play-stack">
-          <span class="play-main">В БОЙ<template v-if="inParty"> · ВЗВОД</template></span>
+          <span class="play-main">{{ t('common.play') }}<template v-if="inParty">{{ t('hangar.battlePlatoon') }}</template></span>
           <span class="play-sub">▸ {{ tank.name }}</span>
         </span>
       </button>

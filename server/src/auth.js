@@ -2,6 +2,7 @@
 // секрет = HMAC("WebAppData", BOT_TOKEN)). Без BOT_TOKEN (локальная разработка)
 // принимаем гостевой id из заголовка x-guest-id → uid "g_<id>".
 import crypto from 'crypto'
+import { pickLang, t } from './i18n.js'
 
 const BOT_TOKEN = process.env.BOT_TOKEN || ''
 
@@ -28,9 +29,11 @@ export function verifyInitData(initData) {
   try {
     const user = JSON.parse(params.get('user') || '{}')
     if (!user.id) return null
+    // язык интерфейса/сообщений — из language_code пользователя Telegram
+    const lang = pickLang(user.language_code)
     // start_param из ПОДПИСАННОГО initData (метка источника трафика ?startapp=…) —
     // подделать нельзя, подпись проверена выше
-    return { uid: `tg_${user.id}`, name: user.first_name || user.username || 'Боец', startParam: params.get('start_param') || null }
+    return { uid: `tg_${user.id}`, name: user.first_name || user.username || t('defaultName', lang), lang, startParam: params.get('start_param') || null }
   } catch {
     return null
   }
@@ -44,7 +47,8 @@ export function authRequest(req) {
   if (!BOT_TOKEN) {
     const gid = String(req.headers['x-guest-id'] || '').slice(0, 40)
     // для dev-гостя метку источника берём из заголовка (в проде — из initData)
-    if (gid) return { uid: `g_${gid}`, name: 'Боец', startParam: req.headers['x-start-param'] || null }
+    const lang = pickLang(req.headers['x-lang'])
+    if (gid) return { uid: `g_${gid}`, name: t('defaultName', lang), lang, startParam: req.headers['x-start-param'] || null }
   }
   return null
 }

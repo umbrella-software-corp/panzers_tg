@@ -16,6 +16,7 @@ import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
 import { track, trackScreen, setAnalyticsUserId, identifyUser, identifyAcquisition } from './analytics.js'
+import { t } from './i18n.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
 const screen = ref('hangar')
@@ -253,11 +254,11 @@ function rematch(reward) {
   <transition name="boot-fade">
     <div v-if="booting" class="bootsplash">
       <div class="boot-mid">
-        <div class="boot-logo pz-display">PANZER <b>TG</b><span class="boot-beta pz-display">БЕТА</span></div>
+        <div class="boot-logo pz-display">PANZER <b>TG</b><span class="boot-beta pz-display">{{ t('common.beta') }}</span></div>
         <div class="boot-spin"></div>
-        <div class="boot-sub">готовим ангар…</div>
+        <div class="boot-sub">{{ t('common.bootSub') }}</div>
       </div>
-      <div class="boot-foot">ранний доступ · билд в активной разработке</div>
+      <div class="boot-foot">{{ t('common.bootFoot') }}</div>
     </div>
   </transition>
 </template>

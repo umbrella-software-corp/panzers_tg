@@ -18,6 +18,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { t, pickLang } from './i18n.js'
 
 // Хранилище: номера тикетов (один на игрока, как в МиниПолии) + назначенная
 // группа (команда /here). Маршрут ответа — по tgId из заголовка; номер для
@@ -115,6 +116,7 @@ async function handle(u) {
   const chat = msg.chat
   const text = typeof msg.text === 'string' ? msg.text : ''
   const group = effectiveGroup()
+  const lang = pickLang(msg.from.language_code) // язык пишущего — на нём и отвечаем
 
   // /chatid — id любого чата (для справки)
   if (text.startsWith('/chatid')) {
@@ -126,17 +128,17 @@ async function handle(u) {
   // env SUPPORT_CHAT_ID и сохраняется в файл — настройка без правки .env и редеплоя.
   if (text.startsWith('/here') || text.startsWith('/setgroup')) {
     if (chat.type !== 'group' && chat.type !== 'supergroup') {
-      await api('sendMessage', { chat_id: chat.id, text: 'Команду /here пиши В ГРУППЕ разработчиков — туда пойдут тикеты игроков.' })
+      await api('sendMessage', { chat_id: chat.id, text: t('sup.hereInPrivate', lang) })
       return
     }
     const mem = await api('getChatMember', { chat_id: chat.id, user_id: msg.from.id })
     const admin = mem.ok && (mem.result.status === 'creator' || mem.result.status === 'administrator')
     if (!admin) {
-      await api('sendMessage', { chat_id: chat.id, text: 'Назначить группу для тикетов может только её админ.' })
+      await api('sendMessage', { chat_id: chat.id, text: t('sup.hereNotAdmin', lang) })
       return
     }
     await setGroup(chat.id)
-    await api('sendMessage', { chat_id: chat.id, text: `✅ Готово — тикеты игроков теперь идут СЮДА (chat.id=${chat.id}). Отвечайте на них реплаем — ответ уйдёт игроку.` })
+    await api('sendMessage', { chat_id: chat.id, text: t('sup.hereDone', lang, { id: chat.id }) })
     return
   }
 
@@ -158,15 +160,12 @@ async function handle(u) {
   if (chat.type !== 'private') return
 
   if (text.startsWith('/start')) {
-    await api('sendMessage', {
-      chat_id: chat.id,
-      text: 'Привет! Это поддержка Panzer TG. Опиши проблему или вопрос — передадим разработчику и ответим прямо здесь. Можно текст, скриншоты, видео, голос.',
-    })
+    await api('sendMessage', { chat_id: chat.id, text: t('sup.start', lang) })
     return
   }
 
   if (group === null) {
-    await api('sendMessage', { chat_id: chat.id, text: 'Поддержка ещё настраивается — напиши чуть позже.' })
+    await api('sendMessage', { chat_id: chat.id, text: t('sup.notConfigured', lang) })
     return
   }
 
@@ -191,8 +190,8 @@ async function handle(u) {
   // не та группа: добавь бота в нужную группу и напиши там /here.
   if (!r || r.ok === false) {
     console.error(`[support] НЕ доставлено в группу chat_id=${group}: ${(r && r.description) || 'нет ответа'} — проверь группу (добавь бота туда и напиши /here)`)
-    await api('sendMessage', { chat_id: chat.id, text: 'Пока не получилось передать сообщение — уже разбираемся. Напиши ещё раз чуть позже.' })
+    await api('sendMessage', { chat_id: chat.id, text: t('sup.deliveryFailed', lang) })
     return
   }
-  await api('sendMessage', { chat_id: chat.id, text: `✅ Тикет #${ticket} передан разработчику — ответим здесь.` })
+  await api('sendMessage', { chat_id: chat.id, text: t('sup.ticketDone', lang, { n: ticket }) })
 }

@@ -5,6 +5,9 @@ import { ref, onMounted } from 'vue'
 import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank } from '../store.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
+// `t` алиасим в `tr`: в шаблоне/скрипте уже есть локальные `t` (v-for="t in
+// PREMIUM_TANKS", premStats(t), buyPremTank(t)) — танк, не переводчик.
+import { t as tr, fmtNum } from '../i18n.js'
 import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
 import { haptic } from '../tg.js'
@@ -17,9 +20,9 @@ import PzIcon from './ui/PzIcon.vue'
 const emit = defineEmits(['go'])
 
 const CRATES = [
-  { id: 'c1', name: 'Полевой ящик', sub: '600 кредитов · шанс на бонус жетонов 10%', icon: 'crate_field', costTokens: 5, gain: 600, drop: 0.1, bonus: 3 },
-  { id: 'c2', name: 'Офицерский ящик', sub: '1 800 кредитов · бонус жетонов 35%', icon: 'crate_officer', costTokens: 12, gain: 1800, drop: 0.35, bonus: 5 },
-  { id: 'c3', name: 'Генеральский ящик', sub: '4 500 кредитов · бонус жетонов гарантирован', icon: 'crate_general', costTokens: 25, gain: 4500, drop: 1, bonus: 8 },
+  { id: 'c1', nameKey: 'crateFieldName', subKey: 'crateFieldSub', icon: 'crate_field', costTokens: 5, gain: 600, drop: 0.1, bonus: 3 },
+  { id: 'c2', nameKey: 'crateOfficerName', subKey: 'crateOfficerSub', icon: 'crate_officer', costTokens: 12, gain: 1800, drop: 0.35, bonus: 5 },
+  { id: 'c3', nameKey: 'crateGeneralName', subKey: 'crateGeneralSub', icon: 'crate_general', costTokens: 25, gain: 4500, drop: 1, bonus: 8 },
 ]
 const CREDIT_PACKS = [
   { id: 'p1', amount: 1000, price: '50 ⭐' },
@@ -49,7 +52,7 @@ function buyCrate(c) {
     currency: 'tokens',
   })
   if (!spendTokens(c.costTokens)) {
-    showToast('Не хватает жетонов', true)
+    showToast(tr('shop.notEnoughTokens'), true)
     return
   }
   addRewards(c.gain, 0)
@@ -66,7 +69,7 @@ function buyCrate(c) {
     credits: c.gain,
     tokens_bonus: tokens,
   })
-  reveal.value = { name: c.name, credits: c.gain, skin: null, tokens }
+  reveal.value = { name: tr('shop.' + c.nameKey), credits: c.gain, skin: null, tokens }
 }
 // паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
 // Без BOT_TOKEN сервер начисляет сразу (dev-режим).
@@ -81,7 +84,7 @@ async function buyPack(p, label) {
         dev: !!r.dev,
         payment_type: r.dev ? 'dev_grant' : 'stars',
       })
-      showToast(`${label} — зачислено${r.dev ? ' (dev)' : ''}!`)
+      showToast(tr('shop.granted', { label, dev: !!r.dev }))
     } else if (r.link && window.Telegram?.WebApp?.openInvoice) {
       window.Telegram.WebApp.openInvoice(r.link, async (status) => {
         if (status === 'paid') {
@@ -92,21 +95,21 @@ async function buyPack(p, label) {
           })
           setTimeout(async () => {
             await syncProfile()
-            showToast(`${label} — оплачено!`)
+            showToast(tr('shop.paid', { label }))
           }, 1200) // даём поллингу зачислить
         }
       })
     } else {
-      showToast('Оплата недоступна', true)
+      showToast(tr('shop.payUnavailable'), true)
     }
   } catch {
     track('purchase_failed', { product_id: p.id, reason: 'api_error' })
-    showToast('Сервер недоступен', true)
+    showToast(tr('shop.serverUnavailable'), true)
   }
 }
-const buyCredits = (p) => buyPack(p, `${p.amount.toLocaleString('ru-RU')} кредитов`)
-const buyTokens = (p) => buyPack(p, `${p.amount} жетонов`)
-const buyPremium = () => buyPack({ id: 'prem' }, 'Премиум · 7 дней')
+const buyCredits = (p) => buyPack(p, tr('shop.creditsLabel', { disp: fmtNum(p.amount), n: p.amount }))
+const buyTokens = (p) => buyPack(p, tr('shop.tokensLabel', { n: p.amount }))
+const buyPremium = () => buyPack({ id: 'prem' }, tr('shop.premiumLabel'))
 const premSel = ref(null) // развёрнутый ТТХ прем-танка в магазине
 const premStats = (t) => {
   const cs = combatStats(t) // реальные боевые числа (крупные) для ТТХ
@@ -114,17 +117,17 @@ const premStats = (t) => {
 }
 // прем-танк за ⭐: продукт pt_<id> → grantProduct кладёт в гараж (как в «Развитии»)
 async function buyPremTank(t) {
-  await buyPack({ id: 'pt_' + t.id }, `${t.name} (премиум-танк)`)
+  await buyPack({ id: 'pt_' + t.id }, tr('shop.premTankLabel', { name: t.name }))
   if (isOwned(t.id)) selectTank(t.id) // dev-grant: сразу выбираем
 }
 function buyGold(p) {
   if (!buyGoldAmmo(p.id)) {
-    showToast('Не хватает жетонов', true)
+    showToast(tr('shop.notEnoughTokens'), true)
     return
   }
-  showToast(`${p.amount} голдовых снарядов — получено!`)
+  showToast(tr('shop.goldGot', { n: p.amount }))
 }
-const fmt = (n) => n.toLocaleString('ru-RU')
+const fmt = (n) => fmtNum(n)
 
 onMounted(() => {
   track('shop_viewed', {
@@ -140,23 +143,23 @@ onMounted(() => {
 <template>
   <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.88), rgba(13, 15, 10, 0.94)), url('/sprites/bg_shop.png') center / cover no-repeat">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 8px">
-      <div class="pz-display" style="font-size: 17px">МАГАЗИН</div>
+      <div class="pz-display" style="font-size: 17px">{{ tr('shop.title') }}</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" />
     </header>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
       <!-- премиум-аккаунт -->
       <section>
-        <div class="pz-stencil-h">ПРЕМИУМ-АККАУНТ</div>
+        <div class="pz-stencil-h">{{ tr('shop.premiumHead') }}</div>
         <div class="pz-plate pz-brackets" style="--bk: var(--amber); margin-top: 10px; padding: 13px 14px; display: flex; align-items: center; gap: 12px">
           <PzIcon name="star" :size="38" color="var(--amber)" />
           <div style="flex: 1; min-width: 0">
-            <div class="pz-display" style="font-size: 15px; color: var(--amber)">ПРЕМИУМ · 7 ДНЕЙ</div>
+            <div class="pz-display" style="font-size: 15px; color: var(--amber)">{{ tr('shop.premiumTitle') }}</div>
             <div style="font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 500; line-height: 1.4">
-              +15% к опыту экипажа, ветке техники и кредитам за каждый бой
+              {{ tr('shop.premiumDesc') }}
             </div>
             <div v-if="isPremium()" class="pz-pixel" style="font-size: 8px; color: var(--green); margin-top: 5px; letter-spacing: 0.1em">
-              АКТИВЕН · ОСТАЛОСЬ {{ premiumDaysLeft() }} ДН.
+              {{ tr('shop.premiumActive', { n: premiumDaysLeft() }) }}
             </div>
           </div>
           <button class="pz-cta" style="padding: 11px 15px; font-size: 14px; white-space: nowrap; width: auto; flex-shrink: 0" @click="buyPremium">99 ⭐</button>
@@ -165,7 +168,7 @@ onMounted(() => {
 
       <!-- премиум-техника -->
       <section>
-        <div class="pz-stencil-h">ПРЕМИУМ-ТЕХНИКА · ЗА TG STARS</div>
+        <div class="pz-stencil-h">{{ tr('shop.premTanksHead') }}</div>
         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px">
           <div v-for="t in PREMIUM_TANKS" :key="t.id" class="pz-plate" style="padding: 0; overflow: hidden">
             <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer" @click="premSel = premSel === t.id ? null : t.id">
@@ -173,12 +176,12 @@ onMounted(() => {
               <div style="flex: 1; min-width: 0">
                 <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap">
                   <span class="pz-display" style="font-size: 14.5px">{{ t.name }}</span>
-                  <span v-if="t.legend" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">ЛЕГЕНДА</span>
-                  <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint)">ТТХ {{ premSel === t.id ? '▾' : '▸' }}</span>
+                  <span v-if="t.legend" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">{{ tr('shop.legend') }}</span>
+                  <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint)">{{ tr('shop.stats') }} {{ premSel === t.id ? '▾' : '▸' }}</span>
                 </div>
-                <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ t.cls }} · ур. {{ t.tier }} · +5% опыт/кредиты, кристаллы</div>
+                <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ tr('shop.premTankSub', { cls: tr('game.classes.' + t.classId), tier: t.tier }) }}</div>
               </div>
-              <span v-if="isOwned(t.id)" class="pz-chip" style="color: #7cc05a; flex-shrink: 0">✓ в гараже</span>
+              <span v-if="isOwned(t.id)" class="pz-chip" style="color: #7cc05a; flex-shrink: 0">{{ tr('shop.inGarage') }}</span>
               <button v-else class="pz-cta" style="padding: 9px 13px; font-size: 13px; white-space: nowrap; width: auto; flex-shrink: 0" @click.stop="buyPremTank(t)">{{ t.stars }} ⭐</button>
             </div>
             <div v-if="premSel === t.id" style="display: flex; flex-direction: column; gap: 6px; padding: 4px 14px 12px; border-top: 1px solid var(--line)">
@@ -191,13 +194,13 @@ onMounted(() => {
 
       <!-- ящики -->
       <section>
-        <div class="pz-stencil-h">ЯЩИКИ СНАБЖЕНИЯ</div>
+        <div class="pz-stencil-h">{{ tr('shop.cratesHead') }}</div>
         <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px">
           <div v-for="c in CRATES" :key="c.id" class="pz-plate" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px">
             <img :src="`/sprites/${c.icon}.png`" style="width: 52px; height: 52px; border-radius: 8px; object-fit: cover" />
             <div style="flex: 1; min-width: 0">
-              <div class="pz-display" style="font-size: 14.5px">{{ c.name }}</div>
-              <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ c.sub }}</div>
+              <div class="pz-display" style="font-size: 14.5px">{{ tr('shop.' + c.nameKey) }}</div>
+              <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ tr('shop.' + c.subKey, { credits: fmt(c.gain) }) }}</div>
             </div>
             <button class="pz-btn2" style="padding: 9px 12px; font-size: 12.5px; gap: 5px" @click="buyCrate(c)">
               <PzIcon name="token" :size="13" /> {{ c.costTokens }}
@@ -208,23 +211,23 @@ onMounted(() => {
 
       <!-- голдовые снаряды -->
       <section>
-        <div class="pz-stencil-h">ГОЛДОВЫЕ СНАРЯДЫ</div>
+        <div class="pz-stencil-h">{{ tr('shop.goldHead') }}</div>
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px">
           <button v-for="p in GOLD_AMMO_PACKS" :key="p.id" class="pz-plate pack" @click="buyGold(p)">
             <img src="/sprites/icon_gold.png" style="width: 44px; height: 44px; border-radius: 8px; object-fit: cover" />
             <span class="pz-display" style="font-size: 16px; color: var(--amber)">★ ×{{ p.amount }}</span>
-            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 500">урон +35% за выстрел</span>
+            <span style="font-size: 11px; color: var(--ink-dim); font-weight: 500">{{ tr('shop.goldDesc') }}</span>
             <span class="pz-chip" style="font-size: 11px; margin-top: 2px"><PzIcon name="token" :size="12" /> {{ p.costTokens }}</span>
           </button>
         </div>
         <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 6px; font-weight: 500; text-align: center">
-          в наличии: ★ {{ profile.goldAmmo }} · переключение прямо в бою
+          {{ tr('shop.goldInStock', { n: profile.goldAmmo }) }}
         </div>
       </section>
 
       <!-- кредиты -->
       <section>
-        <div class="pz-stencil-h">КРЕДИТЫ · ЗА TG STARS</div>
+        <div class="pz-stencil-h">{{ tr('shop.creditsHead') }}</div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px">
           <button
             v-for="p in CREDIT_PACKS"
@@ -234,7 +237,7 @@ onMounted(() => {
             :style="{ '--bk': 'var(--amber)', borderColor: p.hot ? 'var(--amber)' : 'var(--line)' }"
             @click="buyCredits(p)"
           >
-            <span v-if="p.hot" class="pz-pixel hot" style="background: var(--amber); color: #1d1604">ХИТ</span>
+            <span v-if="p.hot" class="pz-pixel hot" style="background: var(--amber); color: #1d1604">{{ tr('shop.hot') }}</span>
             <img src="/sprites/icon_credits.png" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover" />
             <span class="pz-display" style="font-size: 15px">{{ fmt(p.amount) }}</span>
             <span style="font-size: 11.5px; color: var(--ink-dim); font-weight: 600">{{ p.price }}</span>
@@ -244,7 +247,7 @@ onMounted(() => {
 
       <!-- жетоны -->
       <section>
-        <div class="pz-stencil-h">ЖЕТОНЫ · ЗА TG STARS</div>
+        <div class="pz-stencil-h">{{ tr('shop.tokensHead') }}</div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px">
           <button
             v-for="p in TOKEN_PACKS"
@@ -254,7 +257,7 @@ onMounted(() => {
             :style="{ '--bk': 'var(--blue)', borderColor: p.hot ? 'var(--blue)' : 'var(--line)' }"
             @click="buyTokens(p)"
           >
-            <span v-if="p.hot" class="pz-pixel hot" style="background: var(--blue); color: #0a1c30">ХИТ</span>
+            <span v-if="p.hot" class="pz-pixel hot" style="background: var(--blue); color: #0a1c30">{{ tr('shop.hot') }}</span>
             <img src="/sprites/icon_tokens.png" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover" />
             <span class="pz-display" style="font-size: 15px">{{ p.amount }}</span>
             <span style="font-size: 11.5px; color: var(--ink-dim); font-weight: 600">{{ p.price }}</span>
@@ -281,25 +284,25 @@ onMounted(() => {
       <div v-if="reveal" class="reveal-overlay" @click.self="reveal = null">
         <div class="reveal-card pz-plate pz-brackets" style="--bk: var(--amber)">
           <div class="pz-display" style="font-size: 17px; letter-spacing: 0.06em; text-align: center">{{ reveal.name }}</div>
-          <div class="pz-pixel" style="font-size: 8px; color: var(--amber); margin-top: 6px; letter-spacing: 0.14em; text-align: center">ВЫ ПОЛУЧИЛИ</div>
+          <div class="pz-pixel" style="font-size: 8px; color: var(--amber); margin-top: 6px; letter-spacing: 0.14em; text-align: center">{{ tr('shop.youGot') }}</div>
           <div class="reveal-items">
             <div class="reveal-item">
               <PzIcon name="coin" :size="20" />
-              <span class="pz-display" style="font-size: 18px">+{{ reveal.credits.toLocaleString('ru-RU') }}</span>
-              <span style="color: var(--ink-dim); font-size: 12px">кредитов</span>
+              <span class="pz-display" style="font-size: 18px">+{{ fmt(reveal.credits) }}</span>
+              <span style="color: var(--ink-dim); font-size: 12px">{{ tr('shop.rewardCredits') }}</span>
             </div>
             <div v-if="reveal.skin" class="reveal-item">
               <span class="reveal-swatch" :style="{ background: camoCss(reveal.skin) }"></span>
-              <span class="pz-display" style="font-size: 15px; flex: 1">Камуфляж «{{ reveal.skin.name }}»</span>
-              <span class="pz-pixel" style="font-size: 7px; color: var(--green)">НОВЫЙ</span>
+              <span class="pz-display" style="font-size: 15px; flex: 1">{{ tr('shop.rewardCamo', { name: reveal.skin.name }) }}</span>
+              <span class="pz-pixel" style="font-size: 7px; color: var(--green)">{{ tr('shop.rewardNew') }}</span>
             </div>
             <div v-if="reveal.tokens" class="reveal-item">
               <PzIcon name="token" :size="18" />
               <span class="pz-display" style="font-size: 16px">+{{ reveal.tokens }}</span>
-              <span style="color: var(--ink-dim); font-size: 12px">жетона · камуфляжи собраны</span>
+              <span style="color: var(--ink-dim); font-size: 12px">{{ tr('shop.rewardTokens') }}</span>
             </div>
           </div>
-          <button class="pz-cta" style="width: 100%; margin-top: 14px" @click="reveal = null">Забрать</button>
+          <button class="pz-cta" style="width: 100%; margin-top: 14px" @click="reveal = null">{{ tr('shop.claim') }}</button>
         </div>
       </div>
     </transition>

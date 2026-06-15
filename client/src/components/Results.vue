@@ -6,6 +6,7 @@ import { computed, ref, onMounted } from 'vue'
 import { profile, battleEarnedMedals, grantFirstBattleReward } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID } from '../game/meta.js'
 import { track } from '../analytics.js'
+import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
 import Medal from './ui/Medal.vue'
 import MedalSheet from './MedalSheet.vue'
@@ -37,22 +38,22 @@ const ratingDelta = computed(() => profile.stats.lastWn8Delta || 0)
 const ratingNow = computed(() => profile.stats.wn8 || 0)
 const ratingCol = computed(() => ratingBand(ratingNow.value).color)
 const stamp = computed(() =>
-  props.state.result === 'victory' ? 'ПОБЕДА' : props.state.result === 'defeat' ? 'ПОРАЖЕНИЕ' : 'НИЧЬЯ',
+  props.state.result === 'victory' ? t('common.victory') : props.state.result === 'defeat' ? t('common.defeat') : t('common.draw'),
 )
 // почему бой завершился — короткая строка под штампом («Задача выполнена/провалена»)
 const reasonText = computed(() => {
   const win = props.state.result === 'victory'
   switch (props.state.endReason) {
     case 'caps':
-      return win ? 'Все точки захвачены — задача выполнена' : 'Враг захватил все точки'
+      return win ? t('results.reasonCapsWin') : t('results.reasonCapsLose')
     case 'wipe':
-      return win ? 'Противник уничтожен — задача выполнена' : 'Взвод уничтожен'
+      return win ? t('results.reasonWipeWin') : t('results.reasonWipeLose')
     case 'score':
-      return win ? 'Набран лимит очков' : 'Враг набрал лимит очков'
+      return win ? t('results.reasonScoreWin') : t('results.reasonScoreLose')
     case 'time':
-      return win ? 'Время вышло — победа по очкам' : 'Время вышло'
+      return win ? t('results.reasonTimeWin') : t('results.reasonTimeLose')
     case 'aborted':
-      return 'Бой прерван — сервер обновлялся'
+      return t('results.reasonAborted')
     default:
       return ''
   }
@@ -60,14 +61,14 @@ const reasonText = computed(() => {
 // строка режима+счёта: захват — «счёт A:B»; уничтожение — «уничтожение · живых A:B»
 const modeScore = computed(() =>
   props.state.mode === 'annihilation'
-    ? `на уничтожение · живых ${props.state.alliesAlive}:${props.state.enemiesAlive}`
-    : `счёт ${props.state.allyScore}:${props.state.enemyScore}`,
+    ? t('results.modeAnnihilation', { a: props.state.alliesAlive, b: props.state.enemiesAlive })
+    : t('results.modeScore', { a: props.state.allyScore, b: props.state.enemyScore }),
 )
 const rows = computed(() => [
-  ['Уничтожено машин', props.state.kills],
-  ['Подбит раз', props.state.deaths],
-  ['Урон по противнику', props.state.damageDealt],
-  ['Точность', props.state.accuracy + '%'],
+  [t('results.statKills'), props.state.kills],
+  [t('results.statDeaths'), props.state.deaths],
+  [t('results.statDamage'), props.state.damageDealt],
+  [t('results.statAccuracy'), props.state.accuracy + '%'],
 ])
 // медали, заработанные в этом бою (считаются до начисления — флаг «впервые» точен)
 const medals = computed(() =>
@@ -117,16 +118,16 @@ function setPage(i) {
       <div class="holes"><span></span><span></span></div>
 
       <div class="head">
-        <div class="pz-display" style="font-size: 13px; letter-spacing: 0.3em; opacity: 0.65">БОЕВОЕ ДОНЕСЕНИЕ</div>
+        <div class="pz-display" style="font-size: 13px; letter-spacing: 0.3em; opacity: 0.65">{{ t('results.title') }}</div>
         <div style="font-size: 11px; margin-top: 3px; opacity: 0.55; font-weight: 500">
-          экипаж · {{ tankName }} · бой 7×7 · {{ modeScore }}
+          {{ t('results.crewLine', { tank: tankName, score: modeScore }) }}
         </div>
       </div>
 
       <!-- листы донесения (как скреплённые страницы) -->
       <div style="display: flex; gap: 6px; justify-content: center; margin-top: 10px">
-        <button v-for="(label, i) in ['Сводка', 'По бойцам']" :key="label" class="pz-display sheet-tab" :class="{ on: page === i }" @click="setPage(i)">
-          {{ label }} <span style="opacity: 0.55">· л.{{ i + 1 }}</span>
+        <button v-for="(label, i) in [t('results.tabSummary'), t('results.tabBySoldier')]" :key="label" class="pz-display sheet-tab" :class="{ on: page === i }" @click="setPage(i)">
+          {{ label }} <span style="opacity: 0.55">· {{ t('results.sheet', { n: i + 1 }) }}</span>
         </button>
       </div>
 
@@ -154,32 +155,32 @@ function setPage(i) {
             <div class="pz-display" style="display: flex; align-items: center; justify-content: center; gap: 5px">
               <PzIcon name="coin" :size="15" /> <span style="font-size: 18px">+{{ reward.silver }}</span>
             </div>
-            <div class="cell-sub">КРЕДИТЫ</div>
+            <div class="cell-sub">{{ t('results.credits') }}</div>
           </div>
           <div class="cell">
-            <div class="pz-display" style="font-size: 18px">+{{ reward.xp }} <span style="font-size: 11px; opacity: 0.6">ОП</span></div>
-            <div class="cell-sub">ОПЫТ БОЯ</div>
+            <div class="pz-display" style="font-size: 18px">+{{ reward.xp }} <span style="font-size: 11px; opacity: 0.6">{{ t('common.xp') }}</span></div>
+            <div class="cell-sub">{{ t('results.battleXp') }}</div>
           </div>
         </div>
         <!-- куда ушёл опыт -->
         <div style="font-size: 11.5px; font-weight: 600; opacity: 0.75; text-align: center; margin-top: 8px">
-          ветка {{ branchLabel }} +{{ branchXp }} ОП · экипаж +{{ crewXp }} ОП
+          {{ t('results.branchLine', { branch: branchLabel, branchXp, crewXp }) }}
         </div>
         <!-- морковка за первый завершённый бой (показываем только когда выдана) -->
         <div v-if="firstBonus" class="first-bonus">
           <PzIcon name="coin" :size="16" />
-          <span class="pz-display">БОНУС ЗА ПЕРВЫЙ БОЙ +{{ firstBonus }}</span>
+          <span class="pz-display">{{ t('results.firstBattleBonus', { n: firstBonus }) }}</span>
         </div>
         <!-- изменение боевого рейтинга -->
         <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1.5px dashed rgba(33, 29, 18, 0.35)">
-          <span style="font-size: 12.5px; font-weight: 600; opacity: 0.7">Боевой рейтинг</span>
+          <span style="font-size: 12.5px; font-weight: 600; opacity: 0.7">{{ t('results.battleRating') }}</span>
           <span class="pz-display" style="font-size: 16px" :style="{ color: ratingCol }">{{ ratingNow }}</span>
           <span class="pz-display" style="font-size: 14px" :style="{ color: ratingDelta >= 0 ? '#2f7a1f' : '#9a1f10' }">{{ ratingDelta >= 0 ? '+' : '' }}{{ ratingDelta }}</span>
         </div>
 
         <!-- медали за бой -->
         <div v-if="medals.length" class="medals-strip">
-          <div class="pz-display medals-cap">ПОЛУЧЕНЫ МЕДАЛИ</div>
+          <div class="pz-display medals-cap">{{ t('results.medalsEarned') }}</div>
           <div class="medals-row">
             <div v-for="m in medals" :key="m.id" class="medal-item" @click="selMedal = { def: m.def, count: Math.max(1, profile.medals[m.id] || 0) }">
               <Medal :medal="m.def" :size="46" :is-new="m.isNew" />
@@ -193,17 +194,17 @@ function setPage(i) {
         <!-- лист 2: по бойцам — урон обеих команд, сверху больше всего -->
         <div style="padding: 12px 2px 4px">
           <div v-if="!scoreboard.length" style="text-align: center; font-size: 13px; opacity: 0.6; padding: 24px 0; font-weight: 500">
-            Данные подсчитываются…
+            {{ t('results.counting') }}
           </div>
           <div v-else class="pz-noscroll" style="display: flex; flex-direction: column; gap: 3px; max-height: 46vh; overflow-y: auto">
             <div class="sb-row sb-head">
               <span class="sb-place">#</span><span class="sb-dot" style="visibility: hidden"></span>
-              <span class="sb-name">БОЕЦ</span><span class="sb-dmg">УРОН</span>
+              <span class="sb-name">{{ t('results.colSoldier') }}</span><span class="sb-dmg">{{ t('results.colDamage') }}</span>
             </div>
             <div v-for="(r, i) in scoreboard" :key="i" class="sb-row" :class="{ me: r.you }">
               <span class="sb-place">{{ i + 1 }}</span>
               <span class="sb-dot" :style="{ background: r.ally ? '#2f6ea0' : '#9a1f10' }"></span>
-              <span class="sb-name">{{ r.you ? profile.name : r.name }}<span v-if="r.kills" style="opacity: 0.5; font-weight: 500"> · {{ r.kills }} фр.</span></span>
+              <span class="sb-name">{{ r.you ? profile.name : r.name }}<span v-if="r.kills" style="opacity: 0.5; font-weight: 500"> · {{ t('results.frags', { n: r.kills }) }}</span></span>
               <span class="pz-display sb-dmg">{{ r.damage }}</span>
             </div>
           </div>
@@ -213,8 +214,8 @@ function setPage(i) {
 
     <!-- действия -->
     <div style="width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 10px; margin-top: 18px">
-      <button class="pz-cta pz-cta--hazard" @click="emit('rematch')">ЕЩЁ БОЙ</button>
-      <button class="pz-btn2" @click="track('results_hangar_clicked', { result: state.result, end_reason: state.endReason || null }); emit('hangar')">В ангар</button>
+      <button class="pz-cta pz-cta--hazard" @click="emit('rematch')">{{ t('results.rematch') }}</button>
+      <button class="pz-btn2" @click="track('results_hangar_clicked', { result: state.result, end_reason: state.endReason || null }); emit('hangar')">{{ t('common.toHangar') }}</button>
     </div>
 
     <!-- модалка медали: что это и как получить -->

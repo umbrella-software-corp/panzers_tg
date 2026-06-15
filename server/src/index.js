@@ -5,6 +5,7 @@ import http from 'http'
 import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap, softFactor } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
+import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
@@ -134,7 +135,7 @@ async function registerReferral(user, ref) {
   if (!Array.isArray(inviter.referralIds)) inviter.referralIds = []
   if (!inviter.referralIds.includes(user.uid)) {
     inviter.referralIds.push(user.uid)
-    inviter.referrals.push(user.name || 'Боец')
+    inviter.referrals.push(user.name || tr('defaultName', user.lang))
     await saveProfile(inviterUid, inviter)
   }
   return { ok: true, credited: true }
@@ -164,6 +165,11 @@ async function recordVisit(user) {
   }
   if (!p.lastSeen || now - p.lastSeen > 60000) {
     p.lastSeen = now
+    dirty = true
+  }
+  // язык интерфейса из подписанного initData — обновляем при смене (для пушей/оплаты)
+  if (user.lang && p.lang !== user.lang) {
+    p.lang = user.lang
     dirty = true
   }
   if (dirty) await saveProfile(user.uid, p)
@@ -278,6 +284,7 @@ async function handleApi(req, res) {
       src: prev.src || srcTag(user.startParam) || null,
       firstSeen: prev.firstSeen || Date.now(),
       lastSeen: Date.now(),
+      lang: user.lang || prev.lang || 'ru', // язык для серверных сообщений (пуши/оплата)
     }
     await saveProfile(user.uid, merged)
     return json(res, 200, { ok: true })
@@ -288,7 +295,7 @@ async function handleApi(req, res) {
   }
   if (req.url === '/api/invoice' && req.method === 'POST') {
     const { productId, name } = await readBody(req)
-    const out = await createInvoice(user.uid, productId, { name })
+    const out = await createInvoice(user.uid, productId, { name, lang: user.lang })
     if (out.error) return json(res, 400, out)
     // dev-режим: токена нет — начисляем сразу, фронт покажет «куплено (dev)»
     if (out.dev) {
@@ -324,16 +331,16 @@ async function handleApi(req, res) {
   }
   // ===== турниры (регистрация + счётчик «участвую») =====
   if (req.url === '/api/tournaments' && req.method === 'GET') {
-    return json(res, 200, { tournaments: await listTournaments(user.uid) })
+    return json(res, 200, { tournaments: await listTournaments(user.uid, user.lang) })
   }
   if (req.url === '/api/tournament/join' && req.method === 'POST') {
     const b = await readBody(req)
-    const r = await joinTournament(user.uid, String(b.tid || ''))
+    const r = await joinTournament(user.uid, String(b.tid || ''), user.lang)
     return r.error ? json(res, 400, r) : json(res, 200, { tournament: r })
   }
   if (req.url === '/api/tournament/leave' && req.method === 'POST') {
     const b = await readBody(req)
-    const r = await leaveTournament(user.uid, String(b.tid || ''))
+    const r = await leaveTournament(user.uid, String(b.tid || ''), user.lang)
     return r.error ? json(res, 400, r) : json(res, 200, { tournament: r })
   }
   json(res, 404, { error: 'not found' })
@@ -461,7 +468,7 @@ function squadJoin(squadId, memberId, name, tank, ws) {
     send(ws, { type: 'squad-full' })
     return
   }
-  sq.members.set(memberId, { id: memberId, name: (name || 'Боец').slice(0, 24), ready: false, ws, tank: sanitizeTank(tank) })
+  sq.members.set(memberId, { id: memberId, name: (name || tr('defaultName', 'en')).slice(0, 24), ready: false, ws, tank: sanitizeTank(tank) })
   ws.squad = sq
   ws.squadMemberId = memberId
   broadcastSquad(sq)
@@ -1053,7 +1060,7 @@ wss.on('connection', (ws, req) => {
   const id = `p${nextId++}`
   const room = getJoinRoom(mode)
   // party-токен храним на игроке — по нему делим на команды в startRoom (взвод цело)
-  const human = { id, party, name: `Игрок ${id}`, team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0, uid: null }
+  const human = { id, party, name: tr('lobbyPlayer', 'en', { id }), team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0, uid: null }
   room.humans.push(human)
   ws.playerId = id
   ws.room = room

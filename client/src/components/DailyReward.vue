@@ -5,6 +5,7 @@ import { computed, ref } from 'vue'
 import { profile, claimDaily } from '../store.js'
 import { DAILY_REWARDS } from '../game/meta.js'
 import { track } from '../analytics.js'
+import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['close'])
@@ -29,7 +30,7 @@ function claim() {
 }
 
 const fmtReward = (r) =>
-  [r.credits && `${r.credits} кредитов`, r.tokens && `${r.tokens} жетонов`, r.gold && `★${r.gold} голд`]
+  [r.credits && t('common.creditsN', { n: r.credits }), r.tokens && t('common.tokensN', { n: r.tokens }), r.gold && t('daily.goldStr', { n: r.gold })]
     .filter(Boolean)
     .join(' + ')
 </script>
@@ -37,9 +38,9 @@ const fmtReward = (r) =>
 <template>
   <div class="overlay">
     <div class="pz-plate pz-brackets card" style="--bk: var(--amber)">
-      <div class="pz-stencil-h" style="justify-content: center">ЕЖЕДНЕВНОЕ ДОВОЛЬСТВИЕ</div>
+      <div class="pz-stencil-h" style="justify-content: center">{{ t('daily.title') }}</div>
       <div style="font-size: 12px; color: var(--ink-dim); text-align: center; font-weight: 500">
-        День {{ nextDay }} серии — заходи каждый день, награды растут
+        {{ t('daily.series', { n: nextDay }) }}
       </div>
 
       <div class="days">
@@ -57,9 +58,9 @@ const fmtReward = (r) =>
       </div>
 
       <button v-if="!claimed" class="pz-cta" style="font-size: 15px; padding: 12px 16px" @click="claim">
-        ЗАБРАТЬ · {{ fmtReward(DAILY_REWARDS[(nextDay - 1) % 7]) }}
+        {{ t('daily.claim', { reward: fmtReward(DAILY_REWARDS[(nextDay - 1) % 7]) }) }}
       </button>
-      <div v-else class="pz-display got">+ {{ fmtReward(claimed.reward) }} ✓</div>
+      <div v-else class="pz-display got">{{ t('daily.got', { reward: fmtReward(claimed.reward) }) }}</div>
     </div>
   </div>
 </template>

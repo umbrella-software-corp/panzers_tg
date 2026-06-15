@@ -3,6 +3,7 @@
 // «участвую» (перед запуском понимаем, наберётся ли состав). Сетки/проведение
 // матчей — следующим шагом, когда заявок хватает.
 import { getTournRegs, saveTournRegs } from './db.js'
+import { t as tr } from './i18n.js'
 
 // каталог форматов (статичен). cls: 'light'|'medium'|'heavy'|'any'
 export const TOURNAMENTS = [
@@ -14,10 +15,10 @@ export const TOURNAMENTS = [
 ]
 const BY_ID = Object.fromEntries(TOURNAMENTS.map((t) => [t.id, t]))
 
-function view(t, list, uid) {
+function view(t, list, uid, lang) {
   return {
     id: t.id,
-    name: t.name,
+    name: tr('tournaments.' + t.id, lang), // локализованное имя формата (фоллбэк — t.name)
     teamSize: t.teamSize,
     cls: t.cls,
     count: list.length, // сколько нажали «участвую»
@@ -26,12 +27,12 @@ function view(t, list, uid) {
   }
 }
 
-export async function listTournaments(uid) {
+export async function listTournaments(uid, lang) {
   const regs = await getTournRegs()
-  return TOURNAMENTS.map((t) => view(t, regs[t.id] || [], uid))
+  return TOURNAMENTS.map((t) => view(t, regs[t.id] || [], uid, lang))
 }
 
-export async function joinTournament(uid, tid) {
+export async function joinTournament(uid, tid, lang) {
   const t = BY_ID[tid]
   if (!t) return { error: 'not found' }
   const regs = await getTournRegs()
@@ -40,14 +41,14 @@ export async function joinTournament(uid, tid) {
     list.push(uid)
     await saveTournRegs(regs)
   }
-  return view(t, list, uid)
+  return view(t, list, uid, lang)
 }
 
-export async function leaveTournament(uid, tid) {
+export async function leaveTournament(uid, tid, lang) {
   const t = BY_ID[tid]
   if (!t) return { error: 'not found' }
   const regs = await getTournRegs()
   const list = (regs[tid] = (regs[tid] || []).filter((u) => u !== uid))
   await saveTournRegs(regs)
-  return view(t, list, uid)
+  return view(t, list, uid, lang)
 }

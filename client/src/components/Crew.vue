@@ -17,9 +17,10 @@ import { CREW_MEMBERS, CREW_PERK_MAX, crewPerkCost } from '../game/meta.js'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PzIcon from './ui/PzIcon.vue'
+import { t, fmtNum } from '../i18n.js'
 
 const emit = defineEmits(['go'])
-const fmt = (n) => (n || 0).toLocaleString('ru-RU')
+const fmt = (n) => fmtNum(n || 0)
 
 const lvl = computed(() => crewLevel())
 const maxed = computed(() => lvl.value >= CREW_MAX_LEVEL)
@@ -50,20 +51,20 @@ function showToast(text, bad = false) {
 
 function buy(m) {
   if (upgradeCrewPerk(m.id)) {
-    showToast(`${m.role}: «${m.perk}» — ранг ${crewPerkLevel(m.id)}`)
+    showToast(t('crew.rankToast', { role: m.role, perk: m.perk, rank: crewPerkLevel(m.id) }))
     return
   }
   flashId.value = m.id
   setTimeout(() => (flashId.value = null), 600)
-  if (crewPointsFree() < 1) showToast('Нет очков навыка — качайте уровень экипажа в боях', true)
-  else showToast('Не хватает кредитов', true)
+  if (crewPointsFree() < 1) showToast(t('crew.noPoints'), true)
+  else showToast(t('crew.noCredits'), true)
 }
 </script>
 
 <template>
   <div class="pz-screen" style="background: linear-gradient(rgba(13, 15, 10, 0.9), rgba(13, 15, 10, 0.95)), url('/sprites/hangar.png') center / cover no-repeat">
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
-      <div class="pz-display" style="font-size: 17px">ЭКИПАЖ</div>
+      <div class="pz-display" style="font-size: 17px">{{ t('crew.title') }}</div>
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
     </header>
 
@@ -73,12 +74,12 @@ function buy(m) {
         <div class="lvl-dot pz-display">{{ lvl }}</div>
         <div style="flex: 1; min-width: 0">
           <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px">
-            <span class="pz-display" style="font-size: 15px">УРОВЕНЬ {{ lvl }}<span v-if="maxed" style="color: var(--amber)"> · МАКС</span></span>
-            <span style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500">{{ maxed ? 'предел подготовки' : `${fmt(xpInto)} / ${fmt(CREW_LEVEL_XP)} ОП` }}</span>
+            <span class="pz-display" style="font-size: 15px">{{ t('crew.level', { lvl }) }}<span v-if="maxed" style="color: var(--amber)">{{ t('crew.max') }}</span></span>
+            <span style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500">{{ maxed ? t('crew.trainingCap') : t('crew.xpLine', { into: fmt(xpInto), need: fmt(CREW_LEVEL_XP) }) }}</span>
           </div>
           <div class="xp-track"><b :style="{ width: crewProgress() * 100 + '%' }"></b></div>
           <div style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500; margin-top: 4px">
-            Уровень даёт +1% к темпу, обзору, ходу и манёвру — и 1 очко навыка.
+            {{ t('crew.levelBuff') }}
           </div>
         </div>
       </div>
@@ -87,15 +88,15 @@ function buy(m) {
       <div style="display: flex; gap: 6px; flex-wrap: wrap">
         <span class="pz-chip" :style="{ color: crewPointsFree() > 0 ? 'var(--amber)' : 'var(--ink-dim)', borderColor: crewPointsFree() > 0 ? 'var(--amber)' : 'var(--line-strong)' }">
           <PzIcon name="star" :size="12" :color="crewPointsFree() > 0 ? 'var(--amber)' : 'var(--ink-faint)'" />
-          Очки навыка: {{ crewPointsFree() }}
+          {{ t('crew.skillPoints', { n: crewPointsFree() }) }}
         </span>
-        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">урон +{{ totals.dmg }}%</span>
-        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">темп +{{ totals.reload }}%</span>
-        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">ход +{{ totals.run }}%</span>
-        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">обзор +{{ totals.vision }}%</span>
+        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">{{ t('crew.buffDmg', { n: totals.dmg }) }}</span>
+        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">{{ t('crew.buffReload', { n: totals.reload }) }}</span>
+        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">{{ t('crew.buffRun', { n: totals.run }) }}</span>
+        <span class="pz-chip" style="font-size: 11px; color: var(--ink-dim)">{{ t('crew.buffVision', { n: totals.vision }) }}</span>
       </div>
 
-      <div class="pz-stencil-h" style="margin-top: 2px">Специалисты</div>
+      <div class="pz-stencil-h" style="margin-top: 2px">{{ t('crew.specialists') }}</div>
 
       <!-- специалисты -->
       <div
@@ -113,7 +114,7 @@ function buy(m) {
             <span class="pz-display" style="font-size: 14px">{{ m.role }}</span>
             <span style="font-size: 10.5px; color: var(--ink-faint); font-weight: 500">{{ m.name }}</span>
           </div>
-          <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500; margin-top: 2px">«{{ m.perk }}» · {{ m.effect }}</div>
+          <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500; margin-top: 2px">{{ t('crew.perkLine', { perk: m.perk, effect: m.effect }) }}</div>
           <div style="display: flex; gap: 3px; margin-top: 5px">
             <span
               v-for="r in CREW_PERK_MAX"
@@ -124,7 +125,7 @@ function buy(m) {
           </div>
         </div>
 
-        <span v-if="crewPerkLevel(m.id) >= CREW_PERK_MAX" class="pz-chip" style="color: var(--amber); font-size: 10.5px">МАКС ★</span>
+        <span v-if="crewPerkLevel(m.id) >= CREW_PERK_MAX" class="pz-chip" style="color: var(--amber); font-size: 10.5px">{{ t('crew.maxRank') }}</span>
         <button
           v-else-if="crewPointsFree() > 0"
           class="pz-btn2"
@@ -135,12 +136,12 @@ function buy(m) {
           <PzIcon name="coin" :size="12" /> {{ fmt(crewPerkCost(crewPerkLevel(m.id))) }}
         </button>
         <span v-else class="pz-chip" style="color: var(--ink-faint); font-size: 10.5px">
-          <PzIcon name="lock" :size="10" /> очко на ур. {{ nextPointAt }}
+          <PzIcon name="lock" :size="10" /> {{ t('crew.pointAt', { lvl: nextPointAt }) }}
         </span>
       </div>
 
       <div style="font-size: 11px; color: var(--ink-faint); font-weight: 500; line-height: 1.5; padding: 0 2px">
-        Экипаж один на все машины и получает половину опыта каждого боя. Очков навыка меньше, чем рангов, — выбирайте специализацию с умом.
+        {{ t('crew.note') }}
       </div>
     </div>
 
