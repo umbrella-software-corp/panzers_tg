@@ -179,10 +179,12 @@ async function refresh() {
     ]),
   )
 
+  const onSet = new Set(s.onlineUids || []) // кто сейчас онлайн (зелёная точка у имени)
   $('profiles').innerHTML = table(
     ['Игрок', 'UID', 'Кредиты', 'Жетоны', 'Боёв', 'Побед', 'Рейтинг', 'Танков', 'Экипаж ОП', 'Был'],
     prof.profiles.slice(0, 100).map((p) => [
-      esc(p.name), esc(p.uid), p.credits, p.tokens, p.battles, p.wins, p.rating, p.tanks, p.crewXp, dt(p.updatedAt),
+      (onSet.has(p.uid) ? '<span title="онлайн" style="color:#7cc05a">● </span>' : '') + esc(p.name),
+      esc(p.uid), p.credits, p.tokens, p.battles, p.wins, p.rating, p.tanks, p.crewXp, dt(p.updatedAt),
     ]),
   )
   $('status').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU')

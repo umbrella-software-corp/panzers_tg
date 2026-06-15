@@ -80,6 +80,11 @@ async function handleAdmin(req, res) {
         return n
       })(),
       onlineSockets: wss.clients.size, // сырые сокеты (для сверки/диагностики клонов)
+      onlineUids: (() => {
+        const s = new Set()
+        for (const c of wss.clients) if (c.readyState === 1 && c.uid) s.add(c.uid)
+        return [...s]
+      })(), // кто сейчас онлайн — для пометки в таблице игроков
       tournaments: !!(await getSetting('tournamentsOn', false)),
       rooms: [...rooms.values()].map((r) => ({
         id: r.id,
