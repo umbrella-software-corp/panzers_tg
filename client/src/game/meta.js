@@ -87,19 +87,26 @@ export const STAT_LABELS = { dmg: 'Урон', rof: 'Скорострельнос
 // Сектор/линия сведения/допуск — характер класса; остальное считается из
 // дисплейных статов 0..10, так что КАЖДЫЙ танк в бою ощущается по-своему.
 import { TANK_CLASSES } from './config.js'
+// КРУПНЫЕ ЧИСЛА (как в больших танковых играх): HP сильно вверх (×HP_SCALE),
+// урон слабее (×DMG_SCALE) → бои «мясистее», ~6-8 выстрелов на килл. Базовые
+// аркадные числа в формулах домножаются на масштаб. ТЕ ЖЕ множители зашиты в
+// hp/damage классов в shared/config.js и client/src/game/config.js (TANK_CLASSES,
+// статы ботов) — менять СИНХРОННО, иначе боты и игроки разъедутся по шкале.
+export const HP_SCALE = 14.5
+export const DMG_SCALE = 7.25
 export function combatStats(tank) {
   const s = tank.stats
   const cls = TANK_CLASSES[tank.classId] || TANK_CLASSES.medium
   const maxSpeed = 42 + s.spd * 8.5 // танки тяжелее, не «гоночные» (порезано ~28%)
   return {
     ...cls, // id/label/sectorDeg/sweepPeriod/toleranceDeg/range — профиль класса
-    damage: Math.round(14 + s.dmg * 4.5),
+    damage: Math.round((14 + s.dmg * 4.5) * DMG_SCALE),
     reload: +(6.4 - s.rof * 0.5).toFixed(2),
     maxSpeed,
     accel: Math.round(maxSpeed * 1.1), // разгон ~1с до полной — масса чувствуется
     turnRate: +(0.55 + s.mnv * 0.12).toFixed(2), // танк, а не машинка
     vision: 240 + s.view * 26, // обзор урезан ~15% (был 280+view*32 — «слишком далеко»); под плейтест
-    hp: 60 + s.hp * 14,
+    hp: Math.round((60 + s.hp * 14) * HP_SCALE),
   }
 }
 
@@ -159,7 +166,7 @@ export const GOLD_AMMO_PACKS = [
 // blocked/wins/battles. Блок бронёй копится только в боях с ботами (в PvP
 // брони пока нет).
 export const DAILY_TASKS = [
-  { id: 'dmg600', label: 'Нанеси 600 урона', goal: 600, key: 'damage', credits: 400 },
+  { id: 'dmg600', label: 'Нанеси 4500 урона', goal: 4500, key: 'damage', credits: 400 },
   { id: 'kills3', label: 'Уничтожь 3 машины', goal: 3, key: 'kills', credits: 500 },
   { id: 'light2', label: 'Уничтожь 2 лёгких танка', goal: 2, key: 'lightKills', tokens: 5 },
   { id: 'block3', label: 'Заблокируй 3 снаряда бронёй', goal: 3, key: 'blocked', credits: 350 },
@@ -310,8 +317,8 @@ export const MEDALS = [
   // боевые — за один бой
   { id: 'warrior', name: 'Воин', desc: '3+ фрага за бой', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150 } },
   { id: 'sniper', name: 'Снайпер раунда', desc: '5+ фрагов за бой', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2 } },
-  { id: 'firestorm', name: 'Огневой вал', desc: '1200+ урона за бой', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 1200, reward: { credits: 300, tokens: 1 } },
-  { id: 'wall', name: 'Стальная стена', desc: '300+ урона отражено бронёй', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blocked', need: 300, reward: { credits: 300, tokens: 1 } },
+  { id: 'firestorm', name: 'Огневой вал', desc: '8000+ урона за бой', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1 } },
+  { id: 'wall', name: 'Стальная стена', desc: '2000+ урона отражено бронёй', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blocked', need: 2000, reward: { credits: 300, tokens: 1 } },
   { id: 'scout', name: 'Орлиный глаз', desc: '2+ фрага по засвеченным', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200 } },
   { id: 'survivor', name: 'Уцелевший', desc: 'Выжил в бою (одна жизнь)', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150 } },
   { id: 'triumph', name: 'Чистая победа', desc: 'Победа без потери машины', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3 } },

@@ -26,7 +26,6 @@ import {
   BOT_SPOT_VISION,
   FIRE_REVEAL_SEC,
   TANK_RADIUS,
-  BOT_NAMES,
   BOT_NICKS,
   BOT_SKINS,
   BOT_SKIN_CHANCE,
@@ -571,7 +570,7 @@ export class BattleSim {
     if (this.capTimer >= CAP_TICK) {
       this.capTimer -= CAP_TICK
       // каждая удержанная точка тикает очко владельцу — чем больше точек, тем
-      // быстрее растёт счёт (War Thunder style), обе команды копят независимо
+      // быстрее растёт счёт, обе команды копят независимо
       for (const cap of this.caps) if (cap.owner !== null) this.score[cap.owner]++
     }
   }

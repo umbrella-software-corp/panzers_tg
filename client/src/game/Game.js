@@ -647,8 +647,8 @@ export class Game {
   _visionBlocked(x1, y1, x2, y2) {
     for (const o of this.obstacles) {
       if (o.kind === 'water') continue
-      // куст, в котором СТОИТ наблюдатель, не слепит его — видно наружу (WoT-«свет
-      // из кустов»); куст у цели её по-прежнему скрывает (он далеко от x1,y1)
+      // куст, в котором СТОИТ наблюдатель, не слепит его — видно наружу (свет
+      // из кустов); куст у цели её по-прежнему скрывает (он далеко от x1,y1)
       if (o.kind === 'bush' && Math.hypot(o.x - x1, o.y - y1) <= o.r) continue
       if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
     }
@@ -1049,7 +1049,7 @@ export class Game {
       }
     }
 
-    // War Thunder style: каждая удержанная точка тикает очко владельцу —
+    // каждая удержанная точка тикает очко владельцу —
     // больше точек = быстрее счёт. Обе команды копят независимо.
     this.capTimer += dt
     if (this.capTimer >= CAP_TICK) {

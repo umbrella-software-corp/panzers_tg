@@ -393,8 +393,8 @@ const STAT_CLAMP = {
   sweepPeriod: [1.2, 6],
   toleranceDeg: [2, 12],
   reload: [1.2, 8],
-  damage: [10, 80],
-  hp: [40, 320],
+  damage: [60, 1500], // крупные числа (×DMG_SCALE) — было [10,80]
+  hp: [300, 5000], // крупные числа (×HP_SCALE) — было [40,320]
   range: [300, 800],
   vision: [200, 800],
   maxSpeed: [40, 220],

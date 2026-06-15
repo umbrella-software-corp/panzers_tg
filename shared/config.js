@@ -12,8 +12,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 1.9,
     toleranceDeg: 5.5,
     reload: 2.2,
-    damage: 22,
-    hp: 80,
+    damage: 160, // крупные числа: база 22 ×DMG_SCALE(7.25) — синхрон с meta.js
+    hp: 1160, // база 80 ×HP_SCALE(14.5) — бои «мясистее» (~6-8 выстрелов)
     range: 560,
     vision: 440, // обзор урезан (был 520 — «слишком далеко»); ЧИСЛА ПОД ПЛЕЙТЕСТ
     maxSpeed: 116,
@@ -27,8 +27,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 2.5,
     toleranceDeg: 4,
     reload: 3.4,
-    damage: 34,
-    hp: 120,
+    damage: 247, // база 34 ×DMG_SCALE(7.25)
+    hp: 1740, // база 120 ×HP_SCALE(14.5)
     range: 600,
     vision: 380, // обзор урезан (был 440)
     maxSpeed: 88,
@@ -42,8 +42,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 3.8,
     toleranceDeg: 3.5,
     reload: 5.0,
-    damage: 52,
-    hp: 180,
+    damage: 377, // база 52 ×DMG_SCALE(7.25)
+    hp: 2610, // база 180 ×HP_SCALE(14.5)
     range: 640,
     vision: 310, // обзор урезан (был 360)
     maxSpeed: 62,
@@ -58,8 +58,8 @@ export const MAP_SIZE = 2400
 // Рельеф/стены/базы/точки переехали в shared/maps.js (9 карт);
 // карту боя выбирает сервер при старте комнаты.
 export const CAP_TIME = 6
-// очко начисляется КАЖДОЙ удержанной точке за тик (War Thunder style: больше
-// точек — быстрее счёт). Тик 10с держит длину матча при 2–3 точках разумной.
+// очко начисляется КАЖДОЙ удержанной точке за тик: больше точек — быстрее
+// счёт. Тик 10с держит длину матча при 2–3 точках разумной.
 export const CAP_TICK = 10
 
 export const SCORE_LIMIT = 25
@@ -145,19 +145,12 @@ export const BOT_SPOT_VISION = 480 // вклад бота в засвет для
 export const FIRE_REVEAL_SEC = 4
 export const TANK_RADIUS = 22
 
-// СТАРЫЕ имена-погоны (по нации) — палили бота за версту. Оставлены как
-// аварийный фоллбэк; реально боты теперь зовутся как живые игроки (BOT_NICKS +
-// подмешанные имена реальных аккаунтов), см. sim.js _nextBotName.
-export const BOT_NAMES = {
-  0: ['ст. сержант Ефимов', 'ефрейтор Козлов', 'мл. сержант Орлов', 'рядовой Багиров', 'сержант Чистяков', 'рядовой Тёркин', 'ефрейтор Махов'],
-  1: ['Hans_77', 'Wolf_K', 'Otto_Panzer', 'Schnell88', 'Gretta_X', 'Fritz_22', 'Klaus_M', 'Dieter_9'],
-}
 // «Жёсткая маскировка» ботов под живых: пул реалистичных ников (без воинских
 // званий, нейтральный по командам — настоящие игроки берут любые имена). В бою
 // сервер ещё подмешивает имена РЕАЛЬНЫХ аккаунтов (sim берёт случайные без
 // повторов и без имён живых участников этого боя).
 export const BOT_NICKS = [
-  'Shadow', 'Reaper', 'Viper', 'Ghost', 'Blitz', 'Maverick', 'Sniper', 'Hunter', 'Phoenix', 'Cobra',
+  'Shadow', 'Reaper', 'Viper', 'Ghost', 'Razor', 'Maverick', 'Sniper', 'Hunter', 'Phoenix', 'Cobra',
   'Raptor', 'Falcon', 'Titan', 'Nomad', 'Joker', 'Storm', 'Frost', 'Ranger', 'Bandit', 'Outlaw',
   'Mike_99', 'Alex_T34', 'ProTanker', 'TankAce', 'SteelRain', 'IronFist', 'WarDog', 'NightOwl', 'RedStar', 'BlackOps',
   'Killer228', 'xX_Demon_Xx', 'NoMercy', 'Predator', 'Savage', 'Venom', 'Crusher', 'Goliath', 'Maximus', 'Spartan',

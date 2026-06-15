@@ -19,7 +19,9 @@ const emit = defineEmits(['battle', 'cancel'])
 
 const TEAM = 7
 
-const MM_BOTS = ['ст. сержант Ефимов', 'ефрейтор Козлов', 'мл. сержант Орлов', 'рядовой Багиров', 'сержант Чистяков', 'рядовой Тёркин', 'ефрейтор Махов']
+// заполнение слотов в экране подбора — реалистичные ники (как у живых игроков),
+// без воинских званий: добитые слоты неотличимы от настоящих бойцов, зашедших в бой
+const MM_FILLERS = ['Shadow', 'Reaper', 'Барон', 'Гроза', 'Стальной', 'Медведь', 'NightOwl', 'red_baron', 'Призрак', 'Хищник', 'Сокол', 'Викинг', 'IronMax', 'Рысь', 'Гром', 'Серый', 'Wolf_K', 'Танкист']
 
 const secs = ref(0)
 const teamSize = ref(TEAM)
@@ -40,12 +42,16 @@ const modeLabel = computed(() => (profile.battleMode === 'annihilation' ? 'НА 
 const liveTotal = computed(() => 1 + myTeam.value.length + foeTeam.value.length) // живых из 14
 const botTotal = computed(() => Math.max(0, teamSize.value * 2 - liveTotal.value)) // ботов добьём
 const allLive = computed(() => liveTotal.value >= teamSize.value * 2) // все 14 живые → ботов нет
-// слоты команды: я (своя) + живые, пустое добиваем ботом (в фазе поиска — «поиск…»)
+// счётчик «бойцов в сборе» для сводки: в поиске — сколько уже подключилось,
+// при развёртывании — полный отряд (без деления на живых/ботов — это тэлл)
+const filledCount = computed(() => (phase.value === 'search' ? liveTotal.value : teamSize.value * 2))
+// слоты команды: я (своя) + живые игроки; пустое добиваем бойцами (в фазе поиска — «поиск…»).
+// добитые слоты неотличимы от живых (kind: 'player') — игрок видит полный отряд людей, не «ботов».
 function teamSlots(live, withMe) {
   const out = withMe ? [{ name: profile.name || 'ВЫ', kind: 'you' }] : []
   for (const p of live) out.push(p)
-  let bi = withMe ? 0 : 3
-  while (out.length < teamSize.value) out.push(phase.value === 'search' ? null : { name: MM_BOTS[bi++ % MM_BOTS.length], kind: 'bot' })
+  let bi = withMe ? 0 : 9
+  while (out.length < teamSize.value) out.push(phase.value === 'search' ? null : { name: MM_FILLERS[bi++ % MM_FILLERS.length], kind: 'player' })
   return out.slice(0, teamSize.value)
 }
 const mySlots = computed(() => teamSlots(myTeam.value, true))
@@ -291,7 +297,7 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
       style="text-align: center; font-size: 12px; letter-spacing: 0.18em; padding: 0 14px 10px"
       :style="{ color: failed ? 'var(--red)' : phase === 'go' ? 'var(--green)' : 'var(--ink-dim)', animation: failed || phase === 'go' ? 'none' : 'pz-blink 1.2s linear infinite' }"
     >
-      {{ failed ? 'СЕРВЕР НЕДОСТУПЕН' : online === null ? 'СОЕДИНЕНИЕ С СЕРВЕРОМ…' : phase === 'search' ? 'ИЩЕМ ЖИВЫХ ИГРОКОВ…' : phase === 'fill' ? 'ДОБИРАЕМ ЭКИПАЖИ ИИ' : 'РАЗВЁРТЫВАНИЕ' }}
+      {{ failed ? 'СЕРВЕР НЕДОСТУПЕН' : online === null ? 'СОЕДИНЕНИЕ С СЕРВЕРОМ…' : phase === 'search' ? 'ИЩЕМ ИГРОКОВ…' : phase === 'fill' ? 'ИГРОКИ ПОДКЛЮЧАЮТСЯ…' : 'РАЗВЁРТЫВАНИЕ' }}
     </div>
 
     <!-- состав боя 7×7: твой отряд и противник; живые на сторонах, пустое — боты -->
@@ -314,8 +320,8 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
         </div>
       </div>
       <div class="live-summary">
-        ЖИВЫХ <b :style="{ color: allLive ? 'var(--green)' : 'var(--amber)' }">{{ liveTotal }}/{{ teamSize * 2 }}</b>
-        · {{ allLive ? 'все живые — без ботов!' : 'ботов добьём ' + botTotal }}<template v-if="phase === 'search'"> · через {{ botsEta }}с</template>
+        БОЙ 7×7 · <b :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ filledCount }}/{{ teamSize * 2 }}</b>
+        · {{ phase === 'search' ? 'идёт сбор отряда…' : 'отряд в сборе' }}
       </div>
     </div>
 

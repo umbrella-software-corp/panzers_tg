@@ -22,8 +22,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 1.9,
     toleranceDeg: 5.5,
     reload: 2.2,
-    damage: 22,
-    hp: 80,
+    damage: 160, // крупные числа ×DMG_SCALE(7.25) — синхрон с meta.js/shared
+    hp: 1160, // ×HP_SCALE(14.5)
     range: 560,
     vision: 520,
     maxSpeed: 160,
@@ -37,8 +37,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 2.5,
     toleranceDeg: 4,
     reload: 3.4,
-    damage: 34,
-    hp: 120,
+    damage: 247, // ×DMG_SCALE(7.25)
+    hp: 1740, // ×HP_SCALE(14.5)
     range: 600,
     vision: 440,
     maxSpeed: 120,
@@ -52,8 +52,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 3.8,
     toleranceDeg: 3.5,
     reload: 5.0,
-    damage: 52,
-    hp: 180,
+    damage: 377, // ×DMG_SCALE(7.25)
+    hp: 2610, // ×HP_SCALE(14.5)
     range: 640,
     vision: 360,
     maxSpeed: 85,
@@ -71,7 +71,7 @@ export const VISION_RADIUS = 560 // радиус обзора (туман вой
 
 export const TEAM_SIZE = 7 // 7v7: игрок + (TEAM_SIZE-1) союзных ботов против TEAM_SIZE врагов
 export const ALLY_VISION = 480 // обзор союзного бота (для засвета врагов команде)
-export const PROX_SPOT = 150 // проксимити-засвет: вплотную видно сквозь куст/стену (как 50м в WoT)
+export const PROX_SPOT = 150 // проксимити-засвет: вплотную видно сквозь куст/стену
 
 export const CAP_TIME = 6 // сек удержания для захвата точки
 export const CAP_TICK = 8 // каждые N сек +1 очко команде с БОЛЬШИНСТВОМ точек
@@ -83,7 +83,7 @@ export const MATCH_TIME = 240 // сек (4 минуты)
 // захват ВСЕХ точек не заканчивает бой мгновенно — идёт отсчёт удержания: победа
 // через WIN_HOLD_SEC сек, если враг не отобьёт точку и не собьёт отсчёт.
 export const WIN_HOLD_SEC = 30
-// Одна жизнь за бой (как в WoT): возрождений нет, уничтоженная команда
+// Одна жизнь за бой: возрождений нет, уничтоженная команда
 // проигрывает сразу — см. Game._checkMatchEnd.
 
 // Повреждение модулей (Фаза 5): попадание по игроку с шансом CRIT_CHANCE
