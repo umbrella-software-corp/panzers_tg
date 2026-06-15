@@ -83,7 +83,7 @@ export function combatStats(tank) {
     maxSpeed,
     accel: Math.round(maxSpeed * 1.1), // разгон ~1с до полной — масса чувствуется
     turnRate: +(0.55 + s.mnv * 0.12).toFixed(2), // танк, а не машинка
-    vision: 280 + s.view * 32,
+    vision: 240 + s.view * 26, // обзор урезан ~15% (был 280+view*32 — «слишком далеко»); под плейтест
     hp: 60 + s.hp * 14,
   }
 }

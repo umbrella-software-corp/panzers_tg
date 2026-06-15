@@ -931,13 +931,15 @@ export class NetGame {
 
     // дальности тумана/обзора нужны и прицельному ассисту, и скрытию врага ниже
     const PROX = 150
-    const vis = this.cls.vision
+    // крит рации режет обзор (как сервер RADIO_CRIT_MULT=0.5): кольцо/туман сжимаются — игрок ЧУВСТВУЕТ потерю рации
+    const radioMul = this.you && this.you.crippled && this.you.crippled.radio > 0 ? 0.5 : 1
+    const vis = this.cls.vision * radioMul
     // сектор и линия сведения у живого своего танка
     const aliveSelf = own && own.alive
     this._aimLock = false // «захват» цели (зелёная линия) пересчитывается каждый кадр
     if (aliveSelf) {
       const half = this._sectorHalfEff() // разброс дышит со скоростью (стоя уже, на ходу шире)
-      const L = this.cls.vision // длина прицела = дальность обнаружения (совпадает с туманом)
+      const L = vis // длина прицела = дальность обнаружения (совпадает с туманом, с учётом крита рации)
       // КОЛЬЦО ОБЗОРА — полный радиус личного засвета (где я вижу/могу быть полезен,
       // совпадает с туманом). РАСКРЫТ выстрелом → кольцо краснеет: ты демаскирован.
       const litSelf = !!(this.you && this.you.firedReveal)
@@ -1134,7 +1136,9 @@ export class NetGame {
     this.fog.visible = true
     const w = this.app.screen.width
     const h = this.app.screen.height
-    const vision = this.cls.vision
+    // крит рации сжимает туман (как сервер RADIO_CRIT_MULT) — обзор реально падает
+    const radioMul = this.you && this.you.crippled && this.you.crippled.radio > 0 ? 0.5 : 1
+    const vision = this.cls.vision * radioMul
     const radius = Math.ceil(Math.hypot(w / 2, h * 0.66) + 40)
     const key = `${radius}:${Math.round(vision)}`
     if (key !== this._fogKey) {

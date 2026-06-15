@@ -15,7 +15,7 @@ export const TANK_CLASSES = {
     damage: 22,
     hp: 80,
     range: 560,
-    vision: 520,
+    vision: 440, // обзор урезан (был 520 — «слишком далеко»); ЧИСЛА ПОД ПЛЕЙТЕСТ
     maxSpeed: 116,
     accel: 300,
     turnRate: 2.6,
@@ -30,7 +30,7 @@ export const TANK_CLASSES = {
     damage: 34,
     hp: 120,
     range: 600,
-    vision: 440,
+    vision: 380, // обзор урезан (был 440)
     maxSpeed: 88,
     accel: 210,
     turnRate: 1.8,
@@ -45,7 +45,7 @@ export const TANK_CLASSES = {
     damage: 52,
     hp: 180,
     range: 640,
-    vision: 360,
+    vision: 310, // обзор урезан (был 360)
     maxSpeed: 62,
     accel: 150,
     turnRate: 1.2,
