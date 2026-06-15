@@ -179,11 +179,15 @@ async function refresh() {
     ]),
   )
 
-  const onSet = new Set(s.onlineUids || []) // кто сейчас онлайн (зелёная точка у имени)
+  // онлайн = в бою/поиске (WS) ИЛИ активность <2.5 мин (в ангаре/меню WS не открыт,
+  // поэтому только по WS их не видно — добавляем свежесть lastSeen)
+  const onSet = new Set(s.onlineUids || [])
+  const tnow = s.now || Date.now()
+  const isOnline = (p) => onSet.has(p.uid) || (p.lastSeen && tnow - p.lastSeen < 150000)
   $('profiles').innerHTML = table(
     ['Игрок', 'UID', 'Кредиты', 'Жетоны', 'Боёв', 'Побед', 'Рейтинг', 'Танков', 'Экипаж ОП', 'Был'],
     prof.profiles.slice(0, 100).map((p) => [
-      (onSet.has(p.uid) ? '<span title="онлайн" style="color:#7cc05a">● </span>' : '') + esc(p.name),
+      (isOnline(p) ? '<span title="онлайн" style="color:#7cc05a">● </span>' : '') + esc(p.name),
       esc(p.uid), p.credits, p.tokens, p.battles, p.wins, p.rating, p.tanks, p.crewXp, dt(p.updatedAt),
     ]),
   )
