@@ -66,7 +66,7 @@ export const PREMIUM_TANKS = [
   { id: 't28', nation: 'ussr', name: 'Т-28', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 99, desc: 'Легенда — трёхбашенный богатырь. Премиум: +5% опыта и кредитов, 1 из 10 боёв даёт синие кристаллы.', stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
   { id: 't54', nation: 'ussr', name: 'Т-54', tier: 8, cls: 'Средний', premium: true, stars: 99, desc: 'Послевоенный эталон. Премиум-доход + кристаллы.', stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },
   { id: 'pz4h', nation: 'ger', name: 'Pz. IV H', tier: 4, cls: 'Средний', premium: true, stars: 99, desc: 'Рабочая лошадка с экранами. Премиум-доход + кристаллы.', stats: { dmg: 4, rof: 5, spd: 5, mnv: 4, view: 5, hp: 4 } },
-  { id: 'maus', nation: 'ger', name: 'Maus', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, desc: 'Сверхтяж — гора брони и HP. Премиум-доход + кристаллы.', stats: { dmg: 8, rof: 3, spd: 2, mnv: 2, view: 5, hp: 10 } },
+  { id: 'maus', nation: 'ger', name: 'Maus', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, desc: 'Сверхтяж — гора брони и HP. Премиум-доход + кристаллы.', stats: { dmg: 8, rof: 2, spd: 2, mnv: 2, view: 5, hp: 8 } },
   { id: 'ram', nation: 'usa', name: 'Ram II', tier: 4, cls: 'Средний', premium: true, stars: 99, desc: 'Канадский крейсер. Премиум-доход + кристаллы.', stats: { dmg: 3, rof: 6, spd: 5, mnv: 5, view: 4, hp: 4 } },
   { id: 'sper', nation: 'usa', name: 'Super Pershing', tier: 8, cls: 'Тяжёлый', premium: true, stars: 99, desc: 'Бронированный «Першинг». Премиум-доход + кристаллы.', stats: { dmg: 9, rof: 5, spd: 5, mnv: 4, view: 6, hp: 9 } },
 ]
