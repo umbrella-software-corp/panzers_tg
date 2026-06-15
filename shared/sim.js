@@ -18,6 +18,7 @@ import {
   CRIT_SLOTS,
   ENEMY_AI,
   SOFT_START,
+  ARMOR,
   BOT_CLASS_MIX,
   BOT_TANK_IDS,
   BOT_DMG_MULT,
@@ -152,6 +153,7 @@ export class BattleSim {
       shots: 0,
       hits: 0,
       spots: 0, // засветов за бой (для боевого рейтинга)
+      blocked: 0, // заблокировано бронёй (рикошет/непробитие) — в награду/медали
       spotSeen: new Set(), // id врагов, чей первый засвет уже зачтён
       revealT: 0, // сек демаскировки выстрелом: пока >0 — видно врагу из тумана
       // боты (урон режется softStart-множителем в «мягком первом бою»)
@@ -221,11 +223,14 @@ export class BattleSim {
 
     let killed = false
     let dealt = 0
+    let outcome = null
     if (best) {
       u.hits++
-      dealt = Math.min(u.stats.damage, best.e.hp)
-      u.damageDealt += dealt
-      killed = this._applyDamage(best.e, u.stats.damage, u)
+      const shotA = Math.atan2(best.e.y - u.y, best.e.x - u.x)
+      const r = this._resolveHit(u, best.e, u.stats.damage, shotA)
+      dealt = r.dealt
+      killed = r.killed
+      outcome = r.outcome // null=пробил, 'ricochet'|'nopen'=броня
     }
     const ex = best ? best.e.x : u.x + Math.cos(lineAngle) * u.stats.range
     const ey = best ? best.e.y : u.y + Math.sin(lineAngle) * u.stats.range
@@ -235,6 +240,7 @@ export class BattleSim {
       hit: !!best,
       killed,
       dmg: Math.round(dealt),
+      outcome, // броня: 'ricochet'|'nopen' (для фидбека клиента; null — пробитие)
       target: best ? best.e.id : null,
       x1: Math.round(u.x),
       y1: Math.round(u.y),
@@ -381,10 +387,13 @@ export class BattleSim {
         const hit = Math.random() < chance
         let killed = false
         let dealt = 0
+        let outcome = null
         if (hit) {
-          dealt = Math.min(b.botDamage, target.hp)
-          b.damageDealt += dealt
-          killed = this._applyDamage(target, b.botDamage, b)
+          const shotA = Math.atan2(target.y - b.y, target.x - b.x)
+          const r = this._resolveHit(b, target, b.botDamage, shotA)
+          dealt = r.dealt
+          killed = r.killed
+          outcome = r.outcome // броня цели: рикошет/непробитие
         }
         // ТЕАТР ПРОМАХОВ: попал — трассер точно в цель; мимо — уходит в сторону и
         // за цель, чтобы игрок ВИДЕЛ промах (а не «прилетело из ниоткуда»).
@@ -403,6 +412,7 @@ export class BattleSim {
           hit,
           killed,
           dmg: Math.round(dealt),
+          outcome, // броня: 'ricochet'|'nopen' (фидбек «отскок от меня» у игрока)
           target: target.id,
           x1: Math.round(b.x),
           y1: Math.round(b.y),
@@ -469,6 +479,35 @@ export class BattleSim {
       return true
     }
     return false
+  }
+
+  // БРОНЯ: по углу встречи снаряда (shotAngle) и классу/корпусу цели — пробил,
+  // рикошет или непробитие. Лоб держит, корма — нет (фланг/доворот = награда).
+  // Возвращает null (пробил) или { kind:'ricochet'|'nopen', mult } (mult — доля урона).
+  _penetration(shotAngle, victim) {
+    const base = ARMOR.byClass[victim.classId] ?? 0.15
+    const rel = Math.abs(angleDiff(shotAngle, victim.hull))
+    const facing = (1 - Math.cos(rel)) / 2 // 1 — снаряд в лоб, 0 — в корму
+    const chance = Math.min(ARMOR.maxBlock, base * facing * ARMOR.facingMult)
+    if (Math.random() >= chance) return null // пробитие
+    return Math.random() < 0.5 ? { kind: 'ricochet', mult: 0 } : { kind: 'nopen', mult: ARMOR.nopenMult }
+  }
+
+  // применить выстрел с учётом брони: пробил → полный урон; рикошет/непробитие →
+  // урон×mult, остальное идёт в blocked цели. Возвращает { dealt, killed, outcome }.
+  _resolveHit(attacker, victim, fullDmg, shotAngle) {
+    const pen = this._penetration(shotAngle, victim)
+    const mult = pen ? pen.mult : 1
+    const want = Math.min(fullDmg, victim.hp) // потенциальный урон (для blocked)
+    let dealt = 0
+    let killed = false
+    if (mult > 0) {
+      dealt = Math.min(fullDmg * mult, victim.hp)
+      attacker.damageDealt += dealt
+      killed = this._applyDamage(victim, fullDmg * mult, attacker)
+    }
+    if (pen) victim.blocked += Math.max(0, want - dealt) // спасённое бронёй
+    return { dealt, killed, outcome: pen ? pen.kind : null }
   }
 
   _stepCaptures(dt) {
@@ -735,6 +774,7 @@ export class BattleSim {
       shots: u.shots,
       hits: u.hits,
       damageDealt: Math.round(u.damageDealt),
+      blocked: Math.round(u.blocked), // урон, заблокированный твоей бронёй (рикошет/непробитие)
       spotted: u.spots, // засветов за бой (для боевого рейтинга)
       // ЗАСВЕЧЕН ли я сейчас врагом (видит ли меня команда противника) — для
       // чипа «скрыт/виден»: игрок понимает, прилетит сейчас или он в тумане.

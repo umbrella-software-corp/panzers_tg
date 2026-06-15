@@ -94,7 +94,7 @@ export class NetGame {
     this.onStall = null // связь ОКОНЧАТЕЛЬНО умерла посреди боя → Battle откатит в офлайн
     this.onReconnecting = () => {} // снапшоты просели, но сокет жив → «восстанавливаем связь» (НЕ откат)
     this._reconnecting = false
-    this.onSaved = () => {} // в PvP брони/рикошетов нет
+    this.onSaved = () => {} // дефолт-нооп; Battle.vue вешает тост «РИКОШЕТ/БРОНЯ НЕ ПРОБИТА» (отскок от меня)
     this._gridDrawn = false
     this._wantedTex = new Set()
 
@@ -270,7 +270,8 @@ export class NetGame {
         boom: ev.killed ? 'big' : ev.hit ? 'hit' : 'dust',
       })
       if (mine) {
-        this.onShot({ type: ev.hit ? 'hit' : 'miss', reason: 'line' })
+        // outcome брони: 'ricochet'/'nopen' → свой фидбек, иначе hit/miss
+        this.onShot({ type: ev.outcome || (ev.hit ? 'hit' : 'miss'), reason: 'line' })
         if (ev.hit && ev.target && ev.dmg) {
           const t = this._units.get(ev.target)
           const entry = this.damageLog.get(ev.target) || { name: t ? t.name : '—', tankId: t ? t.tankId : null, dmg: 0, killed: false }
@@ -278,6 +279,9 @@ export class NetGame {
           entry.killed = entry.killed || !!ev.killed
           this.damageLog.set(ev.target, entry)
         }
+      } else if (ev.outcome && ev.target === this.youUnit) {
+        // вражеский снаряд отскочил от МОЕЙ брони → «РИКОШЕТ ОТ БРОНИ»/«БРОНЯ НЕ ПРОБИТА»
+        this.onSaved(ev.outcome)
       }
     } else if (ev.type === 'hp') {
       this.flash.set(ev.unit, 0.25)
