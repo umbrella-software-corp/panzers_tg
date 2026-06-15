@@ -382,14 +382,20 @@ export class BattleSim {
       b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
 
       let move = 0
-      if (b.hp < b.maxHp * 0.3) move = -1 // мало хп — отступаем, продолжая отстреливаться
+      // порог и готовность отступать — РАЗНЫЕ у каждого бота (не разом и не одинаково):
+      // ~1/3 «храбрых» не пятятся вовсе, у остальных порог 22–34% HP.
+      const brave = b.id % 3 === 0
+      const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025)
+      if (!brave && b.hp < retreatHp) move = -1 // мало хп — отступаем, продолжая отстреливаться
       else if (bestD > ai.idealRange * 1.15) move = 1
       else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
       wantMove = move !== 0
 
-      // движение строго вдоль корпуса
-      b.x += Math.cos(b.hull) * move * b.botSpeed * dt
-      b.y += Math.sin(b.hull) * move * b.botSpeed * dt
+      // движение вдоль корпуса; РЕВЕРС вдвое медленнее (как у игрока: throttle<0 → ×0.5).
+      // Раньше бот пятился на ПОЛНОМ ходу — быстрее игрока, палевно и неестественно.
+      const mag = move < 0 ? Math.abs(move) * 0.5 : move
+      b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
+      b.y += Math.sin(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
 
       const inArc = Math.abs(angleDiff(ang, b.hull)) <= (ai.sectorHalfDeg * Math.PI) / 180
       // СТРЕЛЯЕМ только если: цель в секторе, в радиусе огня (≤ fireRange, не на
@@ -467,7 +473,17 @@ export class BattleSim {
         }
       }
       const c = this.mapSize / 2
-      let a = Math.atan2((goal ? goal.y : c) - b.y, (goal ? goal.x : c) - b.x)
+      // целимся не в ЦЕНТР объекта, а в личную позицию вокруг него (веер по id) —
+      // боты держат ПЕРИМЕТР точки, а не стоят толпой за одним ящиком (фидбэк Макса)
+      let gx = goal ? goal.x : c
+      let gy = goal ? goal.y : c
+      if (goal) {
+        const off = ((b.id % 7) / 7) * Math.PI * 2
+        const rad = (goal.r || 70) * 0.85
+        gx += Math.cos(off) * rad
+        gy += Math.sin(off) * rad
+      }
+      let a = Math.atan2(gy - b.y, gx - b.x)
       if (b.avoidT > 0) a += b.avoidDir * 1.5
       const diff = angleDiff(a, b.hull)
       b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, diff))
