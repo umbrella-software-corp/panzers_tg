@@ -3,6 +3,7 @@
 // (клиентским ценам не верим). Идемпотентность по telegram charge id.
 import { botToken, hasBot } from './auth.js'
 import { loadProfile, saveProfile, paymentSeen, markPayment, listPayments, markRefunded } from './db.js'
+import { setPushEnabled } from './notifications.js'
 
 // каталог: что начисляем за звёзды
 export const PRODUCTS = {
@@ -133,8 +134,17 @@ export function startPaymentsLoop() {
           if (u.pre_checkout_query) {
             await api('answerPreCheckoutQuery', { pre_checkout_query_id: u.pre_checkout_query.id, ok: true })
           }
-          if (u.message && typeof u.message.text === 'string' && u.message.text.startsWith('/start')) {
-            await greet(u.message.chat.id)
+          if (u.message && typeof u.message.text === 'string') {
+            const text = u.message.text.trim()
+            const chatId = u.message.chat.id
+            const uid = `tg_${chatId}`
+            if (text.startsWith('/start')) {
+              await setPushEnabled(uid, true) // /start = вовлечение → (пере)подписываем на уведомления
+              await greet(chatId)
+            } else if (text === '/stop' || text.startsWith('/stop')) {
+              await setPushEnabled(uid, false)
+              await api('sendMessage', { chat_id: chatId, text: 'Уведомления выключены 🔕 Включить снова — отправь /start' })
+            }
           }
           const sp = u.message && u.message.successful_payment
           if (sp) {

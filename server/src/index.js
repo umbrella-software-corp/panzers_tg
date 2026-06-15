@@ -8,6 +8,7 @@ import { authRequest, hasBot } from './auth.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
+import { startNotifications, notifyFriendsInBattle } from './notifications.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { adminPage } from './admin.js'
@@ -756,6 +757,9 @@ function startRoom(room) {
       soft_factor: +softF.toFixed(2), // сила смягчения 1.0..0 (плавный спад бой1→6)
       newbie_battles: minBattles, // боёв у самого зелёного игрока комнаты
     })
+    // соц-хук «друг в бою»: пингуем живых друзей этого игрока (троттлинг и фильтр
+    // реальных игроков — внутри; ферма Traffy отсекается). Fire-and-forget — не тормозим старт.
+    notifyFriendsInBattle({ uid: h.uid, name: h.name }).catch(() => {})
   }
   console.log(
     `[ws] ${room.id}: старт ${TEAM_SIZE}x${TEAM_SIZE} на «${map.name}», люди ${room.humans.filter((h) => h.team === 0).length}vs${room.humans.filter((h) => h.team === 1).length}, остальное — боты${softStart ? ` · МЯГКИЙ СТАРТ ×${softF.toFixed(2)}` : ''}`,
@@ -1022,4 +1026,5 @@ httpServer.listen(PORT, () => {
   console.log(`[srv] Panzer TG: HTTP API + WS ${TEAM_SIZE}x${TEAM_SIZE} на :${PORT} (${TICK_HZ}Hz, добор ботами через ${WAIT_MS}мс)`)
   startPaymentsLoop()
   startSupportBot() // саппорт-бот (если задан SUPPORT_BOT_TOKEN/SUPPORT_CHAT_ID)
+  startNotifications() // пуши возврата (дейли-награда/задачи + винбэк) по расписанию
 })
