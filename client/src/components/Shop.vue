@@ -2,12 +2,13 @@
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref, onMounted } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank } from '../store.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
-import { GOLD_AMMO_PACKS } from '../game/meta.js'
+import { GOLD_AMMO_PACKS, PREMIUM_TANKS } from '../game/meta.js'
 import { camoCss } from '../game/camo.js'
 import { haptic } from '../tg.js'
+import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import PzIcon from './ui/PzIcon.vue'
@@ -105,6 +106,11 @@ async function buyPack(p, label) {
 const buyCredits = (p) => buyPack(p, `${p.amount.toLocaleString('ru-RU')} кредитов`)
 const buyTokens = (p) => buyPack(p, `${p.amount} жетонов`)
 const buyPremium = () => buyPack({ id: 'prem' }, 'Премиум · 7 дней')
+// прем-танк за ⭐: продукт pt_<id> → grantProduct кладёт в гараж (как в «Развитии»)
+async function buyPremTank(t) {
+  await buyPack({ id: 'pt_' + t.id }, `${t.name} (премиум-танк)`)
+  if (isOwned(t.id)) selectTank(t.id) // dev-grant: сразу выбираем
+}
 function buyGold(p) {
   if (!buyGoldAmmo(p.id)) {
     showToast('Не хватает жетонов', true)
@@ -148,6 +154,25 @@ onMounted(() => {
             </div>
           </div>
           <button class="pz-cta" style="padding: 11px 15px; font-size: 14px; white-space: nowrap; width: auto; flex-shrink: 0" @click="buyPremium">99 ⭐</button>
+        </div>
+      </section>
+
+      <!-- премиум-техника -->
+      <section>
+        <div class="pz-stencil-h">ПРЕМИУМ-ТЕХНИКА · ЗА TG STARS</div>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px">
+          <div v-for="t in PREMIUM_TANKS" :key="t.id" class="pz-plate" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px">
+            <TankImg :tank-id="t.id" :size="46" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.85) brightness(0.6)', flexShrink: 0 }" />
+            <div style="flex: 1; min-width: 0">
+              <div style="display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap">
+                <span class="pz-display" style="font-size: 14.5px">{{ t.name }}</span>
+                <span v-if="t.legend" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">ЛЕГЕНДА</span>
+              </div>
+              <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ t.cls }} · ур. {{ t.tier }} · +5% опыт/кредиты, кристаллы</div>
+            </div>
+            <span v-if="isOwned(t.id)" class="pz-chip" style="color: #7cc05a; flex-shrink: 0">✓ в гараже</span>
+            <button v-else class="pz-cta" style="padding: 9px 13px; font-size: 13px; white-space: nowrap; width: auto; flex-shrink: 0" @click="buyPremTank(t)">{{ t.stars }} ⭐</button>
+          </div>
         </div>
       </section>
 
