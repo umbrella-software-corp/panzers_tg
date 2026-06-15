@@ -59,6 +59,8 @@ export const apiRename = (name) => apiBuy('rename', { name })
 // живая таблица лидеров (топ по рейтингу) и серверный конфиг (флаг турниров)
 export const apiLeaderboard = () => call('/api/leaderboard')
 export const apiConfig = () => call('/api/config')
+// живой счётчик «N в сети» для главной (публичный, без побочных эффектов)
+export const apiOnline = () => call('/api/online')
 // публичный профиль игрока по месту в таблице
 export const apiPlayer = (rank) => call('/api/player?rank=' + rank)
 // засчёт реферала: «меня пригласил <ref>» (Telegram id пригласившего из deep-link).

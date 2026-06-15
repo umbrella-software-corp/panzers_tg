@@ -244,6 +244,9 @@ function referrerMetrics(profiles, now) {
   return [...by.values()].sort((a, b) => b.came - a.came)
 }
 
+// кэш публичного «N в сети» (10с): не сканируем профили на каждый поллинг клиента
+let onlineCache = null
+
 async function handleApi(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, CORS)
@@ -263,6 +266,19 @@ async function handleApi(req, res) {
     // recordVisit троттлит запись lastSeen до 1/мин, так что это дёшево.
     await recordVisit(user)
     return json(res, 200, { ok: true, now: Date.now() })
+  }
+  if (req.url === '/api/online' && req.method === 'GET') {
+    // публичный «N в сети» для главной: активны = открыт боевой WS ИЛИ заходили
+    // <2.5 мин назад (lastSeen, обновляется ping'ом даже в меню) — как onlineActive
+    // в админке. Кэш 10с, чтобы поллинг клиентов не сканировал профили на каждый зов.
+    const now = Date.now()
+    if (!onlineCache || now - onlineCache.ts > 10000) {
+      const ids = new Set()
+      for (const c of wss.clients) if (c.readyState === 1 && c.uid) ids.add(c.uid)
+      for (const p of await listProfiles()) if (p.lastSeen && now - p.lastSeen < 150000) ids.add(p.uid)
+      onlineCache = { ts: now, n: ids.size }
+    }
+    return json(res, 200, { online: onlineCache.n, now })
   }
   if (req.url === '/api/leaderboard' && req.method === 'GET') {
     return json(res, 200, { top: await leaderboard(20) })

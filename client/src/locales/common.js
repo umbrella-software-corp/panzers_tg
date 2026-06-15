@@ -32,6 +32,7 @@ export default {
     premium: 'PREMIUM',
     premiumShort: 'PREM',
     online: 'ONLINE',
+    onlineNow: ({ n }) => `${n} online`,
     // стартовый сплэш (App.vue)
     bootSub: 'preparing the garage…',
     bootFoot: 'early access · build in active development',
@@ -68,6 +69,7 @@ export default {
     premium: 'ПРЕМИУМ',
     premiumShort: 'ПРЕМ',
     online: 'ОНЛАЙН',
+    onlineNow: ({ n }) => `${n} в сети`,
     bootSub: 'готовим ангар…',
     bootFoot: 'ранний доступ · билд в активной разработке',
     creditsN: ({ n }) => {
