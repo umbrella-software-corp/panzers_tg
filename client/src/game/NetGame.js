@@ -1508,6 +1508,51 @@ export class NetGame {
     return Texture.from(c)
   }
 
+  // процедурная вода: радиальный градиент глубины (тёмный омут в центре →
+  // бирюзовая мель к берегу), мягкая рябь и растворённый край — БЕЗ жёсткого
+  // кольца «венна». Кэшируется на инстанс, рисуется одним спрайтом на озеро.
+  _waterTexture() {
+    if (this._waterTex) return this._waterTex
+    const S = 256
+    const c = document.createElement('canvas')
+    c.width = c.height = S
+    const ctx = c.getContext('2d')
+    const cx = S / 2
+    const cy = S / 2
+    const R = S / 2
+    const g = ctx.createRadialGradient(cx, cy, R * 0.08, cx, cy, R)
+    g.addColorStop(0, '#0d3243')
+    g.addColorStop(0.55, '#16475f')
+    g.addColorStop(0.85, '#236a86')
+    g.addColorStop(1, '#2f7e9b')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(cx, cy, R, 0, Math.PI * 2)
+    ctx.fill()
+    // рябь: несколько светлых дуг-бликов на воде
+    ctx.strokeStyle = 'rgba(180,225,240,0.10)'
+    ctx.lineWidth = 2
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath()
+      ctx.arc(cx, cy, R * (0.3 + i * 0.18), Math.PI * 0.18, Math.PI * 0.82)
+      ctx.stroke()
+    }
+    ctx.strokeStyle = 'rgba(205,238,250,0.14)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(cx, cy, R * 0.76, Math.PI * 1.08, Math.PI * 1.5)
+    ctx.stroke()
+    // мягкий берег: растворяем альфу к ободу
+    const fade = ctx.createRadialGradient(cx, cy, R * 0.82, cx, cy, R)
+    fade.addColorStop(0, 'rgba(0,0,0,1)')
+    fade.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.fillStyle = fade
+    ctx.fillRect(0, 0, S, S)
+    this._waterTex = Texture.from(c)
+    return this._waterTex
+  }
+
   // 3D-спрайт с прозрачным фоном — без маски и обводки. Возвращает спрайт.
   _terrainSprite(texName, x, y, r, scale = 2.5) {
     const tex = this.tex && this.tex[texName]
@@ -1547,9 +1592,12 @@ export class NetGame {
     this.bushSprites = [] // кусты для динамической прозрачности при заезде
     for (const o of this.obstacles) {
       if (o.kind === 'water') {
-        const sprited = this._terrainPatch('water', o.x, o.y, o.r)
-        if (!sprited) g.circle(o.x, o.y, o.r).fill({ color: 0x1d4a66, alpha: 0.9 })
-        g.circle(o.x, o.y, o.r).stroke({ width: 3, color: 0x2e6e8e })
+        const s = new Sprite(this._waterTexture())
+        s.anchor.set(0.5)
+        s.position.set(o.x, o.y)
+        s.width = s.height = o.r * 2.16 // мягкий край заходит чуть за берег
+        s.alpha = 0.94
+        this.terrLayer.addChild(s)
       } else if (o.kind === 'hill') {
         if (!this._terrainSprite('hill', o.x, o.y, o.r)) {
           g.circle(o.x, o.y, o.r).fill(0x47502f)

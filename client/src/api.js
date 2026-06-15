@@ -35,6 +35,23 @@ async function call(path, opts = {}) {
 }
 
 export const apiLoadProfile = () => call('/api/profile')
+// presence-heartbeat: пока мини-апп на экране — раз в 40с говорим серверу «я тут»
+// (обновляет lastSeen → онлайн в админке даже в ангаре/меню, где боевой WS закрыт).
+// Сервер троттлит запись до 1/мин, ошибки глушим — это не критичный запрос.
+export const apiPing = () => call('/api/ping', { method: 'POST', body: '{}' })
+let _presenceTimer = null
+export function startPresence() {
+  const beat = () => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') apiPing().catch(() => {})
+  }
+  if (_presenceTimer) clearInterval(_presenceTimer)
+  _presenceTimer = setInterval(beat, 40000)
+  if (typeof document !== 'undefined')
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') beat() // вернулись на экран — сразу отметимся
+    })
+  beat()
+}
 export const apiSaveProfile = (profile) => call('/api/profile', { method: 'POST', body: JSON.stringify({ profile }) })
 export const apiBuy = (productId, extra = {}) => call('/api/invoice', { method: 'POST', body: JSON.stringify({ productId, ...extra }) })
 // смена позывного за звёзды: имя едет в payload инвойса, сервер ставит его после оплаты

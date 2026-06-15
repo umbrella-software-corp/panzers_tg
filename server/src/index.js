@@ -237,6 +237,13 @@ async function handleApi(req, res) {
     await recordVisit(user) // метрики: источник/firstSeen/lastSeen (DAU)
     return json(res, 200, { uid: user.uid, profile: await loadProfile(user.uid) })
   }
+  if (req.url === '/api/ping' && req.method === 'POST') {
+    // presence-heartbeat: клиент шлёт «я тут», пока мини-апп на экране (даже в меню,
+    // где боевой WS не открыт) → lastSeen свежий → зелёная точка онлайна в админке.
+    // recordVisit троттлит запись lastSeen до 1/мин, так что это дёшево.
+    await recordVisit(user)
+    return json(res, 200, { ok: true, now: Date.now() })
+  }
   if (req.url === '/api/leaderboard' && req.method === 'GET') {
     return json(res, 200, { top: await leaderboard(20) })
   }
