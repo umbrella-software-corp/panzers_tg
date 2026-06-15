@@ -490,7 +490,7 @@ export class BattleSim {
     const facing = (1 - Math.cos(rel)) / 2 // 1 — снаряд в лоб, 0 — в корму
     const chance = Math.min(ARMOR.maxBlock, base * facing * ARMOR.facingMult)
     if (Math.random() >= chance) return null // пробитие
-    return Math.random() < 0.5 ? { kind: 'ricochet', mult: 0 } : { kind: 'nopen', mult: ARMOR.nopenMult }
+    return Math.random() < ARMOR.ricochetShare ? { kind: 'ricochet', mult: 0 } : { kind: 'nopen', mult: ARMOR.nopenMult }
   }
 
   // применить выстрел с учётом брони: пробил → полный урон; рикошет/непробитие →

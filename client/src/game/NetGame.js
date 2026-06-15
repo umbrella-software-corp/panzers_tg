@@ -1076,10 +1076,12 @@ export class NetGame {
         this._drawTank(g, u.x, u.y, u.hull, c, isSelf ? 1 : 0.85)
       }
 
-      // ХП-полоска
+      // ХП-полоска над танком (у своего — по здоровью: зелёная→жёлтая→красная)
       const bw = 48
+      const hpFr = Math.max(0, u.hp) / (u.maxHp || 1)
+      const hpClr = isSelf ? (hpFr > 0.5 ? 0x6fcf4a : hpFr > 0.25 ? 0xf2c20c : 0xff4b33) : pal.hp
       g.rect(u.x - bw / 2 - 1, u.y - 37, bw + 2, 7).fill({ color: 0x000000, alpha: 0.65 })
-      g.rect(u.x - bw / 2, u.y - 36, bw * (Math.max(0, u.hp) / (u.maxHp || 1)), 5).fill(isSelf ? 0xf2a50c : pal.hp)
+      g.rect(u.x - bw / 2, u.y - 36, bw * hpFr, 5).fill(hpClr)
     }
 
     // спрайты/подписи пропавших из снапшота (незасвеченные враги) — прячем
@@ -1254,14 +1256,7 @@ export class NetGame {
     g.moveTo(R, B - cn).lineTo(R, B).lineTo(R - cn, B)
     g.moveTo(L + cn, B).lineTo(L, B).lineTo(L, B - cn)
     g.stroke({ width: 2.5, color: 0xf2d24a, alpha: 0.9 })
-    // HP-полоска над танком
-    const frac = own.maxHp ? Math.max(0, Math.min(1, own.hp / own.maxHp)) : 1
-    const bw = 58
-    const bx = p.x - bw / 2
-    const by = T - 9
-    g.roundRect(bx - 1.5, by - 1.5, bw + 3, 7, 3).fill({ color: 0x05070a, alpha: 0.7 })
-    const hpcol = frac > 0.5 ? 0x6fcf4a : frac > 0.25 ? 0xf2c20c : 0xff4b33
-    if (frac > 0) g.roundRect(bx, by, bw * frac, 4, 2).fill({ color: hpcol })
+    // HP рисуется общим баром над танком (см. _drawUnits) — здесь НЕ дублируем
     // иконка видимости под танком
     const fired = !!this.you.firedReveal
     const seenByFoe = !!this.you.revealed
