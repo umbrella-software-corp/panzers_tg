@@ -66,8 +66,22 @@ async function handleAdmin(req, res) {
     const payments = await listPayments()
     const now = Date.now()
     const profs = await listProfiles()
+    // разбивка онлайна: «в бою» (uid в стартовавшей комнате) vs «просто онлайн»
+    // (активен — WS открыт ИЛИ заходил <2.5 мин — но сейчас не в бою). battleUids ⊆
+    // activeSet (у бойца WS открыт), поэтому idle = active − battle ровно.
+    const battleUids = new Set()
+    for (const r of rooms.values()) if (r.started) for (const h of r.humans) if (h.uid) battleUids.add(h.uid)
+    const activeSet = new Set()
+    for (const c of wss.clients) if (c.readyState === 1 && c.uid) activeSet.add(c.uid)
+    for (const p of profs) if (p.lastSeen && now - p.lastSeen < 150000) activeSet.add(p.uid)
+    const inBattle = battleUids.size
+    const onlineActive = activeSet.size // всего активны (как зелёные точки в таблице)
+    const onlineIdle = [...activeSet].filter((u) => !battleUids.has(u)).length // просто онлайн, не в бою
     return json(res, 200, {
       now,
+      inBattle,
+      onlineActive,
+      onlineIdle,
       // честный онлайн: уникальные tg-id, а не сырые сокеты (один игрок с кучей
       // вкладок/перезаходов = 1, а не +20). Соединения без tg-id (гость/лобби) — по одному.
       online: (() => {

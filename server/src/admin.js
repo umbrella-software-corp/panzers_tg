@@ -103,6 +103,8 @@ async function refresh() {
   const prof = await api('/api/admin/profiles')
   $('cards').innerHTML = [
     [s.online, 'онлайн (уник. tg-id)'],
+    [s.inBattle ?? 0, 'в бою сейчас'],
+    [s.onlineIdle ?? 0, 'онлайн не в бою'],
     [s.onlineSockets ?? s.online, 'сокетов (с клонами)'],
     [s.rooms.length, 'комнат'],
     [s.profilesCount, 'профилей'],
