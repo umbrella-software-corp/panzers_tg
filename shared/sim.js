@@ -27,6 +27,9 @@ import {
   FIRE_REVEAL_SEC,
   TANK_RADIUS,
   BOT_NAMES,
+  BOT_NICKS,
+  BOT_SKINS,
+  BOT_SKIN_CHANCE,
   classToRadians,
 } from './config.js'
 import { angleDiff, segHitsCircle, segHitsRect } from './geometry.js'
@@ -37,7 +40,7 @@ export class BattleSim {
    * humans: [{ id, team: 0|1, name, stats? }] — stats в deg-форме (лоадаут
    * клиента) или null → DEFAULT_CLASS. Обе команды добираются ботами до teamSize.
    */
-  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null } = {}) {
+  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null, botNames = [] } = {}) {
     this.teamSize = teamSize
     this.map = MAP_BY_ID[mapId] || MAPS[0]
     this.mapId = this.map.id
@@ -90,6 +93,27 @@ export class BattleSim {
       progress: 0,
     }))
 
+    // пул ников для ботов: реальные имена (от сервера) + реалистичные ники, без
+    // повторов и без имён живых участников этого боя (чтобы не увидеть своё/чужое
+    // имя на боте). Перемешан; _nextBotName выдаёт по очереди.
+    const takenNames = new Set(humans.map((h) => (h.name || '').trim().toLowerCase()).filter(Boolean))
+    const pool = []
+    const seenNick = new Set()
+    for (const n of [...(botNames || []), ...BOT_NICKS]) {
+      const nm = (n || '').trim()
+      const key = nm.toLowerCase()
+      if (nm && !seenNick.has(key) && !takenNames.has(key)) {
+        seenNick.add(key)
+        pool.push(nm)
+      }
+    }
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    }
+    this._botNames = pool
+    this._botNameI = 0
+
     // юниты: сначала люди, затем боты до полного состава
     this.units = []
     let uid = 1
@@ -108,6 +132,13 @@ export class BattleSim {
     this.byOwner = new Map(this.units.filter((u) => u.human).map((u) => [u.ownerId, u]))
 
     this._spotted = [new Set(), new Set()] // [team] -> Set(unitId врагов)
+  }
+
+  // следующий ник бота из перемешанного пула; если исчерпан — случайный из BOT_NICKS
+  // (на 14 ботов пула с запасом, так что до фоллбэка обычно не доходит)
+  _nextBotName() {
+    if (this._botNameI < this._botNames.length) return this._botNames[this._botNameI++]
+    return BOT_NICKS[(Math.random() * BOT_NICKS.length) | 0]
   }
 
   _makeUnit(id, team, slot, human, h) {
@@ -133,8 +164,9 @@ export class BattleSim {
       ownerId: human ? h.id : null,
       tankId: human ? h.tankId || null : botTankId, // реальная машина (игрок — своя, бот — по классу)
       tint: human ? h.tint || 0 : 0, // оттенок камуфляжа игрока
-      skin: human ? h.skin || null : null, // id узорного камуфляжа (рендер у клиентов)
-      name: human ? h.name || `Игрок ${id}` : BOT_NAMES[team][slot % BOT_NAMES[team].length],
+      // боту иногда даём камуфляж — как у прокачанных игроков (часть остаётся «штатной»)
+      skin: human ? h.skin || null : Math.random() < BOT_SKIN_CHANCE ? BOT_SKINS[(Math.random() * BOT_SKINS.length) | 0] : null,
+      name: human ? h.name || `Игрок ${id}` : this._nextBotName(),
       classId: stats.id,
       stats,
       x: c + spread,
@@ -751,7 +783,7 @@ export class BattleSim {
           alive: u.alive,
           name: u.name,
           cls: u.classId,
-          human: u.human,
+          // u.human НЕ шлём: это палило бота на клиенте (жёсткая маскировка под игроков)
           tankId: u.tankId,
           tint: u.tint,
           skin: u.skin,

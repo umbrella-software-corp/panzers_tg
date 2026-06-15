@@ -712,6 +712,26 @@ function doRejoin(ws, ip, roomId, unitId, rkey) {
   console.log(`[ws] ${unit.ownerId} ВЕРНУЛСЯ в ${room.id} (юнит ${unit.id})`)
 }
 
+// Маскировка ботов: пул имён РЕАЛЬНЫХ аккаунтов (вперемешку с BOT_NICKS в sim).
+// Обновляем раз в 3 мин из профилей, читаем синхронно при старте боя. Отсеиваем
+// плейсхолдеры и слишком длинные/короткие; перемешиваем и ограничиваем размер.
+let realBotNames = []
+async function refreshBotNames() {
+  try {
+    const ps = await listProfiles()
+    const names = ps
+      .map((p) => (p.name || '').trim())
+      .filter((n) => n.length >= 2 && n.length <= 18 && !/^(Игрок|Боец|Гость)\b/i.test(n))
+    for (let i = names.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[names[i], names[j]] = [names[j], names[i]]
+    }
+    realBotNames = names.slice(0, 300)
+  } catch {}
+}
+refreshBotNames()
+setInterval(refreshBotNames, 180000).unref?.()
+
 function startRoom(room) {
   if (room.started) return
   room.started = true
@@ -736,6 +756,7 @@ function startRoom(room) {
     mode: room.mode,
     softFactor: softF,
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
+    botNames: realBotNames, // маскировка: боты берут имена реальных аккаунтов + BOT_NICKS
   })
 
   // стартовый отсчёт: мир застыл до этого момента (см. roomTick) — синхронно с «3-2-1»
@@ -804,7 +825,7 @@ function roomStats(room) {
     id: u.id,
     team: u.team,
     name: u.name,
-    human: u.human,
+    // human НЕ отдаём — финальная таблица не должна выдавать ботов
     kills: u.kills,
     damage: Math.round(u.damageDealt),
     alive: u.alive,

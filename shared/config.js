@@ -145,10 +145,35 @@ export const BOT_SPOT_VISION = 480 // вклад бота в засвет для
 export const FIRE_REVEAL_SEC = 4
 export const TANK_RADIUS = 22
 
+// СТАРЫЕ имена-погоны (по нации) — палили бота за версту. Оставлены как
+// аварийный фоллбэк; реально боты теперь зовутся как живые игроки (BOT_NICKS +
+// подмешанные имена реальных аккаунтов), см. sim.js _nextBotName.
 export const BOT_NAMES = {
   0: ['ст. сержант Ефимов', 'ефрейтор Козлов', 'мл. сержант Орлов', 'рядовой Багиров', 'сержант Чистяков', 'рядовой Тёркин', 'ефрейтор Махов'],
   1: ['Hans_77', 'Wolf_K', 'Otto_Panzer', 'Schnell88', 'Gretta_X', 'Fritz_22', 'Klaus_M', 'Dieter_9'],
 }
+// «Жёсткая маскировка» ботов под живых: пул реалистичных ников (без воинских
+// званий, нейтральный по командам — настоящие игроки берут любые имена). В бою
+// сервер ещё подмешивает имена РЕАЛЬНЫХ аккаунтов (sim берёт случайные без
+// повторов и без имён живых участников этого боя).
+export const BOT_NICKS = [
+  'Shadow', 'Reaper', 'Viper', 'Ghost', 'Blitz', 'Maverick', 'Sniper', 'Hunter', 'Phoenix', 'Cobra',
+  'Raptor', 'Falcon', 'Titan', 'Nomad', 'Joker', 'Storm', 'Frost', 'Ranger', 'Bandit', 'Outlaw',
+  'Mike_99', 'Alex_T34', 'ProTanker', 'TankAce', 'SteelRain', 'IronFist', 'WarDog', 'NightOwl', 'RedStar', 'BlackOps',
+  'Killer228', 'xX_Demon_Xx', 'NoMercy', 'Predator', 'Savage', 'Venom', 'Crusher', 'Goliath', 'Maximus', 'Spartan',
+  'Panzer_Max', 'WolfHunter', 'Tiger_1', 'Eagle_Eye', 'Lynx', 'Puma', 'Jaguar', 'Rhino_77', 'Vortex', 'Zenith',
+  'Apex', 'Onyx', 'Rogue', 'Specter', 'Havoc', 'Riot', 'Chaos', 'Fury', 'Wraith', 'Drake',
+  'Барон', 'Гроза', 'Стальной', 'Танкист', 'Леха52', 'Серый', 'Батя', 'Партизан', 'Сибиряк', 'Медведь',
+  'Волк', 'Сокол', 'Ястреб', 'Тайфун', 'Шторм', 'Снайпер', 'Палач', 'Призрак', 'Кощей', 'Викинг',
+  'Танкист_77', 'Гром', 'Молот', 'Зверь', 'Хищник', 'Беспощадный', 'Ветеран99', 'Дед', 'Боцман', 'Кот',
+  'Барсук', 'Рысь', 'Пантера', 'Ворон', 'Удав', 'Скорпион', 'Оса', 'Димон', 'Санёк', 'Витёк',
+  'Колян', 'Толян', 'Жека', 'Стас', 'МаксПро', 'Ден', 'Рома', 'tank_killer', 'steel_wolf', 'iron_max',
+  'red_baron', 'war_machine', 'panzer228', 'is7_main', 'maus_god', 'leopard_2', 'kv2_lover', 'Громила', 'Тень', 'Берсерк',
+]
+// часть ботов носит камуфляж (как игроки с прокачкой) — остальные «штатные».
+// id обязаны существовать в SKINS (client meta.js): иначе клиент не нарисует камо.
+export const BOT_SKINS = ['winter', 'desert', 'forest', 'night', 'digital', 'urban', 'tiger']
+export const BOT_SKIN_CHANCE = 0.45 // доля ботов с камуфляжем (реалистичный микс)
 
 export function classToRadians(cls) {
   return {
