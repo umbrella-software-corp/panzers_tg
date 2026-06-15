@@ -99,7 +99,7 @@ async function handleAdmin(req, res) {
       referrers: referrerMetrics(profs, now), // воронка по рефереру (кто привёл по ref_<id>)
       linkBase: process.env.APP_LINK_BASE || `https://t.me/${process.env.BOT_USERNAME || 'panzers_bot'}`,
       payments,
-      revenueStars: payments.reduce((s, p) => s + (p.stars || 0), 0),
+      revenueStars: payments.reduce((s, p) => s + (p.refunded ? 0 : p.stars || 0), 0), // зарефанженные не считаем
       products: PRODUCTS,
       payMode: hasBot() ? 'stars' : 'dev',
       analytics: analyticsEnabled(),
