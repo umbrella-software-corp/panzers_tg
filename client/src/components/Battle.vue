@@ -723,10 +723,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- засвет: СКРЫТ / ЗАСВЕЧЕН / РАСКРЫТ — отдельным чипом по центру вверху -->
-    <div v-show="isNet && phase === 'fighting' && state.playerHp > 0" class="spotchip top-chip" :class="spotState">
-      {{ spotLabel }}
-    </div>
+    <!-- статус видимости (скрыт/засвечен/раскрыт) теперь иконкой ПОД своим танком
+         (own-HUD в NetGame, как в дизайне Макса) — верхний чип убран -->
+
 
     <!-- захват базы: отсчёт 0-100 -->
     <div v-if="state.enemyBase > 0" class="basecap pz-display" style="color: var(--amber); border-color: var(--amber)">

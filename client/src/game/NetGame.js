@@ -500,6 +500,8 @@ export class NetGame {
     this.world.addChildAt(this.fog, this.world.getChildIndex(this.tankLayer))
     this.labels = new Container()
     this.app.stage.addChild(this.labels)
+    this.ownGfx = new Graphics() // HUD у своего танка: HP-полоска, рамка «ты», иконка видимости
+    this.labels.addChildAt(this.ownGfx, 0) // под ник-плашками
     this.unitLabels = new Map()
 
     // снапшоты, накопившиеся в очереди ПОКА грузился mount, сбрасываем: мир уже
@@ -1131,6 +1133,7 @@ export class NetGame {
 
     this._updateFog(own)
     this._updateLabels(units)
+    this._updateOwnHud(this._own(units))
     // миникарта — полная перерисовка canvas; 60Гц не нужно, душим до ~12Гц (разгрузка кадра на iOS)
     const nowMs = performance.now()
     if (nowMs - (this._lastMini || 0) > 80) {
@@ -1221,11 +1224,55 @@ export class NetGame {
       t.visible = true
       t.alpha = u.alive ? 1 : 0.42 // мёртвый — приглушённый ник над обломками
       const p = this.world.toGlobal({ x: u.x, y: u.y })
-      t.position.set(p.x, p.y - (u.alive ? 50 : 40))
+      // свой танк: ник выше (под ним влезает HP-полоска own-HUD)
+      const off = u.id === this.youUnit && u.alive ? 66 : u.alive ? 50 : 40
+      t.position.set(p.x, p.y - off)
     }
     for (const [id, t] of this.unitLabels) {
       if (!seen.has(id)) t.visible = false
     }
+  }
+
+  // own-HUD у своего танка (дизайн Макса): HP-полоска сверху, пунктирная рамка-
+  // уголки «ты», иконка видимости снизу (скрыт=глаз перечёркнут / засвечен / раскрыт).
+  // Экранные координаты (world scale=1), перерисовка каждый кадр.
+  _updateOwnHud(own) {
+    const g = this.ownGfx
+    if (!g) return
+    g.clear()
+    if (!own || !own.alive || !this.you) return
+    const p = this.world.toGlobal({ x: own.x, y: own.y })
+    const hw = 28
+    const hh = 46
+    const L = p.x - hw
+    const R = p.x + hw
+    const T = p.y - hh
+    const B = p.y + hh
+    const cn = 11 // длина уголка рамки
+    g.moveTo(L, T + cn).lineTo(L, T).lineTo(L + cn, T)
+    g.moveTo(R - cn, T).lineTo(R, T).lineTo(R, T + cn)
+    g.moveTo(R, B - cn).lineTo(R, B).lineTo(R - cn, B)
+    g.moveTo(L + cn, B).lineTo(L, B).lineTo(L, B - cn)
+    g.stroke({ width: 2.5, color: 0xf2d24a, alpha: 0.9 })
+    // HP-полоска над танком
+    const frac = own.maxHp ? Math.max(0, Math.min(1, own.hp / own.maxHp)) : 1
+    const bw = 58
+    const bx = p.x - bw / 2
+    const by = T - 9
+    g.roundRect(bx - 1.5, by - 1.5, bw + 3, 7, 3).fill({ color: 0x05070a, alpha: 0.7 })
+    const hpcol = frac > 0.5 ? 0x6fcf4a : frac > 0.25 ? 0xf2c20c : 0xff4b33
+    if (frac > 0) g.roundRect(bx, by, bw * frac, 4, 2).fill({ color: hpcol })
+    // иконка видимости под танком
+    const fired = !!this.you.firedReveal
+    const seenByFoe = !!this.you.revealed
+    const col = fired ? 0xff4b33 : seenByFoe ? 0xf2a50c : 0xffd24a
+    const cx = p.x
+    const cy = B + 16
+    g.roundRect(cx - 15, cy - 12, 30, 24, 7).fill({ color: 0x05070a, alpha: 0.72 })
+    g.roundRect(cx - 15, cy - 12, 30, 24, 7).stroke({ width: 1.5, color: col, alpha: 0.9 })
+    g.ellipse(cx, cy, 8, 4.6).stroke({ width: 1.6, color: col })
+    g.circle(cx, cy, 2.3).fill({ color: col })
+    if (!seenByFoe && !fired) g.moveTo(cx - 9, cy + 7).lineTo(cx + 9, cy - 7).stroke({ width: 2, color: col }) // скрыт → перечёркнут
   }
 
   // плашка ника над танком: тёмный фон + рамка цвета команды (своя — янтарь),
