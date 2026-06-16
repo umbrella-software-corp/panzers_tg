@@ -12,6 +12,7 @@ import { startSupportBot } from './support.js'
 import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress } from './notifications.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
+import { channelConfig, claimChannelBonus } from './channel.js'
 import { adminPage } from './admin.js'
 import { trackServer, analyticsEnabled } from './analytics.js'
 
@@ -311,7 +312,7 @@ async function handleApi(req, res) {
     return player ? json(res, 200, { player }) : json(res, 404, { error: 'not found' })
   }
   if (req.url === '/api/config' && req.method === 'GET') {
-    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)) })
+    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig() })
   }
   if (req.url === '/api/profile' && req.method === 'POST') {
     const body = await readBody(req)
@@ -337,6 +338,10 @@ async function handleApi(req, res) {
       // сохраняем, чтобы клиентский сейв профиля его не затирал
       reachedBattle: prev.reachedBattle || false,
       srvBattles: prev.srvBattles || 0, // серверный счётчик боёв — клиент не пишет
+      // бонус за подписку на канал выдаёт ТОЛЬКО сервер (channel.js, с проверкой
+      // getChatMember). Флаг серверный — клиент не может его сбросить сейвом профиля
+      // и заклеймить повторно через подчистку localStorage.
+      channelBonusClaimed: prev.channelBonusClaimed || false,
       firstBattleAt: prev.firstBattleAt || 0,
       firstSeen: prev.firstSeen || Date.now(),
       lastSeen: Date.now(),
@@ -348,6 +353,10 @@ async function handleApi(req, res) {
   if (req.url === '/api/referred' && req.method === 'POST') {
     const { ref } = await readBody(req)
     return json(res, 200, await registerReferral(user, ref))
+  }
+  if (req.url === '/api/channel-bonus' && req.method === 'POST') {
+    // разовый бонус за подписку на канал — проверка подписки + начисление на сервере
+    return json(res, 200, await claimChannelBonus(user.uid))
   }
   if (req.url === '/api/invoice' && req.method === 'POST') {
     const { productId, name } = await readBody(req)

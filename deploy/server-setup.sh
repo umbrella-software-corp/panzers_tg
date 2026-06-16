@@ -35,11 +35,15 @@ if [ ! -s server/.env ]; then
   ADMIN_KEY="${ADMIN_KEY:-$(openssl rand -hex 16)}"
   # SUPPORT_* — саппорт-бот (отдельный токен) + id группы разработчиков; пустые =
   # саппорт выключен. Заполни вручную после первого деплоя (см. README/деплой-доку).
-  printf 'BOT_TOKEN=%s\nADMIN_KEY=%s\nSUPPORT_BOT_TOKEN=%s\nSUPPORT_CHAT_ID=%s\n' \
-    "$BOT_TOKEN" "$ADMIN_KEY" "${SUPPORT_BOT_TOKEN:-}" "${SUPPORT_CHAT_ID:-}" > server/.env
+  # CHANNEL_ID — «подпишись на канал → бонус»: @username ИЛИ -100…; пусто = фича
+  # выключена. ВАЖНО: бота @panzers_bot надо сделать админом этого канала, иначе
+  # getChatMember не вернёт статус подписки. Размер награды — CHANNEL_BONUS_* (по
+  # умолчанию 5000 кредитов + 50 жетонов, если не задано).
+  printf 'BOT_TOKEN=%s\nADMIN_KEY=%s\nSUPPORT_BOT_TOKEN=%s\nSUPPORT_CHAT_ID=%s\nCHANNEL_ID=%s\nCHANNEL_URL=%s\n' \
+    "$BOT_TOKEN" "$ADMIN_KEY" "${SUPPORT_BOT_TOKEN:-}" "${SUPPORT_CHAT_ID:-}" "${CHANNEL_ID:-}" "${CHANNEL_URL:-}" > server/.env
   echo ">> ADMIN_KEY (сохрани для входа в /admin): $ADMIN_KEY"
 else
-  echo "server/.env уже есть — не трогаю (SUPPORT_BOT_TOKEN/SUPPORT_CHAT_ID добавь вручную, если нужен саппорт)"
+  echo "server/.env уже есть — не трогаю (SUPPORT_*/CHANNEL_ID добавь вручную: саппорт и бонус за канал)"
 fi
 # серверная аналитика Amplitude (ПУБЛИЧНЫЙ API key) — дозаписываем, если ещё нет
 grep -q '^AMPLITUDE_API_KEY=' server/.env 2>/dev/null || echo 'AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0' >> server/.env
