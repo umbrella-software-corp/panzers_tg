@@ -255,7 +255,7 @@ async function refresh() {
     ['Игрок', 'UID', 'Кредиты', 'Жетоны', 'Боёв', 'Побед', 'Рейтинг', 'Танков', 'Экипаж ОП', 'Был'],
     prof.profiles.slice(0, 100).map((p) => [
       (isOnline(p) ? '<span title="онлайн" style="color:#7cc05a">● </span>' : '') + esc(p.name),
-      esc(p.uid), p.credits, p.tokens, p.battles, p.wins, p.rating, p.tanks, p.crewXp, dt(p.updatedAt),
+      esc(p.uid), p.credits, p.tokens, Math.max(p.battles || 0, p.srvBattles || 0), p.wins, p.rating, p.tanks, p.crewXp, dt(p.updatedAt),
     ]),
   )
   $('status').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU')
@@ -283,7 +283,7 @@ function renderPlayers(title, list) {
       (isOnline(p) ? '<span style="color:#7cc05a">● </span>' : '') + esc(p.name || '—'),
       esc(p.uid || '—'),
       bucketTag(p),
-      p.battles || 0,
+      Math.max(p.battles || 0, p.srvBattles || 0),
       durMin((p.lastSeen || 0) - (p.firstSeen || 0)),
       dt(p.firstSeen),
       dt(p.lastSeen),

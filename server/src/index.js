@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap, softFactor } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { t as tr } from './i18n.js'
-import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle } from './db.js'
+import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
 import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest } from './notifications.js'
@@ -332,6 +332,7 @@ async function handleApi(req, res) {
       // серверный факт входа в бой — ведёт сервер (markReachedBattle), клиент не пишет;
       // сохраняем, чтобы клиентский сейв профиля его не затирал
       reachedBattle: prev.reachedBattle || false,
+      srvBattles: prev.srvBattles || 0, // серверный счётчик боёв — клиент не пишет
       firstBattleAt: prev.firstBattleAt || 0,
       firstSeen: prev.firstSeen || Date.now(),
       lastSeen: Date.now(),
@@ -900,7 +901,7 @@ function startRoom(room) {
   // для игроков с известным tg-id — гостей в аналитику матчей не тащим
   for (const h of room.humans) {
     if (!h.uid) continue
-    markReachedBattle(h.uid) // серверный «дошёл до боя» (не зависит от клиентского stats.battles)
+    recordBattleEntry(h.uid) // серверный счётчик боёв +1 + «дошёл до боя» (не зависит от клиентского stats.battles)
     trackServer(h.uid, 'server_match_started', {
       room_id: room.id,
       mode: room.mode,

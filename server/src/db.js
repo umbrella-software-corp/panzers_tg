@@ -179,6 +179,25 @@ export async function markReachedBattle(uid) {
   }
 }
 
+// серверный СЧЁТЧИК боёв: +1 при КАЖДОМ входе человека в бой (startRoom). В отличие
+// от markReachedBattle (булев флаг, один раз) — считает каждый матч, поэтому БЕЗ
+// reachedMem. Нужен, т.к. клиентский stats.battles часто не доезжает (видим «дошёл · 0
+// боёв»). Тоже ставит reachedBattle. Админка показывает max(клиентский, серверный).
+export async function recordBattleEntry(uid) {
+  if (!uid) return
+  try {
+    const p = await loadProfile(uid)
+    if (!p) return
+    p.reachedBattle = true
+    if (!p.firstBattleAt) p.firstBattleAt = Date.now()
+    p.srvBattles = (p.srvBattles | 0) + 1
+    profilesCache = null
+    await saveProfile(uid, p)
+  } catch {
+    /* гонка/битый профиль — не критично */
+  }
+}
+
 // журнал платежей: и идемпотентность по charge id, и записи для админки.
 // Совместимость: старый формат — массив строк charge id, новый — объекты
 // { charge, uid, productId, stars, ts }.
@@ -318,6 +337,7 @@ async function listProfilesUncached() {
         src: p.src || null, // метка источника трафика (атрибуция)
         referredBy: p.referredBy || null, // кто привёл (tg_<id> реферера) — для воронки по реф-ссылке
         reachedBattle: !!p.reachedBattle, // серверный факт входа в бой (надёжнее клиентского battles)
+        srvBattles: p.srvBattles | 0, // серверный счётчик входов в бой (надёжнее клиентского stats.battles)
         firstSeen: p.firstSeen || p._updatedAt || 0,
         lastSeen: p.lastSeen || p._updatedAt || 0,
       })
