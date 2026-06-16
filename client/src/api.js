@@ -71,6 +71,9 @@ export const apiPushAllow = () => call('/api/push-allow', { method: 'POST', body
 // разовый бонус за подписку на канал: сервер проверяет подписку (getChatMember) и
 // начисляет. Ответ: { ok, granted } | { already } | { subscribed:false } | { disabled }.
 export const apiChannelBonus = () => call('/api/channel-bonus', { method: 'POST', body: '{}' })
+// разовый бонус за фидбек: сервер проверяет, писал ли игрок в саппорт-бот, и начисляет.
+// Ответ: { ok, granted } | { already } | { wrote:false } | { disabled }.
+export const apiFeedbackBonus = () => call('/api/feedback-bonus', { method: 'POST', body: '{}' })
 // кланы: список (+ мой клан), создать, вступить, выйти, карточка по id
 export const apiClans = () => call('/api/clans')
 export const apiCreateClan = (name, tag, emblem) => call('/api/clan/create', { method: 'POST', body: JSON.stringify({ name, tag, emblem }) })

@@ -19,6 +19,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { t, pickLang } from './i18n.js'
+import { markWroteSupport } from './feedback.js'
 
 // Хранилище: номера тикетов (один на игрока, как в МиниПолии) + назначенная
 // группа (команда /here). Маршрут ответа — по tgId из заголовка; номер для
@@ -171,6 +172,7 @@ async function handle(u) {
 
   // сообщение игрока → в группу разработчиков с заголовком (tgId = ключ ответа)
   const from = msg.from
+  markWroteSupport('tg_' + from.id) // игрок написал в саппорт → флаг для бонуса «за фидбек»
   const who = from.username ? '@' + from.username : from.first_name || '—'
   const ticket = await ticketFor(from.id)
   const header = `📩 Тикет #${ticket} | ${who} | tgId=${from.id}`

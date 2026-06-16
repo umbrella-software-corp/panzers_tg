@@ -18,11 +18,13 @@ import PzIcon from './ui/PzIcon.vue'
 import SquadSheet from './SquadSheet.vue'
 import TasksSheet from './TasksSheet.vue'
 import ChannelSheet from './ChannelSheet.vue'
+import FeedbackSheet from './FeedbackSheet.vue'
 
 const emit = defineEmits(['play', 'go'])
 const squadOpen = ref(false)
 const tasksOpen = ref(false)
 const channelOpen = ref(false)
+const feedbackOpen = ref(false)
 
 // промо «подпишись на канал → бонус» показываем, только если фича включена на сервере
 // (задан CHANNEL_ID) и бонус ещё не забран; новичкам до первого боя не мешаем.
@@ -33,6 +35,17 @@ function openChannelSheet() {
   track('channel_offer_opened', { from_screen: 'hangar' })
   haptic('light')
   channelOpen.value = true
+}
+
+// промо «нам важно ваше мнение → напиши в саппорт → +жетоны»: пока бонус не забран,
+// новичкам до первого боя не мешаем (как и канал)
+const feedbackOffer = computed(
+  () => serverConfig.feedback.on && !profile.feedbackClaimed && !firstSession.value,
+)
+function openFeedbackSheet() {
+  track('feedback_offer_opened', { from_screen: 'hangar' })
+  haptic('light')
+  feedbackOpen.value = true
 }
 
 // живой счётчик «N в сети» на главной — опрос раз в 30с
@@ -366,6 +379,18 @@ onMounted(() => {
       <span class="chb-cta">{{ t('channel.bannerCta') }}</span>
     </button>
 
+    <!-- «нам важно ваше мнение» → написать в саппорт → бонус жетонов -->
+    <button v-if="feedbackOffer" class="chbanner" @click="openFeedbackSheet">
+      <span class="chb-icon">💬</span>
+      <span class="chb-text">
+        <span class="chb-title">{{ t('feedback.banner') }}</span>
+        <span class="chb-reward">
+          <PzIcon name="token" :size="12" /> +{{ serverConfig.feedback.tokens }}
+        </span>
+      </span>
+      <span class="chb-cta">▸</span>
+    </button>
+
     <!-- CTA -->
     <div style="padding: 8px 14px 4px; flex-shrink: 0; display: flex; gap: 8px">
       <button v-if="!firstSession" class="pz-btn2 squad-btn tasks-btn" @click="openTasksSheet">
@@ -400,6 +425,7 @@ onMounted(() => {
     <SquadSheet v-if="squadOpen" @close="squadOpen = false" />
     <TasksSheet v-if="tasksOpen" @close="tasksOpen = false" />
     <ChannelSheet v-if="channelOpen" @close="channelOpen = false" />
+    <FeedbackSheet v-if="feedbackOpen" @close="feedbackOpen = false" />
   </div>
 </template>
 

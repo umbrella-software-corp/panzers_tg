@@ -13,6 +13,7 @@ import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDige
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { channelConfig, claimChannelBonus } from './channel.js'
+import { feedbackConfig, claimFeedbackBonus } from './feedback.js'
 import { adminPage } from './admin.js'
 import { trackServer, analyticsEnabled } from './analytics.js'
 
@@ -312,7 +313,7 @@ async function handleApi(req, res) {
     return player ? json(res, 200, { player }) : json(res, 404, { error: 'not found' })
   }
   if (req.url === '/api/config' && req.method === 'GET') {
-    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig() })
+    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig(), feedback: feedbackConfig() })
   }
   if (req.url === '/api/profile' && req.method === 'POST') {
     const body = await readBody(req)
@@ -342,6 +343,9 @@ async function handleApi(req, res) {
       // getChatMember). Флаг серверный — клиент не может его сбросить сейвом профиля
       // и заклеймить повторно через подчистку localStorage.
       channelBonusClaimed: prev.channelBonusClaimed || false,
+      // бонус за фидбек: «написал в саппорт» (ставит support.js) + «забрал» — серверные
+      wroteSupport: prev.wroteSupport || false,
+      feedbackClaimed: prev.feedbackClaimed || false,
       firstBattleAt: prev.firstBattleAt || 0,
       firstSeen: prev.firstSeen || Date.now(),
       lastSeen: Date.now(),
@@ -363,6 +367,10 @@ async function handleApi(req, res) {
   if (req.url === '/api/channel-bonus' && req.method === 'POST') {
     // разовый бонус за подписку на канал — проверка подписки + начисление на сервере
     return json(res, 200, await claimChannelBonus(user.uid))
+  }
+  if (req.url === '/api/feedback-bonus' && req.method === 'POST') {
+    // разовый бонус за фидбек — выдаём, если игрок реально написал в саппорт-бот
+    return json(res, 200, await claimFeedbackBonus(user.uid))
   }
   if (req.url === '/api/invoice' && req.method === 'POST') {
     const { productId, name } = await readBody(req)

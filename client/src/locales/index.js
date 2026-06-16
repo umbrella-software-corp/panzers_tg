@@ -20,8 +20,9 @@ import matchmaking from './matchmaking.js'
 import battle from './battle.js'
 import results from './results.js'
 import channel from './channel.js'
+import feedback from './feedback.js'
 
-const domains = { common, game, nav, hangar, onboarding, daily, tasks, tree, crew, shop, rating, squad, player, medals, matchmaking, battle, results, channel }
+const domains = { common, game, nav, hangar, onboarding, daily, tasks, tree, crew, shop, rating, squad, player, medals, matchmaking, battle, results, channel, feedback }
 
 function pick(lang) {
   const out = {}
