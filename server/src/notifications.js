@@ -61,7 +61,12 @@ export const digestText = (profile, daysAway, lang = 'ru') => {
 // кого включаем в дейли-рассылку (строка из listProfiles): реальный игрок, с tg-id,
 // не игравший сегодня. Лимит 1/сутки и opt-out проверяются позже при самой отправке.
 export function shouldDigest(row, today) {
-  if (!row || (row.battles | 0) < 1) return false // фейки Traffy / непоигравшие — мимо
+  if (!row) return false
+  // «реальный игрок» = серверный факт входа в бой (reachedBattle/srvBattles) ИЛИ клиентский
+  // battles. Только по клиентскому нельзя — у многих он не доезжает («дошёл · 0 боёв»), и
+  // реально игравшие выпадали бы из рассылки. Фейки Traffy (нигде не играли) — мимо.
+  const played = (row.battles | 0) > 0 || row.reachedBattle || (row.srvBattles | 0) > 0
+  if (!played) return false
   if (!tgIdOf(row.uid)) return false
   if (row.lastSeen && mskDay(row.lastSeen) === today) return false // активных сегодня не трогаем
   return true
@@ -111,10 +116,14 @@ let digestProgress = { running: false, sent: 0, eligible: 0, total: 0, at: 0 }
 export const getDigestProgress = () => digestProgress
 
 export async function runDailyDigest(now = Date.now(), { dry = false } = {}) {
+  if (!dry) digestProgress = { running: true, sent: 0, eligible: 0, total: 0, at: now } // ЛОК сразу (синхронно, до await) — второй запуск увидит running
   const today = mskDay(now)
   const profs = await listProfiles()
   const targets = profs.filter((r) => shouldDigest(r, today)) // реальные игроки, не активные сегодня
-  if (!dry) digestProgress = { running: true, sent: 0, eligible: targets.length, total: profs.length, at: now }
+  if (!dry) {
+    digestProgress.eligible = targets.length
+    digestProgress.total = profs.length
+  }
   let sent = 0
   if (!dry) {
     for (const row of targets) {

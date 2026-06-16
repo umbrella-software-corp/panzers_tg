@@ -72,6 +72,7 @@ async function handleAdmin(req, res) {
   if (req.url === '/api/admin/digest' && req.method === 'POST') {
     const { dry } = await readBody(req)
     if (dry) return json(res, 200, await runDailyDigest(Date.now(), { dry: true })) // прикидка охвата, без отправки
+    if (getDigestProgress().running) return json(res, 200, { already: true }) // уже идёт — второй запуск НЕ плодим (защита от двойного клика)
     // реальная рассылка идёт минутами (по ~70мс на адресата) — пускаем в фоне, отвечаем сразу
     runDailyDigest(Date.now()).catch((e) => console.error('[push] ручная рассылка:', e.message))
     return json(res, 200, { started: true })

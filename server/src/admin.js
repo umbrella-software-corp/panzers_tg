@@ -157,6 +157,7 @@ async function digestSend() {
   try {
     const r = await fetch('/api/admin/digest', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ dry: false }) })
     const d = await r.json()
+    if (d.already) { $('digestOut').innerHTML = '<span class="muted">рассылка уже идёт — повтор не запускаю (от дублей)</span>'; pollDigest(); return }
     if (!d.started) { $('digestOut').innerHTML = '<span class="err">не запустилось</span>'; return }
     pollDigest() // живой прогресс прямо тут
   } catch (e) { $('digestOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
