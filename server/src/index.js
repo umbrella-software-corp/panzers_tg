@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage } from './notifications.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { channelConfig, claimChannelBonus } from './channel.js'
@@ -70,6 +70,32 @@ async function handleAdmin(req, res) {
     const digits = String(uid || '').replace(/[^0-9]/g, '')
     if (!digits) return json(res, 400, { error: 'нет uid' })
     return json(res, 200, await sendTestDigest('tg_' + digits))
+  }
+  if (req.url === '/api/admin/grant' && req.method === 'POST') {
+    // выдать игроку кредиты/жетоны/дни премиума. Премиум стоек (premiumUntil защищён в
+    // merge); кредиты/жетоны применятся при следующем заходе игрока (если он прямо сейчас
+    // в игре — его сейв может перезаписать, выдавай оффлайн / попроси перезайти).
+    const { uid, credits, tokens, premiumDays } = await readBody(req)
+    const digits = String(uid || '').replace(/[^0-9]/g, '')
+    if (!digits) return json(res, 400, { error: 'нет uid' })
+    const key = 'tg_' + digits
+    const p = await loadProfile(key)
+    if (!p) return json(res, 404, { error: 'профиль не найден (игрок не открывал игру)' })
+    const c = Math.max(0, Math.min(1e7, Math.round(+credits || 0)))
+    const t = Math.max(0, Math.min(1e5, Math.round(+tokens || 0)))
+    const d = Math.max(0, Math.min(3650, Math.round(+premiumDays || 0)))
+    if (c) p.credits = (p.credits || 0) + c
+    if (t) p.tokens = (p.tokens || 0) + t
+    if (d) p.premiumUntil = Math.max(Date.now(), p.premiumUntil || 0) + d * 86400000
+    await saveProfile(key, p)
+    return json(res, 200, { ok: true, credits: p.credits, tokens: p.tokens, premiumUntil: p.premiumUntil, gave: { credits: c, tokens: t, premiumDays: d } })
+  }
+  if (req.url === '/api/admin/message' && req.method === 'POST') {
+    // написать игроку лично от game-бота (дойдёт, только если он запускал бота / дал write-access)
+    const { uid, text } = await readBody(req)
+    const digits = String(uid || '').replace(/[^0-9]/g, '')
+    if (!digits || !String(text || '').trim()) return json(res, 400, { error: 'нужны uid и текст' })
+    return json(res, 200, await sendAdminMessage('tg_' + digits, String(text)))
   }
   if (req.url === '/api/admin/digest' && req.method === 'POST') {
     const { dry } = await readBody(req)

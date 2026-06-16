@@ -167,6 +167,24 @@ export async function sendTestDigest(uid, now = Date.now()) {
   return { ok: r.sent, reason: r.sent ? null : 'не отправлено (' + r.reason + ' — нет профиля / pushOff / заблокировал бота)' }
 }
 
+// админ пишет игроку лично от game-бота (из админки). Без кулдауна/флагов — явное
+// действие админа. Telegram-ограничение остаётся: дойдёт только тем, кто запускал
+// бота / дал write-access (иначе 403). С кнопкой «В БОЙ» под сообщением.
+export async function sendAdminMessage(uid, text) {
+  if (!hasBot()) return { ok: false, reason: 'нет BOT_TOKEN (dev)' }
+  if (!tgIdOf(uid)) return { ok: false, reason: 'не tg-uid' }
+  const p = await loadProfile(uid)
+  const lang = langOf(p)
+  const res = await api('sendMessage', {
+    chat_id: tgIdOf(uid),
+    text: String(text || '').slice(0, 3500),
+    reply_markup: playButton(lang),
+    disable_web_page_preview: true,
+  })
+  if (res && res.ok) return { ok: true }
+  return { ok: false, reason: (res && res.description) || 'не доставлено (игрок не запускал бота?)' }
+}
+
 // ---------- «друг в бою» (соц-хук из startRoom) ----------
 // «Друг в бою» ВЫКЛЮЧЕН по умолчанию: «друзья» сейчас = реферальный граф, а он
 // засран Traffy-трафиком (один реф-id «привёл» ~1900 человек) → пуши «твой друг

@@ -70,6 +70,23 @@ export const adminPage = () => `<!doctype html>
     <button style="width:auto; padding:9px 16px; background:var(--red); color:#fff" onclick="digestSend()">⚠ Разослать дайджест ВСЕМ сейчас</button>
     <span id="digestOut" class="muted" style="font-size:12px"></span>
   </div>
+  <h2>Выдать / написать игроку</h2>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+    <span class="muted">uid:</span>
+    <input id="grUid" placeholder="напр. 6177596024" style="width:auto; min-width:150px; margin:0">
+    <span class="muted">+кредиты 🪙</span><input id="grCr" type="number" placeholder="0" style="width:90px; margin:0">
+    <span class="muted">+жетоны 💎</span><input id="grTk" type="number" placeholder="0" style="width:80px; margin:0">
+    <span class="muted">+дней према ⭐</span><input id="grPr" type="number" placeholder="0" style="width:70px; margin:0">
+    <button style="width:auto; padding:9px 16px" onclick="doGrant()">Выдать</button>
+    <span id="grOut" class="muted" style="font-size:12px"></span>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px">
+    <span class="muted">сообщение игроку (uid выше):</span>
+    <input id="grMsg" placeholder="текст от @panzers_bot…" style="width:auto; flex:1; min-width:220px; margin:0" onkeydown="if(event.key==='Enter')doMsg()">
+    <button style="width:auto; padding:9px 16px" onclick="doMsg()">Написать</button>
+    <span id="grMsgOut" class="muted" style="font-size:12px"></span>
+  </div>
+  <div class="muted" style="font-size:11px; margin-top:6px">Премиум начисляется стойко. Кредиты/жетоны применятся при следующем заходе игрока — выдавай, когда он не в игре (иначе его сейв может перезаписать). Сообщение дойдёт, только если игрок запускал бота / разрешил писать.</div>
   <h2>Источники трафика</h2><div id="sources"></div>
   <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
   <h2>Турниры</h2><div id="tournaments"></div>
@@ -138,6 +155,43 @@ async function testPush() {
   } catch (e) { $('pushOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
 }
 window.testPush = testPush
+
+// выдать игроку кредиты/жетоны/премиум (по uid из поля grUid)
+async function doGrant() {
+  const uid = ($('grUid').value || '').trim()
+  if (!uid) { $('grOut').innerHTML = '<span class="err">введите uid</span>'; return }
+  const body = { uid, credits: +($('grCr').value || 0), tokens: +($('grTk').value || 0), premiumDays: +($('grPr').value || 0) }
+  if (!body.credits && !body.tokens && !body.premiumDays) { $('grOut').innerHTML = '<span class="err">укажи что выдать</span>'; return }
+  $('grOut').textContent = '…'
+  try {
+    const r = await fetch('/api/admin/grant', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const d = await r.json()
+    if (d.ok) {
+      const g = d.gave || {}
+      const parts = []
+      if (g.credits) parts.push('+' + g.credits + ' 🪙')
+      if (g.tokens) parts.push('+' + g.tokens + ' 💎')
+      if (g.premiumDays) parts.push('+' + g.premiumDays + 'д према ⭐')
+      $('grOut').innerHTML = '<span class="ok">✓ выдано ' + esc(parts.join(', ')) + ' (баланс: ' + (d.credits | 0) + '🪙 / ' + (d.tokens | 0) + '💎)</span>'
+    } else $('grOut').innerHTML = '<span class="err">' + esc(d.error || '?') + '</span>'
+  } catch (e) { $('grOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
+}
+window.doGrant = doGrant
+
+// написать игроку лично от game-бота
+async function doMsg() {
+  const uid = ($('grUid').value || '').trim()
+  const text = ($('grMsg').value || '').trim()
+  if (!uid || !text) { $('grMsgOut').innerHTML = '<span class="err">нужны uid и текст</span>'; return }
+  $('grMsgOut').textContent = '…'
+  try {
+    const r = await fetch('/api/admin/message', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ uid, text }) })
+    const d = await r.json()
+    if (d.ok) { $('grMsgOut').innerHTML = '<span class="ok">✓ отправлено</span>'; $('grMsg').value = '' }
+    else $('grMsgOut').innerHTML = '<span class="err">не дошло: ' + esc(d.reason || d.error || '?') + '</span>'
+  } catch (e) { $('grMsgOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
+}
+window.doMsg = doMsg
 
 // прикинуть охват дайджеста (без отправки)
 async function digestDry() {
