@@ -88,6 +88,25 @@ export function openSupport() {
   }
 }
 
+// открыть любую t.me-ссылку (канал/чат) внутри Telegram, с фоллбэком на window.open
+export function openTelegramLink(url) {
+  if (!url) return
+  const tg = window.Telegram && window.Telegram.WebApp
+  if (tg && typeof tg.openTelegramLink === 'function') {
+    try {
+      tg.openTelegramLink(url)
+      return
+    } catch {
+      /* старый клиент — пробуем window.open ниже */
+    }
+  }
+  try {
+    window.open(url, '_blank')
+  } catch {
+    /* ничего не вышло */
+  }
+}
+
 // текущий обработчик кнопки «Назад» (его дёргает единый onClick из initTelegram)
 let backHandler = null
 

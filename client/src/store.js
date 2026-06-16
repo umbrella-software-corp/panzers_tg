@@ -6,8 +6,8 @@ import { apiLoadProfile, apiSaveProfile, apiConfig } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
-// серверный конфиг (флаги админки: турниры вкл/выкл)
-export const serverConfig = reactive({ tournaments: false })
+// серверный конфиг (флаги админки: турниры вкл/выкл; бонус за подписку на канал)
+export const serverConfig = reactive({ tournaments: false, channel: { on: false, url: '', credits: 0, tokens: 0 } })
 
 // взвод текущего сеанса (НЕ персистится): token — id командира взвода. Друзья,
 // открывшие твою sq-ссылку, ищут бой с тем же token и попадают в одну комнату.
@@ -29,6 +29,7 @@ export async function loadConfig() {
   try {
     const c = await apiConfig()
     serverConfig.tournaments = !!c.tournaments
+    if (c.channel) serverConfig.channel = c.channel
   } catch {
     /* офлайн — оставляем дефолт */
   }

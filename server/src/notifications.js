@@ -82,32 +82,38 @@ export function friendOk(fp, now) {
 // ---------- отправка с уважением opt-out / blocked / 1-в-сутки ----------
 // body — строка ИЛИ функция (lang) => строка: текст собирается на языке получателя
 // (langOf(p)) уже после загрузки профиля
+// возвращает { sent, reason } — reason для разбивки в админке: почему НЕ ушло
+// ('cooldown' = уже получал за сутки, 'blocked' = заблокировал/не запускал бота,
+// 'off' = /stop, 'sent' = отправлено). Раньше был голый boolean — отсюда непонятное «0 из N».
 async function sendPush(uid, body, { now = Date.now(), force = false } = {}) {
   const chatId = tgIdOf(uid)
-  if (!chatId) return false
+  if (!chatId) return { sent: false, reason: 'no-tg' }
   const p = await loadProfile(uid)
-  if (!p || p.pushOff || p.pushBlocked) return false
-  if (!force && p.lastPushAt && now - p.lastPushAt < PUSH_COOLDOWN) return false
+  if (!p) return { sent: false, reason: 'no-profile' }
+  if (p.pushOff) return { sent: false, reason: 'off' }
+  if (p.pushBlocked) return { sent: false, reason: 'blocked' }
+  if (!force && p.lastPushAt && now - p.lastPushAt < PUSH_COOLDOWN) return { sent: false, reason: 'cooldown' }
   const lang = langOf(p)
   const text = typeof body === 'function' ? body(lang, p) : body // p — для персонализации (имя/серия)
   if (DRY_RUN) {
     console.log(`[push:dry] → ${uid}: ${text.split('\n')[0]}`)
     p.lastPushAt = now
     await saveProfile(uid, p)
-    return true
+    return { sent: true, reason: 'dry' }
   }
   const res = await api('sendMessage', { chat_id: chatId, text, reply_markup: playButton(lang), disable_web_page_preview: true })
   if (res && res.ok) {
     p.lastPushAt = now
     await saveProfile(uid, p)
-    return true
+    return { sent: true, reason: 'sent' }
   }
   const desc = (res && res.description) || ''
   if ((res && res.error_code === 403) || /chat not found|bot was blocked|user is deactivated|can't initiate/i.test(desc)) {
     p.pushBlocked = true // юзер не запускал/заблокировал бота — больше не пишем
     await saveProfile(uid, p)
+    return { sent: false, reason: 'blocked' }
   }
-  return false
+  return { sent: false, reason: 'fail' }
 }
 
 // ---------- дейли-рассылка (награда+задачи / винбэк) ----------
@@ -116,7 +122,7 @@ let digestProgress = { running: false, sent: 0, eligible: 0, total: 0, at: 0 }
 export const getDigestProgress = () => digestProgress
 
 export async function runDailyDigest(now = Date.now(), { dry = false } = {}) {
-  if (!dry) digestProgress = { running: true, sent: 0, eligible: 0, total: 0, at: now } // ЛОК сразу (синхронно, до await) — второй запуск увидит running
+  if (!dry) digestProgress = { running: true, sent: 0, cooldown: 0, blocked: 0, eligible: 0, total: 0, at: now } // ЛОК сразу (синхронно, до await) — второй запуск увидит running
   const today = mskDay(now)
   const profs = await listProfiles()
   const targets = profs.filter((r) => shouldDigest(r, today)) // реальные игроки, не активные сегодня
@@ -125,19 +131,26 @@ export async function runDailyDigest(now = Date.now(), { dry = false } = {}) {
     digestProgress.total = profs.length
   }
   let sent = 0
+  let cooldown = 0
+  let blocked = 0
   if (!dry) {
     for (const row of targets) {
       const daysAway = Math.floor((now - (row.lastSeen || now)) / DAY)
-      if (await sendPush(row.uid, (lang, p) => digestText(p, daysAway, lang), { now })) {
+      const r = await sendPush(row.uid, (lang, p) => digestText(p, daysAway, lang), { now })
+      if (r.sent) {
         sent++
         digestProgress.sent = sent
         await sleep(70) // ~14 msg/с — с запасом под лимит Telegram (~30/с)
+      } else if (r.reason === 'cooldown') {
+        digestProgress.cooldown = ++cooldown
+      } else if (r.reason === 'blocked' || r.reason === 'off') {
+        digestProgress.blocked = ++blocked
       }
     }
-    digestProgress = { running: false, sent, eligible: targets.length, total: profs.length, at: Date.now() }
+    digestProgress = { running: false, sent, cooldown, blocked, eligible: targets.length, total: profs.length, at: Date.now() }
   }
-  console.log(`[push] дейли-рассылка${dry ? ' (dry)' : ''}: ${dry ? 'подходит ' + targets.length : 'отправлено ' + sent + ' из ' + targets.length}, профилей ${profs.length}`)
-  return { eligible: targets.length, sent, total: profs.length }
+  console.log(`[push] дейли-рассылка${dry ? ' (dry)' : ''}: ${dry ? 'подходит ' + targets.length : `отправлено ${sent}, кулдаун ${cooldown}, блок/отписка ${blocked} из ${targets.length}`}, профилей ${profs.length}`)
+  return { eligible: targets.length, sent, cooldown, blocked, total: profs.length }
 }
 
 // тест-пуш из админки: шлём дайджест конкретному uid ПРИНУДИТЕЛЬНО (в обход кулдауна
@@ -146,12 +159,12 @@ export async function runDailyDigest(now = Date.now(), { dry = false } = {}) {
 export async function sendTestDigest(uid, now = Date.now()) {
   if (!hasBot()) return { ok: false, reason: 'нет BOT_TOKEN (dev)' }
   if (!tgIdOf(uid)) return { ok: false, reason: 'не tg-uid' }
-  const sent = await sendPush(
+  const r = await sendPush(
     uid,
     (lang, p) => digestText(p, Math.floor((now - ((p && p.lastSeen) || now)) / DAY), lang),
     { now, force: true },
   )
-  return { ok: sent, reason: sent ? null : 'не отправлено (нет профиля / pushOff / заблокирован)' }
+  return { ok: r.sent, reason: r.sent ? null : 'не отправлено (' + r.reason + ' — нет профиля / pushOff / заблокировал бота)' }
 }
 
 // ---------- «друг в бою» (соц-хук из startRoom) ----------
@@ -180,7 +193,7 @@ export async function notifyFriendsInBattle(player) {
     seen.add(fuid)
     const fp = await loadProfile(fuid)
     if (!friendOk(fp, now)) continue // только реальные недавно-активные (ферма отсеивается)
-    if (await sendPush(fuid, (lang) => t('friendInBattle', lang, { name: me.name || t('defaultName', lang) }), { now })) pinged++
+    if ((await sendPush(fuid, (lang) => t('friendInBattle', lang, { name: me.name || t('defaultName', lang) }), { now })).sent) pinged++
   }
 }
 

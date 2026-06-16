@@ -279,7 +279,10 @@ onMounted(() => {
       {{ toast.text }}
     </div>
 
-    <!-- окно-награда: что именно выпало из ящика -->
+    <!-- окно-награда: что именно выпало из ящика. Teleport в body — иначе в мобильном
+         Telegram-WebView position:fixed внутри #app (relative+overflow) срывается и
+         модалка не видна (на десктопе работала, на телефоне — нет) -->
+    <Teleport to="body">
     <transition name="pz-fade">
       <div v-if="reveal" class="reveal-overlay" @click.self="reveal = null">
         <div class="reveal-card pz-plate pz-brackets" style="--bk: var(--amber)">
@@ -306,6 +309,7 @@ onMounted(() => {
         </div>
       </div>
     </transition>
+    </Teleport>
 
     <BottomNav screen="shop" @go="emit('go', $event)" />
   </div>
@@ -315,7 +319,7 @@ onMounted(() => {
 .reveal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;

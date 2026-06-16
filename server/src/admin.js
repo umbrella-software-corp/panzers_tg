@@ -173,7 +173,11 @@ async function pollDigest() {
       $('digestOut').innerHTML = '<span class="muted">рассылка идёт: <b style="color:var(--ink)">' + p.sent + '</b> / ' + p.eligible + ' …</span>'
       setTimeout(pollDigest, 1500)
     } else {
-      $('digestOut').innerHTML = '<span class="ok">✓ разослано: <b>' + p.sent + '</b> из ' + p.eligible + '</span>'
+      const extra = []
+      if (p.cooldown) extra.push(p.cooldown + ' уже получали за сутки (кулдаун)')
+      if (p.blocked) extra.push(p.blocked + ' отписка/бот заблокирован')
+      const note = extra.length ? ' <span class="muted">(' + extra.join(', ') + ')</span>' : ''
+      $('digestOut').innerHTML = '<span class="ok">✓ отправлено: <b>' + p.sent + '</b> из ' + p.eligible + '</span>' + note
     }
   } catch (e) { $('digestOut').innerHTML = '<span class="err">статус: ' + esc(e.message) + '</span>' }
 }

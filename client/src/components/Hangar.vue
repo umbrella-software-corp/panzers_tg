@@ -3,7 +3,7 @@
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { apiOnline } from '../api.js'
-import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats } from '../store.js'
+import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
 import { haptic, openSupport } from '../tg.js'
@@ -17,10 +17,23 @@ import StatRow from './ui/StatRow.vue'
 import PzIcon from './ui/PzIcon.vue'
 import SquadSheet from './SquadSheet.vue'
 import TasksSheet from './TasksSheet.vue'
+import ChannelSheet from './ChannelSheet.vue'
 
 const emit = defineEmits(['play', 'go'])
 const squadOpen = ref(false)
 const tasksOpen = ref(false)
+const channelOpen = ref(false)
+
+// промо «подпишись на канал → бонус» показываем, только если фича включена на сервере
+// (задан CHANNEL_ID) и бонус ещё не забран; новичкам до первого боя не мешаем.
+const channelOffer = computed(
+  () => serverConfig.channel.on && !profile.channelBonusClaimed && !firstSession.value,
+)
+function openChannelSheet() {
+  track('channel_offer_opened', { from_screen: 'hangar' })
+  haptic('light')
+  channelOpen.value = true
+}
 
 // живой счётчик «N в сети» на главной — опрос раз в 30с
 const online = ref(null)
@@ -340,6 +353,19 @@ onMounted(() => {
       </button>
     </div>
 
+    <!-- бонус за подписку на канал (набор тестеров) -->
+    <button v-if="channelOffer" class="chbanner" @click="openChannelSheet">
+      <span class="chb-icon">📣</span>
+      <span class="chb-text">
+        <span class="chb-title">{{ t('channel.banner') }}</span>
+        <span class="chb-reward">
+          <PzIcon name="coin" :size="12" /> +{{ serverConfig.channel.credits }}
+          <PzIcon name="token" :size="12" /> +{{ serverConfig.channel.tokens }}
+        </span>
+      </span>
+      <span class="chb-cta">{{ t('channel.bannerCta') }}</span>
+    </button>
+
     <!-- CTA -->
     <div style="padding: 8px 14px 4px; flex-shrink: 0; display: flex; gap: 8px">
       <button v-if="!firstSession" class="pz-btn2 squad-btn tasks-btn" @click="openTasksSheet">
@@ -373,6 +399,7 @@ onMounted(() => {
 
     <SquadSheet v-if="squadOpen" @close="squadOpen = false" />
     <TasksSheet v-if="tasksOpen" @close="tasksOpen = false" />
+    <ChannelSheet v-if="channelOpen" @close="channelOpen = false" />
   </div>
 </template>
 
@@ -721,5 +748,63 @@ onMounted(() => {
 .squad-btn .dots .slot.filled {
   border: 1.5px solid var(--blue);
   background: rgba(77, 163, 255, 0.2);
+}
+/* промо-баннер «подпишись на канал → бонус» */
+.chbanner {
+  margin: 6px 14px 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(255, 193, 7, 0.16), rgba(255, 193, 7, 0.05));
+  cursor: pointer;
+  animation: chb-pulse 2.4s ease-in-out infinite;
+}
+@keyframes chb-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px 0 rgba(255, 193, 7, 0.35);
+  }
+}
+.chb-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.chb-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.chb-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.chb-reward {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--amber);
+}
+.chb-cta {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--bg, #0b0d08);
+  background: var(--amber);
+  padding: 5px 12px;
+  border-radius: 7px;
 }
 </style>
