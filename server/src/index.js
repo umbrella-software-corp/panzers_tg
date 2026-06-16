@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle, sendTestDigest } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest } from './notifications.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { adminPage } from './admin.js'
@@ -68,6 +68,13 @@ async function handleAdmin(req, res) {
     const digits = String(uid || '').replace(/[^0-9]/g, '')
     if (!digits) return json(res, 400, { error: 'нет uid' })
     return json(res, 200, await sendTestDigest('tg_' + digits))
+  }
+  if (req.url === '/api/admin/digest' && req.method === 'POST') {
+    const { dry } = await readBody(req)
+    if (dry) return json(res, 200, await runDailyDigest(Date.now(), { dry: true })) // прикидка охвата, без отправки
+    // реальная рассылка идёт минутами (по ~70мс на адресата) — пускаем в фоне, отвечаем сразу
+    runDailyDigest(Date.now()).catch((e) => console.error('[push] ручная рассылка:', e.message))
+    return json(res, 200, { started: true })
   }
   if (req.url === '/api/admin/stats' && req.method === 'GET') {
     const payments = await listPayments()

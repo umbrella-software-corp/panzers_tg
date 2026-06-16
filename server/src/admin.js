@@ -65,6 +65,11 @@ export const adminPage = () => `<!doctype html>
     <button style="width:auto; padding:9px 16px" onclick="testPush()">Отправить тест-пуш</button>
     <span id="pushOut" class="muted" style="font-size:12px"></span>
   </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px">
+    <button style="width:auto; padding:9px 16px" onclick="digestDry()">Прикинуть охват дайджеста</button>
+    <button style="width:auto; padding:9px 16px; background:var(--red); color:#fff" onclick="digestSend()">⚠ Разослать дайджест ВСЕМ сейчас</button>
+    <span id="digestOut" class="muted" style="font-size:12px"></span>
+  </div>
   <h2>Источники трафика</h2><div id="sources"></div>
   <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
   <h2>Турниры</h2><div id="tournaments"></div>
@@ -133,6 +138,29 @@ async function testPush() {
   } catch (e) { $('pushOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
 }
 window.testPush = testPush
+
+// прикинуть охват дайджеста (без отправки)
+async function digestDry() {
+  $('digestOut').textContent = '…'
+  try {
+    const r = await fetch('/api/admin/digest', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ dry: true }) })
+    const d = await r.json()
+    $('digestOut').innerHTML = '<span class="muted">подходит под рассылку: <b style="color:var(--ink)">' + d.eligible + '</b> из ' + d.total + ' профилей (реальные игроки, не активные сегодня). Кому фактически уйдёт — минус кулдаун 1/сутки и отписки.</span>'
+  } catch (e) { $('digestOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
+}
+window.digestDry = digestDry
+
+// разослать дайджест ВСЕМ подходящим прямо сейчас (реальные сообщения в Telegram)
+async function digestSend() {
+  if (!confirm('Разослать возврат-пуш ВСЕМ подходящим игрокам ПРЯМО СЕЙЧАС?\\n\\nЭто реальные сообщения в Telegram. Кому пуш уже уходил сегодня — кулдаун пропустит (повторно не заспамит).')) return
+  $('digestOut').textContent = 'запускаю рассылку…'
+  try {
+    const r = await fetch('/api/admin/digest', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ dry: false }) })
+    const d = await r.json()
+    $('digestOut').innerHTML = d.started ? '<span class="ok">✓ рассылка запущена — идёт в фоне (~14 сообщений/с). Прогресс смотри в логах сервера.</span>' : '<span class="err">не запустилось</span>'
+  } catch (e) { $('digestOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
+}
+window.digestSend = digestSend
 
 async function refresh() {
   const s = await api('/api/admin/stats')
