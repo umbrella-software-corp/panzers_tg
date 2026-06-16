@@ -2,14 +2,13 @@
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref, onMounted } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank, grantRandomCamo } from '../store.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 // `t` алиасим в `tr`: в шаблоне/скрипте уже есть локальные `t` (v-for="t in
 // PREMIUM_TANKS", premStats(t), buyPremTank(t)) — танк, не переводчик.
 import { t as tr, fmtNum } from '../i18n.js'
 import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
-import { camoCss } from '../game/camo.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
 import StatRow from './ui/StatRow.vue'
@@ -56,20 +55,26 @@ function buyCrate(c) {
     return
   }
   addRewards(c.gain, 0)
-  // камуфляжи теперь бесплатные и на каждый танк (в ангаре) — ящик даёт
-  // кредиты + шанс на бонус жетонов
+  // ящик: кредиты + (по шансу drop) случайный ЗАПЕРТЫЙ камуфляж на одном из твоих
+  // танков. Все камо уже открыты → компенсируем жетонами (как и обещает локаль
+  // rewardTokens «…камуфляжи собраны»). Генеральский (drop:1) даёт камо гарантированно.
+  let camo = null
   let tokens = 0
   if (Math.random() < c.drop) {
-    tokens = c.bonus || 3
-    addRewards(0, tokens)
+    camo = grantRandomCamo()
+    if (!camo) {
+      tokens = c.bonus || 3
+      addRewards(0, tokens)
+    }
   }
   haptic('success') // вскрытие ящика — приятная отдача
   track('crate_opened', {
     crate_id: c.id,
     credits: c.gain,
+    camo: camo ? `${camo.tankId}_${camo.camoId}` : null,
     tokens_bonus: tokens,
   })
-  reveal.value = { name: tr('shop.' + c.nameKey), credits: c.gain, skin: null, tokens }
+  reveal.value = { name: tr('shop.' + c.nameKey), credits: c.gain, camo, tokens }
 }
 // паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
 // Без BOT_TOKEN сервер начисляет сразу (dev-режим).
@@ -294,9 +299,9 @@ onMounted(() => {
               <span class="pz-display" style="font-size: 18px">+{{ fmt(reveal.credits) }}</span>
               <span style="color: var(--ink-dim); font-size: 12px">{{ tr('shop.rewardCredits') }}</span>
             </div>
-            <div v-if="reveal.skin" class="reveal-item">
-              <span class="reveal-swatch" :style="{ background: camoCss(reveal.skin) }"></span>
-              <span class="pz-display" style="font-size: 15px; flex: 1">{{ tr('shop.rewardCamo', { name: reveal.skin.name }) }}</span>
+            <div v-if="reveal.camo" class="reveal-item">
+              <TankImg :tank-id="reveal.camo.tankId" :camo="reveal.camo.camoId" :size="40" />
+              <span class="pz-display" style="font-size: 14px; flex: 1; line-height: 1.25">{{ tr('shop.rewardCamo', { name: reveal.camo.name }) }}<br><span style="color: var(--ink-dim); font-size: 11px">{{ reveal.camo.tankName }}</span></span>
               <span class="pz-pixel" style="font-size: 7px; color: var(--green)">{{ tr('shop.rewardNew') }}</span>
             </div>
             <div v-if="reveal.tokens" class="reveal-item">

@@ -125,6 +125,17 @@ function connectParams() {
     },
     onStart: (msg) => {
       phase.value = 'go' // боты добиваются автоматически через teamSlots (фаза не search)
+      // ростер боя с сервера → предбоевой список бойцов = ровно те ники, что будут в
+      // бою (раньше пустые слоты добивались случайными MM_FILLERS и не совпадали).
+      if (Array.isArray(msg.roster)) {
+        const mine = [], foes = []
+        for (const r of msg.roster) {
+          if (r.id === msg.youUnit) continue // свой слот рисуется отдельно (kind: 'you')
+          ;(r.team === msg.youTeam ? mine : foes).push({ name: r.name, kind: 'player' })
+        }
+        myTeam.value = mine
+        foeTeam.value = foes
+      }
       // НЕ входим в бой, пока не пришёл первый снапшот мира. Не пришёл за дедлайн —
       // не офлайн, а новая попытка подключения (онлайн-онли).
       const deadline = Date.now() + 4000

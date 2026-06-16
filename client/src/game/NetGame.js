@@ -48,7 +48,8 @@ export class NetGame {
     this.setClass(DEFAULT_CLASS)
     this.playerTankId = null
     this.playerTint = 0xffffff
-    this.playerSkin = null // id узорного камуфляжа своей машины
+    this.playerSkin = null // id узорного камуфляжа своей машины (легаси)
+    this.playerCamo = null // per-tank камуфляж своей машины (перекрашенный спрайт /sprites/camo/<tank>_<camo>.png)
     this.ammoMult = 1 // голды в PvP нет — поле для совместимости с Battle
 
     // снапшоты сервера
@@ -197,7 +198,7 @@ export class NetGame {
       if (!this._snapBuf) this._snapBuf = []
       this._snapBuf.push({ t: msg.t || 0, units: new Map(msg.units.map((u) => [u.id, { x: u.x, y: u.y, hull: u.hull }])) })
       if (this._snapBuf.length > 16) this._snapBuf.shift()
-      for (const u of msg.units) this._wantTex(u.tankId, u.skin)
+      for (const u of msg.units) this._wantTex(u.tankId, u.skin, u.id === this.youUnit ? this.playerCamo : u.camo)
       for (const ev of msg.events || []) this._onEvent(ev)
       if (msg.matchOver && !this.matchOver) this._finish(msg.winner)
       // позиции танков интерполируются из this.cur каждый КАДР (плавно), а
@@ -467,12 +468,12 @@ export class NetGame {
       }
     }
     // кусты/камни/горы — AI-спрайты с вырезанным фоном (прозрачная альфа)
-    if (this.playerTankId) this._wantTex(this.playerTankId, this.playerSkin)
+    if (this.playerTankId) this._wantTex(this.playerTankId, this.playerSkin, this.playerCamo)
     // снапшоты, пришедшие ДО mount (гонка матчмейкинг→бой), просили текстуры,
     // когда this.tex ещё не было → их пропустили. Теперь tex готов — печём
     // реальные машины ВСЕХ уже видимых юнитов (свои/тиммейты/засвеченные враги),
     // иначе тиммейт ждал бы СЛЕДУЮЩЕГО снапшота и до него рисовался фолбэком.
-    if (this.cur) for (const u of this.cur.units) this._wantTex(u.tankId, u.skin)
+    if (this.cur) for (const u of this.cur.units) this._wantTex(u.tankId, u.skin, u.id === this.youUnit ? this.playerCamo : u.camo)
 
     this.world = new Container()
     this.bg = new Graphics()
@@ -573,13 +574,15 @@ export class NetGame {
     return Texture.from(this._chromaCanvas(tex))
   }
 
-  // ключ текстуры машины: с узорным камуфляжем — отдельная запечённая
-  _tankTexKey(tankId, skinId) {
+  // ключ текстуры машины: per-tank камуфляж (перекрашенный спрайт) > узорный
+  // камуфляж (запечённый) > заводская
+  _tankTexKey(tankId, skinId, camoId) {
+    if (camoId) return `unit_${tankId}~${camoId}`
     return camoOf(skinId) ? `unit_${tankId}:${skinId}` : `unit_${tankId}`
   }
 
-  // ленивые текстуры реальных машин игроков (+вариант с узором камуфляжа)
-  _wantTex(tankId, skinId = null) {
+  // ленивые текстуры реальных машин игроков (+вариант с узором камуфляжа / перекраской)
+  _wantTex(tankId, skinId = null, camoId = null) {
     if (!tankId) return
     // this.tex появляется только в mount(); если снапшот пришёл РАНЬШЕ (гонка
     // матчмейкинг→бой: NetGame создаётся, _onMessage(lastState) бежит в
@@ -589,9 +592,22 @@ export class NetGame {
     // класса. Свой танк спасал отдельный _wantTex в mount с другим ключом —
     // тиммейту такого спасения нет. Пускаем печь только когда tex готов.
     if (!this.tex) return
-    const key = this._tankTexKey(tankId, skinId)
+    const key = this._tankTexKey(tankId, skinId, camoId)
     if (this._wantedTex.has(key)) return
     this._wantedTex.add(key)
+    if (camoId) {
+      // перекрашенный спрайт камуфляжа (узор уже впечён) — грузим как есть, на той же
+      // магенте → тот же chroma-key. Нет файла для этого танка+камо → откат к заводскому
+      // под ТЕМ ЖЕ ключом, чтобы танк всё равно отрисовался (а не остался фолбэком класса).
+      Assets.load(`/sprites/camo/${tankId}_${camoId}.png`)
+        .then((t) => { if (this.tex) this.tex[key] = this._chromaKey(t) })
+        .catch(() =>
+          Assets.load(`/sprites/tanks/${tankId}.png`)
+            .then((t) => { if (this.tex) this.tex[key] = this._chromaKey(t) })
+            .catch(() => {}),
+        )
+      return
+    }
     Assets.load(`/sprites/tanks/${tankId}.png`)
       .then((t) => {
         if (!this.tex) return
@@ -1187,7 +1203,8 @@ export class NetGame {
   _unitSprite(u, isSelf, pal) {
     if (!this.unitSprites || !this.tex) return null
     const skinId = isSelf ? this.playerSkin : u.skin
-    const wantKey = u.tankId ? this._tankTexKey(u.tankId, skinId) : null
+    const camoId = isSelf ? this.playerCamo : u.camo || null
+    const wantKey = u.tankId ? this._tankTexKey(u.tankId, skinId, camoId) : null
     const want = wantKey && this.tex[wantKey]
     const size = isSelf ? 96 : u.cls === 'heavy' ? 92 : u.cls === 'light' ? 76 : 84
     let spr = this.unitSprites.get(u.id)

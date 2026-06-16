@@ -1018,6 +1018,9 @@ function startRoom(room) {
   // если tutorial-done так и не пришёл (стух/закрыл вкладку)
   if (room.training) room.guidedDeadline = Date.now() + 90000
 
+  // ростер боя для экрана «БОЙ НАЙДЕН»: имена+команды ВСЕХ юнитов, чтобы предбоевой
+  // список совпал с ником в самом бою. БЕЗ флага human/bot — это тэлл (боты неотличимы).
+  const roster = room.sim.units.map((u) => ({ id: u.id, name: u.name, team: u.team }))
   // ключи реконнекта: по unitId, переживают отвал сокета (для возврата в бой)
   room.rejoinKeys = new Map()
   for (const h of room.humans) {
@@ -1038,6 +1041,7 @@ function startRoom(room) {
       tickHz: SNAP_HZ, // частота снапшотов (для интерполяции у клиента)
       room: room.id, // для реконнекта: куда возвращаться, если сокет умрёт
       rkey, // токен возврата в этот бой за свой юнит
+      roster, // полный список бойцов (имя+команда) — для совпадения предбоевого списка с боем
     })
   }
   // серверно-авторитетный старт боя (backstop к клиентскому battle_started): только
