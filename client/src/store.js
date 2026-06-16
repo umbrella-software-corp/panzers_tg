@@ -1,8 +1,8 @@
 // Профиль игрока (модель дизайн-прототипа): нация, валюты (кредиты+жетоны),
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
-import { reactive, watch } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiConfig, apiGrantsApply } from './api.js'
+import { reactive, watch, ref } from 'vue'
+import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
@@ -188,12 +188,34 @@ watch(
   { deep: true },
 )
 
+// КРИТИЧНО против потери прогресса: при сворачивании/закрытии мини-аппа дебаунс-сейв
+// (1.5с) Telegram убивает вместе с вебвью — последние правки (прокачка ветки, трата
+// кредитов) не доезжают до сервера, и на реоткрытии syncProfile затирает свежий
+// localStorage СТАРЫМ серверным профилем → «прогресс пропал». Поэтому на hidden/pagehide
+// флашим немедленно с keepalive (переживает выгрузку).
+export function flushProfile() {
+  clearTimeout(pushTimer)
+  const snap = JSON.parse(JSON.stringify(profile))
+  try { localStorage.setItem(KEY, JSON.stringify(snap)) } catch { /* приватный режим */ }
+  apiSaveProfileFlush(snap)
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushProfile()
+  })
+  window.addEventListener('pagehide', flushProfile)
+}
+
 // загрузка с сервера при старте: серверный профиль главнее; нет его —
 // мигрируем туда локальный (первый вход со старым прогрессом)
 // забрать админ-выдачи из очереди pendingGrants. Начисляет их СЕРВЕР атомарно
 // (/api/grants-apply: кредиты/жетоны/танки + очистка очереди в одном сейве), мы лишь
 // принимаем авторитетный результат. Так нет ни двойного начисления, ни потери при
 // обрыве. Премиум сюда не входит — он приходит готовым в premiumUntil.
+// окно «🎁 Подарок от администрации» — показываем в ангаре, когда выдача применилась
+// (App.vue следит за grantReveal). Для веб-юзеров, кому бот не может написать, это
+// единственный способ узнать о подарке.
+export const grantReveal = ref(null)
 async function applyPendingGrants() {
   const pend = Array.isArray(profile.pendingGrants) ? profile.pendingGrants : []
   if (!pend.length) return
@@ -204,6 +226,8 @@ async function applyPendingGrants() {
       profile.tokens = r.tokens || 0
       if (Array.isArray(r.owned)) profile.owned = r.owned
       profile.pendingGrants = Array.isArray(r.pendingGrants) ? r.pendingGrants : []
+      const g = r.got
+      if (r.applied && g && (g.credits || g.tokens || (g.tanks && g.tanks.length))) grantReveal.value = g
     }
   } catch {
     /* не вышло — очередь на сервере цела, заберём на следующем синке */

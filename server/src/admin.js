@@ -192,7 +192,8 @@ async function doGrant() {
       if (q.tokens) queued.push('+' + q.tokens + ' 💎')
       if (q.tanks && q.tanks.length) queued.push('🛡️ ' + q.tanks.map((t) => TANK_NAME[t] || t).join(', '))
       const tail = queued.length ? (queued.join(', ') + ' — дойдёт при заходе игрока') : ''
-      $('grOut').innerHTML = '<span class="ok">✓ ' + esc([now, tail].filter(Boolean).join(' · ')) + (d.pending ? ' (в очереди: ' + d.pending + ')' : '') + '</span>'
+      const msg = d.notified === true ? ' · 📩 уведомлён' : d.notified ? ' · ✉️ сообщение не дошло (' + esc(d.notified) + ')' : ''
+      $('grOut').innerHTML = '<span class="ok">✓ ' + esc([now, tail].filter(Boolean).join(' · ')) + (d.pending ? ' (в очереди: ' + d.pending + ')' : '') + '</span>' + msg
       $('grCr').value = ''; $('grTk').value = ''; $('grPr').value = ''; $('grTank').value = ''
     } else $('grOut').innerHTML = '<span class="err">' + esc(d.error || '?') + '</span>'
   } catch (e) { $('grOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }

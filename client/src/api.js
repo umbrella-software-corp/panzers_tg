@@ -53,6 +53,12 @@ export function startPresence() {
   beat()
 }
 export const apiSaveProfile = (profile) => call('/api/profile', { method: 'POST', body: JSON.stringify({ profile }) })
+// сейв «на вылет»: keepalive переживает выгрузку вебвью (как sendBeacon, но с нашими
+// auth-заголовками x-init-data). Шлём при сворачивании/закрытии мини-аппа, чтобы
+// дебаунс-сейв (1.5с) не потерялся — иначе на реоткрытии syncProfile затирал свежий
+// прогресс (дерево/кредиты) СТАРЫМ серверным состоянием.
+export const apiSaveProfileFlush = (profile) =>
+  call('/api/profile', { method: 'POST', body: JSON.stringify({ profile }), keepalive: true }).catch(() => {})
 export const apiBuy = (productId, extra = {}) => call('/api/invoice', { method: 'POST', body: JSON.stringify({ productId, ...extra }) })
 // смена позывного за звёзды: имя едет в payload инвойса, сервер ставит его после оплаты
 export const apiRename = (name) => apiBuy('rename', { name })

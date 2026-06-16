@@ -99,12 +99,29 @@ async function handleAdmin(req, res) {
     }
     await saveProfile(key, p)
     logEvent(key, 'admin_grant', { credits: c, tokens: t, premiumDays: d, tanks: tk })
+    // уведомляем игрока: «подарок от администрации» (best-effort — дойдёт, если он
+    // запускал бота / дал write-access). Награда всё равно начислится на заходе.
+    let notified = null
+    if (c || t || d || tk.length) {
+      const en = p.lang === 'en'
+      const lines = []
+      if (c) lines.push('+' + c.toLocaleString(en ? 'en-US' : 'ru-RU') + (en ? ' credits 🪙' : ' кредитов 🪙'))
+      if (t) lines.push('+' + t + (en ? ' tokens 💎' : ' жетонов 💎'))
+      if (d) lines.push('+' + d + (en ? ' days premium ⭐' : ' дн. премиума ⭐'))
+      for (const tankId of tk) lines.push((en ? 'tank ' : 'танк ') + tankId.toUpperCase())
+      const giftText = en
+        ? '🎁 A gift from the Panzers team!\n\n' + lines.join('\n') + '\n\nOpen the game — your reward is waiting in the hangar.'
+        : '🎁 Подарок от администрации Panzers!\n\n' + lines.join('\n') + '\n\nЗагляни в игру — награда уже ждёт в ангаре.'
+      const out = await sendAdminMessage(key, giftText)
+      notified = out && out.ok ? true : out && out.reason ? out.reason : false
+    }
     return json(res, 200, {
       ok: true,
       premiumApplied: d,
       premiumUntil: p.premiumUntil || 0,
       queued: { credits: c, tokens: t, tanks: tk },
       pending: Array.isArray(p.pendingGrants) ? p.pendingGrants.length : 0,
+      notified, // true | reason-строка | false — дошло ли «подарок от администрации»
     })
   }
   if (req.url === '/api/admin/message' && req.method === 'POST') {
@@ -456,19 +473,20 @@ async function handleApi(req, res) {
       return json(res, 200, { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, owned: (p && p.owned) || [], pendingGrants: [] })
     }
     let n = 0
+    const got = { credits: 0, tokens: 0, tanks: [] } // сумма выданного — для in-app «подарок от администрации»
     for (const g of p.pendingGrants) {
       if (!g) continue
-      if (g.credits) p.credits = (p.credits || 0) + (+g.credits || 0)
-      if (g.tokens) p.tokens = (p.tokens || 0) + (+g.tokens || 0)
+      if (g.credits) { p.credits = (p.credits || 0) + (+g.credits || 0); got.credits += +g.credits || 0 }
+      if (g.tokens) { p.tokens = (p.tokens || 0) + (+g.tokens || 0); got.tokens += +g.tokens || 0 }
       if (Array.isArray(g.tanks)) {
         if (!Array.isArray(p.owned)) p.owned = []
-        for (const tk of g.tanks) if (tk && GRANT_TANKS.has(tk) && !p.owned.includes(tk)) p.owned.push(tk)
+        for (const tk of g.tanks) if (tk && GRANT_TANKS.has(tk) && !p.owned.includes(tk)) { p.owned.push(tk); got.tanks.push(tk) }
       }
       n++
     }
     p.pendingGrants = []
     await saveProfile(user.uid, p)
-    return json(res, 200, { ok: true, applied: n, credits: p.credits || 0, tokens: p.tokens || 0, owned: p.owned || [], pendingGrants: [] })
+    return json(res, 200, { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, owned: p.owned || [], pendingGrants: [] })
   }
   if (req.url === '/api/referred' && req.method === 'POST') {
     const { ref } = await readBody(req)

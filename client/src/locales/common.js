@@ -33,6 +33,10 @@ export default {
     premiumShort: 'PREM',
     online: 'ONLINE',
     onlineNow: ({ n }) => `${n} online`,
+    // подарок от администрации (App.vue, когда применилась админ-выдача)
+    adminGiftTitle: 'Gift from the team!',
+    adminGiftTank: 'Tank',
+    adminGiftClaim: 'Awesome, thanks!',
     // стартовый сплэш (App.vue)
     bootSub: 'preparing the garage…',
     bootFoot: 'early access · build in active development',
@@ -70,6 +74,9 @@ export default {
     premiumShort: 'ПРЕМ',
     online: 'ОНЛАЙН',
     onlineNow: ({ n }) => `${n} в сети`,
+    adminGiftTitle: 'Подарок от администрации!',
+    adminGiftTank: 'Танк',
+    adminGiftClaim: 'Круто, спасибо!',
     bootSub: 'готовим ангар…',
     bootFoot: 'ранний доступ · билд в активной разработке',
     creditsN: ({ n }) => {

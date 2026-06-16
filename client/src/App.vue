@@ -12,7 +12,7 @@ import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
 import Onboarding from './components/Onboarding.vue'
 import SecondTankChoice from './components/SecondTankChoice.vue'
-import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank } from './store.js'
+import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal } from './store.js'
 import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
@@ -324,6 +324,25 @@ function rematch(reward) {
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" />
 
+  <!-- «Подарок от администрации» — когда применилась админ-выдача (pendingGrants).
+       Для веб-юзеров, кому бот не может написать, это единственный способ узнать. -->
+  <Teleport to="body">
+    <transition name="boot-fade">
+      <div v-if="grantReveal && screen !== 'battle'" class="gift-ovl" @click.self="grantReveal = null">
+        <div class="gift-card pz-plate">
+          <div class="gift-emo">🎁</div>
+          <div class="pz-display gift-ttl">{{ t('common.adminGiftTitle') }}</div>
+          <div class="gift-rows">
+            <div v-if="grantReveal.credits" class="pz-display gift-row">+{{ grantReveal.credits.toLocaleString('ru-RU') }} 🪙</div>
+            <div v-if="grantReveal.tokens" class="pz-display gift-row">+{{ grantReveal.tokens }} 💎</div>
+            <div v-for="tk in grantReveal.tanks || []" :key="tk" class="pz-display gift-row" style="color: var(--green)">{{ t('common.adminGiftTank') }} {{ tk.toUpperCase() }}</div>
+          </div>
+          <button class="pz-cta" style="width: 100%" @click="grantReveal = null">{{ t('common.adminGiftClaim') }}</button>
+        </div>
+      </div>
+    </transition>
+  </Teleport>
+
   <!-- подарок «выбери второй танк» (тир-2) — один раз после первого боя, перед туром -->
   <SecondTankChoice v-if="showTankChoice" @pick="pickSecondTank" />
 
@@ -344,6 +363,45 @@ function rematch(reward) {
 </template>
 
 <style scoped>
+.gift-ovl {
+  position: fixed;
+  inset: 0;
+  z-index: 300; /* выше всего: дейлик/туториал/нав */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.66);
+}
+.gift-card {
+  width: 100%;
+  max-width: 300px;
+  text-align: center;
+  padding: 24px 22px;
+  border: 1px solid var(--amber);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 14px 50px rgba(0, 0, 0, 0.55);
+}
+.gift-emo {
+  font-size: 46px;
+  line-height: 1;
+}
+.gift-ttl {
+  font-size: 17px;
+  color: var(--amber);
+  margin-top: 10px;
+  letter-spacing: 0.04em;
+}
+.gift-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+.gift-row {
+  font-size: 19px;
+}
 .bootsplash {
   position: fixed;
   inset: 0;
