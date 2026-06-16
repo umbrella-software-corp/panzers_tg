@@ -78,6 +78,9 @@ async function handleAdmin(req, res) {
     // activeSet (у бойца WS открыт), поэтому idle = active − battle ровно.
     const battleUids = new Set()
     for (const r of rooms.values()) if (r.started) for (const h of r.humans) if (h.uid) battleUids.add(h.uid)
+    // страховка: кого сервер ВИДИТ в бою прямо сейчас — durable «дошёл до боя»
+    // (на случай матчей, начавшихся до выката reachedBattle; idempotent + reachedMem)
+    for (const uid of battleUids) markReachedBattle(uid)
     const activeSet = new Set()
     for (const c of wss.clients) if (c.readyState === 1 && c.uid) activeSet.add(c.uid)
     for (const p of profs) if (p.lastSeen && now - p.lastSeen < 150000) activeSet.add(p.uid)
