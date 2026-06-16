@@ -158,6 +158,27 @@ export async function saveProfile(uid, profile) {
   return job
 }
 
+// серверно-авторитетный «дошёл до боя»: помечаем профиль вошедшего в бой (по uid),
+// чтобы воронка не зависела от того, до-сохранил ли клиент stats.battles (а он часто
+// не доезжает → реально игравшие падали в «завис без боя»). reachedMem гасит повторные
+// записи. Нет профиля ещё — НЕ кэшируем в reachedMem, пометим при следующем бое.
+const reachedMem = new Set()
+export async function markReachedBattle(uid) {
+  if (!uid || reachedMem.has(uid)) return
+  try {
+    const p = await loadProfile(uid)
+    if (!p) return
+    reachedMem.add(uid)
+    if (p.reachedBattle) return
+    p.reachedBattle = true
+    if (!p.firstBattleAt) p.firstBattleAt = Date.now()
+    profilesCache = null // сводка для админки обновится сразу, не через 5с
+    await saveProfile(uid, p)
+  } catch {
+    /* профиль битый/гонка — не критично, пометим в следующий бой */
+  }
+}
+
 // журнал платежей: и идемпотентность по charge id, и записи для админки.
 // Совместимость: старый формат — массив строк charge id, новый — объекты
 // { charge, uid, productId, stars, ts }.
@@ -296,6 +317,7 @@ async function listProfilesUncached() {
         updatedAt: p._updatedAt || 0,
         src: p.src || null, // метка источника трафика (атрибуция)
         referredBy: p.referredBy || null, // кто привёл (tg_<id> реферера) — для воронки по реф-ссылке
+        reachedBattle: !!p.reachedBattle, // серверный факт входа в бой (надёжнее клиентского battles)
         firstSeen: p.firstSeen || p._updatedAt || 0,
         lastSeen: p.lastSeen || p._updatedAt || 0,
       })

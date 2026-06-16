@@ -217,7 +217,7 @@ async function refresh() {
 // статус — та же логика, что в сводке: бой по клиентскому stats.battles, поэтому
 // «завис без боя» = наиграл, но клиент не до-сохранил battles>0 (см. оговорку в чате).
 function bucketTag(p) {
-  if ((p.battles || 0) > 0) return '<span class="ok">дошёл до боя</span>'
+  if ((p.battles || 0) > 0 || p.reachedBattle) return '<span class="ok">дошёл до боя</span>'
   const d = (p.lastSeen || 0) - (p.firstSeen || 0)
   return d < 60000 ? '<span class="muted">исчез &lt;1мин</span>' : '<span class="warn">завис без боя</span>'
 }
@@ -226,7 +226,7 @@ function renderPlayers(title, list) {
   const onSet = DATA.online
   const now = DATA.now
   const isOnline = (p) => onSet.has(p.uid) || (p.lastSeen && now - p.lastSeen < 150000)
-  const rank = (p) => ((p.battles || 0) > 0 ? 1 : (p.lastSeen || 0) - (p.firstSeen || 0) < 60000 ? 2 : 0) // «завис» — наверх
+  const rank = (p) => ((p.battles || 0) > 0 || p.reachedBattle ? 1 : (p.lastSeen || 0) - (p.firstSeen || 0) < 60000 ? 2 : 0) // «завис» — наверх
   list = list.slice().sort((a, b) => rank(a) - rank(b) || (b.lastSeen || 0) - (a.lastSeen || 0))
   $('drillTitle').innerHTML = esc(title) + ' <span class="muted" style="font-size:13px">· ' + list.length + ' игроков</span>'
   $('drillBody').innerHTML = table(

@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap, softFactor } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { t as tr } from './i18n.js'
-import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag } from './db.js'
+import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
 import { startNotifications, notifyFriendsInBattle } from './notifications.js'
@@ -205,7 +205,7 @@ function trafficMetrics(profiles, now) {
     e.users++
     // та же воронка, что у рефереров: бой / зашёл-и-исчез(<1мин) / завис-без-боя / вернулись(2-й день+)
     const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
-    if (p.battles > 0) e.played++
+    if (p.battles > 0 || p.reachedBattle) e.played++
     else if (dwell < 60000) e.ghosts++
     else e.lingered++
     if (dwell > 20 * 3600000) e.returned++
@@ -234,7 +234,7 @@ function referrerMetrics(profiles, now) {
     e.came++
     const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
     // непересекающийся разбор: бой / открыл-и-исчез / полазил-без-боя = came
-    if (p.battles > 0) e.played++
+    if (p.battles > 0 || p.reachedBattle) e.played++
     else if (dwell < 60000) e.ghosts++ // открыл <1 мин, без боя — бот/фейк-клик
     else e.lingered++ // полазил ≥1 мин, но в бой так и не пошёл
     if (dwell > 20 * 3600000) e.returned++ // заходил на 2-й день+ (ретеншн; копится со временем)
@@ -312,6 +312,10 @@ async function handleApi(req, res) {
       // атрибуция трафика — серверные поля, клиент их не пишет. src ставится один
       // раз (на первом сейве нового игрока из start_param), firstSeen — тоже.
       src: prev.src || srcTag(user.startParam) || null,
+      // серверный факт входа в бой — ведёт сервер (markReachedBattle), клиент не пишет;
+      // сохраняем, чтобы клиентский сейв профиля его не затирал
+      reachedBattle: prev.reachedBattle || false,
+      firstBattleAt: prev.firstBattleAt || 0,
       firstSeen: prev.firstSeen || Date.now(),
       lastSeen: Date.now(),
       lang: user.lang || prev.lang || 'ru', // язык для серверных сообщений (пуши/оплата)
@@ -879,6 +883,7 @@ function startRoom(room) {
   // для игроков с известным tg-id — гостей в аналитику матчей не тащим
   for (const h of room.humans) {
     if (!h.uid) continue
+    markReachedBattle(h.uid) // серверный «дошёл до боя» (не зависит от клиентского stats.battles)
     trackServer(h.uid, 'server_match_started', {
       room_id: room.id,
       mode: room.mode,
