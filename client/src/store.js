@@ -166,6 +166,9 @@ if (typeof profile.trainingDone !== 'boolean') profile.trainingDone = (profile.s
 if (typeof profile.secondTankChosen !== 'boolean') profile.secondTankChosen = (profile.stats?.battles || 0) > 0
 // бонус за первый бой выдаём только новичку; у кого уже есть бои — считаем выданным
 if (typeof profile.firstBattleRewarded !== 'boolean') profile.firstBattleRewarded = (profile.stats?.battles || 0) > 0
+// разрешение боту на пуши (requestWriteAccess) спрашиваем ОДИН раз — иначе бот не
+// может писать вебапп-юзерам (Telegram: нельзя инициировать чат без /start)
+if (typeof profile.pushAsked !== 'boolean') profile.pushAsked = false
 
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()

@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled } from './notifications.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { channelConfig, claimChannelBonus } from './channel.js'
@@ -353,6 +353,12 @@ async function handleApi(req, res) {
   if (req.url === '/api/referred' && req.method === 'POST') {
     const { ref } = await readBody(req)
     return json(res, 200, await registerReferral(user, ref))
+  }
+  if (req.url === '/api/push-allow' && req.method === 'POST') {
+    // клиент вызвал requestWriteAccess и юзер РАЗРЕШИЛ боту писать → снимаем pushBlocked/pushOff,
+    // чтобы возврат-рассылка до него дошла (раньше вебапп-юзеры были недосягаемы для бота)
+    await setPushEnabled(user.uid, true)
+    return json(res, 200, { ok: true })
   }
   if (req.url === '/api/channel-bonus' && req.method === 'POST') {
     // разовый бонус за подписку на канал — проверка подписки + начисление на сервере

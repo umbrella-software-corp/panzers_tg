@@ -154,6 +154,22 @@ export function haptic(kind = 'light') {
   }
 }
 
+// Запросить у юзера разрешение боту слать ему сообщения (нативный попап Telegram).
+// КРИТИЧНО для пушей: бот НЕ может писать первым тем, кто открыл только Mini-App и
+// не запускал /start. requestWriteAccess даёт это право без /start. Резолвится
+// true, если разрешил. Вне Telegram / старый клиент — false.
+export function requestWriteAccess() {
+  return new Promise((resolve) => {
+    try {
+      const tg = window.Telegram && window.Telegram.WebApp
+      if (tg && typeof tg.requestWriteAccess === 'function') tg.requestWriteAccess((ok) => resolve(!!ok))
+      else resolve(false)
+    } catch {
+      resolve(false)
+    }
+  })
+}
+
 export function initTelegram() {
   const tg = window.Telegram && window.Telegram.WebApp
   const root = document.documentElement

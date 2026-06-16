@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, markRaw } from 'vue'
-import { setBackButton, startParam, tgUserId } from './tg.js'
-import { apiReferred } from './api.js'
+import { setBackButton, startParam, tgUserId, requestWriteAccess } from './tg.js'
+import { apiReferred, apiPushAllow } from './api.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
 import Crew from './components/Crew.vue'
@@ -104,6 +104,7 @@ onMounted(async () => {
   handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
   maybeShowDaily() // первую сессию (0 боёв) НЕ перехватываем — дейлик всплывёт после первого боя
   maybeStartTraining() // самый первый запуск → сразу тренировочный бой (мимо ангара)
+  maybeAskPush() // вовлечённому (battles>0) — разрешение боту на пуши; новичка спросим после первого боя
   // сплэш держим минимум ~750мс, чтобы не моргал на быстром старте
   setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - t0)))
 })
@@ -174,6 +175,25 @@ function maybeStartTraining() {
 function cancelMatchmaking() {
   training.value = false
   go('hangar')
+}
+
+// ОДИН раз спрашиваем у вовлечённого игрока разрешение боту на пуши (нативный попап
+// Telegram requestWriteAccess). Без него бот не может писать вебапп-юзерам — рассылка
+// возврата уходит «в 0». Разрешил → снимаем pushBlocked на сервере. Спрашиваем после
+// первого боя (battles>0), чтобы не в лоб на холодном старте.
+async function maybeAskPush() {
+  if (profile.pushAsked || (profile.stats?.battles || 0) < 1 || !tgUserId()) return
+  profile.pushAsked = true // спрашиваем единожды (персистится), даже если откажет — не нудим
+  track('push_access_requested', {})
+  const ok = await requestWriteAccess()
+  track('push_access_result', { granted: !!ok })
+  if (ok) {
+    try {
+      await apiPushAllow()
+    } catch {
+      /* офлайн — снимем pushBlocked при следующем заходе/пуше */
+    }
+  }
 }
 
 // кнопка «Назад» Telegram: на корне (ангар) и в бою — спрятана (там свои
@@ -270,6 +290,7 @@ function exitBattle(reward) {
   })
   screen.value = 'hangar'
   maybeShowDaily() // после первого боя (battles>0) дейлик всплывает здесь, а не на входе
+  maybeAskPush() // только что сыграл первый бой → просим разрешение на пуши (один раз)
 }
 function rematch(reward) {
   track('rematch_clicked', {
