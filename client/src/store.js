@@ -3,7 +3,7 @@
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch } from 'vue'
 import { apiLoadProfile, apiSaveProfile, apiConfig } from './api.js'
-import { tgUser } from './tg.js'
+import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
 // серверный конфиг (флаги админки: турниры вкл/выкл)
@@ -64,7 +64,19 @@ import {
   battleScore,
 } from './game/meta.js'
 
-const KEY = 'pz.state.v1'
+// ключ кеша — ПЕР-АККАУНТ (по tg-id): иначе на одном устройстве два Telegram-аккаунта
+// делят один localStorage, и второй акк подтягивает профиль первого («он уже был»,
+// первый заход/тренировка не срабатывают). Сервер всё равно авторитетен (syncProfile),
+// кеш — лишь для мгновенного старта. Гость/вне Telegram (нет id) → базовый ключ.
+const KEY = (() => {
+  let id = null
+  try {
+    id = tgUserId()
+  } catch {
+    /* нет Telegram — dev/браузер */
+  }
+  return 'pz.state.v1' + (id ? '.' + id : '')
+})()
 
 function load() {
   try {
@@ -186,6 +198,15 @@ export async function syncProfile() {
       if (localDaily && (localDaily.last || '') > ((profile.daily && profile.daily.last) || '')) profile.daily = localDaily
       // старые серверные профили без перков — дорастить форму
       if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {}
+      // Онбординг-флаги выводим из СЕРВЕРНЫХ battles, если сервер их не прислал (легаси-
+      // профиль). Иначе после пер-аккаунт ключа пустой локальный init дал бы false →
+      // существующему игроку (battles>0) всплыл бы «выбери 2-й танк» и повторный бонус
+      // за первый бой. Сервер прислал флаг — уважаем его как есть.
+      const b = (profile.stats && profile.stats.battles) || 0
+      if (!('onboarded' in rest)) profile.onboarded = b > 0
+      if (!('trainingDone' in rest)) profile.trainingDone = b > 0
+      if (!('secondTankChosen' in rest)) profile.secondTankChosen = b > 0
+      if (!('firstBattleRewarded' in rest)) profile.firstBattleRewarded = b > 0
     } else {
       await apiSaveProfile(JSON.parse(JSON.stringify(profile)))
     }
