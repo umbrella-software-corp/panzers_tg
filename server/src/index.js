@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress } from './notifications.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { adminPage } from './admin.js'
@@ -75,6 +75,9 @@ async function handleAdmin(req, res) {
     // реальная рассылка идёт минутами (по ~70мс на адресата) — пускаем в фоне, отвечаем сразу
     runDailyDigest(Date.now()).catch((e) => console.error('[push] ручная рассылка:', e.message))
     return json(res, 200, { started: true })
+  }
+  if (req.url === '/api/admin/digest-status' && req.method === 'GET') {
+    return json(res, 200, getDigestProgress()) // прогресс рассылки для живого индикатора в админке
   }
   if (req.url === '/api/admin/stats' && req.method === 'GET') {
     const payments = await listPayments()

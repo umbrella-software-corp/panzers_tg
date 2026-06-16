@@ -157,10 +157,26 @@ async function digestSend() {
   try {
     const r = await fetch('/api/admin/digest', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ dry: false }) })
     const d = await r.json()
-    $('digestOut').innerHTML = d.started ? '<span class="ok">✓ рассылка запущена — идёт в фоне (~14 сообщений/с). Прогресс смотри в логах сервера.</span>' : '<span class="err">не запустилось</span>'
+    if (!d.started) { $('digestOut').innerHTML = '<span class="err">не запустилось</span>'; return }
+    pollDigest() // живой прогресс прямо тут
   } catch (e) { $('digestOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
 }
 window.digestSend = digestSend
+
+// опрос прогресса рассылки → показываем «идёт X / N» и финал прямо в админке
+async function pollDigest() {
+  try {
+    const r = await fetch('/api/admin/digest-status', { headers: { 'x-admin-key': KEY() } })
+    const p = await r.json()
+    if (p.running) {
+      $('digestOut').innerHTML = '<span class="muted">рассылка идёт: <b style="color:var(--ink)">' + p.sent + '</b> / ' + p.eligible + ' …</span>'
+      setTimeout(pollDigest, 1500)
+    } else {
+      $('digestOut').innerHTML = '<span class="ok">✓ разослано: <b>' + p.sent + '</b> из ' + p.eligible + '</span>'
+    }
+  } catch (e) { $('digestOut').innerHTML = '<span class="err">статус: ' + esc(e.message) + '</span>' }
+}
+window.pollDigest = pollDigest
 
 async function refresh() {
   const s = await api('/api/admin/stats')

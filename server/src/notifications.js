@@ -106,23 +106,29 @@ async function sendPush(uid, body, { now = Date.now(), force = false } = {}) {
 }
 
 // ---------- дейли-рассылка (награда+задачи / винбэк) ----------
+// прогресс ручной рассылки — чтобы админка показывала «идёт X / N → готово», а не «смотри логи»
+let digestProgress = { running: false, sent: 0, eligible: 0, total: 0, at: 0 }
+export const getDigestProgress = () => digestProgress
+
 export async function runDailyDigest(now = Date.now(), { dry = false } = {}) {
   const today = mskDay(now)
   const profs = await listProfiles()
-  let eligible = 0
+  const targets = profs.filter((r) => shouldDigest(r, today)) // реальные игроки, не активные сегодня
+  if (!dry) digestProgress = { running: true, sent: 0, eligible: targets.length, total: profs.length, at: now }
   let sent = 0
-  for (const row of profs) {
-    if (!shouldDigest(row, today)) continue
-    eligible++
-    if (dry) continue // прикидка охвата — без отправки
-    const daysAway = Math.floor((now - (row.lastSeen || now)) / DAY)
-    if (await sendPush(row.uid, (lang, p) => digestText(p, daysAway, lang), { now })) {
-      sent++
-      await sleep(70) // ~14 msg/с — с запасом под лимит Telegram (~30/с)
+  if (!dry) {
+    for (const row of targets) {
+      const daysAway = Math.floor((now - (row.lastSeen || now)) / DAY)
+      if (await sendPush(row.uid, (lang, p) => digestText(p, daysAway, lang), { now })) {
+        sent++
+        digestProgress.sent = sent
+        await sleep(70) // ~14 msg/с — с запасом под лимит Telegram (~30/с)
+      }
     }
+    digestProgress = { running: false, sent, eligible: targets.length, total: profs.length, at: Date.now() }
   }
-  console.log(`[push] дейли-рассылка${dry ? ' (dry)' : ''}: ${dry ? 'подходит ' + eligible : 'отправлено ' + sent + ' из ' + eligible}, профилей ${profs.length}`)
-  return { eligible, sent, total: profs.length }
+  console.log(`[push] дейли-рассылка${dry ? ' (dry)' : ''}: ${dry ? 'подходит ' + targets.length : 'отправлено ' + sent + ' из ' + targets.length}, профилей ${profs.length}`)
+  return { eligible: targets.length, sent, total: profs.length }
 }
 
 // тест-пуш из админки: шлём дайджест конкретному uid ПРИНУДИТЕЛЬНО (в обход кулдауна
