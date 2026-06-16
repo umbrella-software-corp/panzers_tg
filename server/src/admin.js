@@ -40,6 +40,8 @@ export const adminPage = () => `<!doctype html>
   .tab { width:auto; padding:9px 16px; background:transparent; color:var(--dim); border:none; border-bottom:2px solid transparent; border-radius:0; font-weight:600; font-size:13px; letter-spacing:.03em; }
   .tab:hover { color:var(--ink); }
   .tab.active { color:var(--amber); border-bottom-color:var(--amber); }
+  .tab .badge { display:inline-block; min-width:18px; padding:0 5px; margin-left:5px; border-radius:9px; background:var(--line); color:var(--dim); font-size:11px; font-weight:700; text-align:center; vertical-align:middle; }
+  .tab .badge.live { background:var(--green); color:#0d100a; }
   .tabpane { display:none; }
   .tabpane.active { display:block; }
   .tabpane > h2:first-child { margin-top:14px; }
@@ -60,7 +62,8 @@ export const adminPage = () => `<!doctype html>
     <button class="tab active" data-tab="overview" onclick="showTab('overview')">📊 Обзор</button>
     <button class="tab" data-tab="players" onclick="showTab('players')">👤 Игроки</button>
     <button class="tab" data-tab="grants" onclick="showTab('grants')">🎁 Выдачи и пуши</button>
-    <button class="tab" data-tab="ops" onclick="showTab('ops')">⚔️ Бои и покупки</button>
+    <button class="tab" data-tab="battles" onclick="showTab('battles')">⚔️ Бои<span class="badge" id="battleBadge">0</span></button>
+    <button class="tab" data-tab="purchases" onclick="showTab('purchases')">💳 Покупки</button>
   </div>
 
   <div class="tabpane active" id="tab-overview">
@@ -130,10 +133,13 @@ export const adminPage = () => `<!doctype html>
     </div>
   </div>
 
-  <div class="tabpane" id="tab-ops">
+  <div class="tabpane" id="tab-battles">
     <h2>Комнаты боёв</h2><div id="rooms"></div>
-    <h2>Покупки за звёзды</h2><div id="payments"></div>
     <h2>Турниры</h2><div id="tournaments"></div>
+  </div>
+
+  <div class="tabpane" id="tab-purchases">
+    <h2>Покупки за звёзды</h2><div id="payments"></div>
   </div>
 </div>
 <div id="drill" hidden>
@@ -154,6 +160,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'
 const dt = (ts) => ts ? new Date(ts).toLocaleString('ru-RU') : '—'
 // вкладки админки: показать одну панель, спрятать остальные, запомнить выбор
 function showTab(name) {
+  if (!document.getElementById('tab-' + name)) name = 'overview' // старое/битое значение (напр. 'ops') → дефолт
   for (const b of document.querySelectorAll('.tab')) b.classList.toggle('active', b.dataset.tab === name)
   for (const p of document.querySelectorAll('.tabpane')) p.classList.toggle('active', p.id === 'tab-' + name)
   try { localStorage.setItem('pz.adminTab', name) } catch {}
@@ -307,6 +314,11 @@ async function refresh() {
     ['★ ' + s.revenueStars.toLocaleString('ru-RU'), 'выручка, звёзды'],
     [s.payMode === 'stars' ? 'STARS' : 'DEV', 'режим оплаты'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>').join('')
+
+  // живой счётчик активных боёв на вкладке «Бои» (стартовавшие комнаты)
+  const liveBattles = (s.rooms || []).filter((r) => r.started).length
+  const bb = $('battleBadge')
+  if (bb) { bb.textContent = liveBattles; bb.classList.toggle('live', liveBattles > 0) }
 
   const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, bySource:[] }
   LINK_BASE = s.linkBase || ''
