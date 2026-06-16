@@ -47,9 +47,17 @@ export const tgIdOf = (uid) => {
 }
 export const mskDay = (ts) => new Date((ts || 0) + MSK_OFFSET).toISOString().slice(0, 10) // YYYY-MM-DD по МСК
 export const mskHour = (ts) => new Date((ts || 0) + MSK_OFFSET).getUTCHours()
-// текст дейли: винбэк, если давно не заходил, иначе обычная «награда+задачи».
-// lang — язык получателя (по умолчанию ru для легаси-профилей без языка)
-export const digestText = (daysAway, lang = 'ru') => t(daysAway >= 2 ? 'digestWinback' : 'digestRegular', lang)
+// текст возврат-пуша по «давности» + персонализация (имя, серия заходов): чем дольше
+// нет — тем сильнее зов; недавним с активной серией — loss-aversion «не обнуль серию».
+// profile — полный профиль получателя (имя/daily.streak), lang — его язык.
+export const digestText = (profile, daysAway, lang = 'ru') => {
+  const name = (profile && profile.name) || t('defaultName', lang)
+  const streak = (profile && profile.daily && profile.daily.streak) | 0
+  if (daysAway >= 7) return t('digestLong', lang, { name, days: daysAway })
+  if (daysAway >= 2) return t('digestWinback', lang, { name, days: daysAway })
+  if (streak >= 2) return t('digestStreak', lang, { name, streak })
+  return t('digestDaily', lang, { name })
+}
 // кого включаем в дейли-рассылку (строка из listProfiles): реальный игрок, с tg-id,
 // не игравший сегодня. Лимит 1/сутки и opt-out проверяются позже при самой отправке.
 export function shouldDigest(row, today) {
@@ -76,7 +84,7 @@ async function sendPush(uid, body, { now = Date.now(), force = false } = {}) {
   if (!p || p.pushOff || p.pushBlocked) return false
   if (!force && p.lastPushAt && now - p.lastPushAt < PUSH_COOLDOWN) return false
   const lang = langOf(p)
-  const text = typeof body === 'function' ? body(lang) : body
+  const text = typeof body === 'function' ? body(lang, p) : body // p — для персонализации (имя/серия)
   if (DRY_RUN) {
     console.log(`[push:dry] → ${uid}: ${text.split('\n')[0]}`)
     p.lastPushAt = now
@@ -105,13 +113,27 @@ export async function runDailyDigest(now = Date.now()) {
   for (const row of profs) {
     if (!shouldDigest(row, today)) continue
     const daysAway = Math.floor((now - (row.lastSeen || now)) / DAY)
-    if (await sendPush(row.uid, (lang) => digestText(daysAway, lang), { now })) {
+    if (await sendPush(row.uid, (lang, p) => digestText(p, daysAway, lang), { now })) {
       sent++
       await sleep(70) // ~14 msg/с — с запасом под лимит Telegram (~30/с)
     }
   }
   console.log(`[push] дейли-рассылка: отправлено ${sent} из ${profs.length} профилей`)
   return sent
+}
+
+// тест-пуш из админки: шлём дайджест конкретному uid ПРИНУДИТЕЛЬНО (в обход кулдауна
+// 1/сутки и фильтра «активен сегодня») — проверить доставку и текст. pushOff/pushBlocked
+// всё равно уважаем (отписался/заблокировал бота → не дойдёт). daysAway берём из профиля.
+export async function sendTestDigest(uid, now = Date.now()) {
+  if (!hasBot()) return { ok: false, reason: 'нет BOT_TOKEN (dev)' }
+  if (!tgIdOf(uid)) return { ok: false, reason: 'не tg-uid' }
+  const sent = await sendPush(
+    uid,
+    (lang, p) => digestText(p, Math.floor((now - ((p && p.lastSeen) || now)) / DAY), lang),
+    { now, force: true },
+  )
+  return { ok: sent, reason: sent ? null : 'не отправлено (нет профиля / pushOff / заблокирован)' }
 }
 
 // ---------- «друг в бою» (соц-хук из startRoom) ----------

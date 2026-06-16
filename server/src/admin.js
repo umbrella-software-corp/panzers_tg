@@ -58,6 +58,13 @@ export const adminPage = () => `<!doctype html>
     </div>
     <div id="linkOut" style="margin-top:10px"></div>
   </div>
+  <h2>Проверка пушей</h2>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+    <span class="muted">тест-пуш (дайджест возврата) на uid:</span>
+    <input id="pushUid" placeholder="напр. 485427336" style="width:auto; flex:1; min-width:170px; margin:0" onkeydown="if(event.key==='Enter')testPush()">
+    <button style="width:auto; padding:9px 16px" onclick="testPush()">Отправить тест-пуш</button>
+    <span id="pushOut" class="muted" style="font-size:12px"></span>
+  </div>
   <h2>Источники трафика</h2><div id="sources"></div>
   <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
   <h2>Турниры</h2><div id="tournaments"></div>
@@ -113,6 +120,19 @@ function copyLink(url, btn) {
   navigator.clipboard.writeText(url).then(() => { btn.textContent = 'Скопировано ✓' }, () => { btn.textContent = 'не вышло' })
 }
 window.copyLink = copyLink
+
+// тест-пуш: принудительно шлём дайджест возврата на uid (в обход кулдауна) — увидеть текст/доставку
+async function testPush() {
+  const uid = ($('pushUid').value || '').trim()
+  if (!uid) { $('pushOut').innerHTML = '<span class="err">введите uid (tg-id)</span>'; return }
+  $('pushOut').textContent = '…'
+  try {
+    const r = await fetch('/api/admin/testpush', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ uid }) })
+    const d = await r.json()
+    $('pushOut').innerHTML = d.ok ? '<span class="ok">✓ отправлено</span>' : '<span class="err">не дошло: ' + esc(d.reason || d.error || '?') + '</span>'
+  } catch (e) { $('pushOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
+}
+window.testPush = testPush
 
 async function refresh() {
   const s = await api('/api/admin/stats')

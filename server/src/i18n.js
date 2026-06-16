@@ -12,6 +12,16 @@ export function pickLang(code) {
 // язык для исходящих юзеру: профиль → 'ru' дефолтом (легаси-база русскоязычная)
 export const langOf = (profile) => (profile && profile.lang === 'en' ? 'en' : profile && profile.lang === 'ru' ? 'ru' : 'ru')
 
+// рус. множественное: 1 день / 2 дня / 5 дней (для персонализированных пушей)
+const plRu = (n, one, few, many) => {
+  const a = Math.abs(n) % 100
+  const b = a % 10
+  if (a > 10 && a < 20) return many
+  if (b === 1) return one
+  if (b >= 2 && b <= 4) return few
+  return many
+}
+
 const DICT = {
   en: {
     defaultName: 'Soldier',
@@ -22,8 +32,11 @@ const DICT = {
     playButton: '🎮 BATTLE',
     stopConfirm: 'Notifications off 🔕 To turn them back on — send /start',
     // пуши
-    digestWinback: '🎖 Commander, you have been away for a while — your crew misses you! Your daily reward is piling up and new tasks await in the garage. Drop in for a couple of battles 🔥\n\n/stop — unsubscribe',
-    digestRegular: "🎁 Commander, your daily reward is ready and today's tasks have refreshed! A quick battle takes a couple of minutes — jump in 🔥\n\n/stop — unsubscribe",
+    // возврат-пуши, тиры по дням отсутствия (см. notifications.digestText) + персонализация
+    digestDaily: ({ name }) => `🎁 Commander ${name}, your daily reward is waiting and today's tasks just refreshed! One quick battle — a couple of minutes. Roll in 🔥\n\n/stop — unsubscribe`,
+    digestStreak: ({ name, streak }) => `🔥 ${name}, your login streak is at day ${streak}! Drop in today so it doesn't reset — and grab your reward. One battle, two minutes ⚔️\n\n/stop — unsubscribe`,
+    digestWinback: ({ name, days }) => `🎖 Commander ${name}, ${days} days without you — your crew misses you! The daily reward keeps piling up and fresh tasks wait in the garage. Roll in for a couple of battles 🔥\n\n/stop — unsubscribe`,
+    digestLong: ({ name, days }) => `🛠 ${name}, the tanks are rusting without you! ${days} days of silence — your crew awaits its commander. Come back: a reward and new battles are waiting ⚔️\n\n/stop — unsubscribe`,
     friendInBattle: ({ name }) => `🔥 Your friend ${name} is in battle right now! Jump in together ⚔️\n\n/stop — unsubscribe`,
     // заголовки товаров (счёт Telegram Stars)
     products: {
@@ -70,8 +83,11 @@ const DICT = {
     greetButton: '🎮 Играть',
     playButton: '🎮 В БОЙ',
     stopConfirm: 'Уведомления выключены 🔕 Включить снова — отправь /start',
-    digestWinback: '🎖 Командир, тебя давно не было — экипаж скучает! Ежедневная награда копится, новые задачи ждут в ангаре. Заскочи на пару боёв 🔥\n\n/stop — отписаться',
-    digestRegular: '🎁 Командир, ежедневная награда доступна, а задачи дня обновились! Быстрый бой за пару минут — залетай 🔥\n\n/stop — отписаться',
+    // возврат-пуши, тиры по дням отсутствия (см. notifications.digestText) + персонализация
+    digestDaily: ({ name }) => `🎁 Командир ${name}, ежедневная награда уже в ангаре, а задачи дня обновились! Один быстрый бой — пара минут. Залетай 🔥\n\n/stop — отписаться`,
+    digestStreak: ({ name, streak }) => `🔥 ${name}, твоя серия заходов — день ${streak}! Зайди сегодня, чтобы не обнулить её и забрать награду. Один бой — пара минут ⚔️\n\n/stop — отписаться`,
+    digestWinback: ({ name, days }) => `🎖 Командир ${name}, тебя не было ${days} ${plRu(days, 'день', 'дня', 'дней')} — экипаж скучает! Награда копится, в ангаре свежие задачи. Заскочи на пару боёв 🔥\n\n/stop — отписаться`,
+    digestLong: ({ name, days }) => `🛠 ${name}, без тебя танки ржавеют! Уже ${days} ${plRu(days, 'день', 'дня', 'дней')} тишины — экипаж ждёт командира. Вернись: тебя встретят награда и новые бои ⚔️\n\n/stop — отписаться`,
     friendInBattle: ({ name }) => `🔥 Твой друг ${name} сейчас в бою! Залетай вместе ⚔️\n\n/stop — отписаться`,
     products: {
       p1: '1 000 кредитов',

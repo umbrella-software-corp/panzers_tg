@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest } from './notifications.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { adminPage } from './admin.js'
@@ -61,6 +61,13 @@ async function handleAdmin(req, res) {
     const { on } = await readBody(req)
     await setSetting('tournamentsOn', !!on)
     return json(res, 200, { tournaments: !!on })
+  }
+  if (req.url === '/api/admin/testpush' && req.method === 'POST') {
+    const { uid } = await readBody(req)
+    // принимаем «tg_123», «123» или с @ — нормализуем к tg_<digits>
+    const digits = String(uid || '').replace(/[^0-9]/g, '')
+    if (!digits) return json(res, 400, { error: 'нет uid' })
+    return json(res, 200, await sendTestDigest('tg_' + digits))
   }
   if (req.url === '/api/admin/stats' && req.method === 'GET') {
     const payments = await listPayments()
