@@ -74,6 +74,9 @@ export const apiChannelBonus = () => call('/api/channel-bonus', { method: 'POST'
 // разовый бонус за фидбек: сервер проверяет, писал ли игрок в саппорт-бот, и начисляет.
 // Ответ: { ok, granted } | { already } | { wrote:false } | { disabled }.
 export const apiFeedbackBonus = () => call('/api/feedback-bonus', { method: 'POST', body: '{}' })
+// атомарно применить очередь админ-выдач на сервере и забрать результат (кредиты/жетоны/
+// танки начисляет сервер, очередь чистит). Идемпотентно. Ответ: { ok, applied, credits, tokens, owned, pendingGrants }.
+export const apiGrantsApply = () => call('/api/grants-apply', { method: 'POST', body: '{}' })
 // кланы: список (+ мой клан), создать, вступить, выйти, карточка по id
 export const apiClans = () => call('/api/clans')
 export const apiCreateClan = (name, tag, emblem) => call('/api/clan/create', { method: 'POST', body: JSON.stringify({ name, tag, emblem }) })

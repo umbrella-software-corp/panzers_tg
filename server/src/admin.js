@@ -77,6 +77,16 @@ export const adminPage = () => `<!doctype html>
     <span class="muted">+кредиты 🪙</span><input id="grCr" type="number" placeholder="0" style="width:90px; margin:0">
     <span class="muted">+жетоны 💎</span><input id="grTk" type="number" placeholder="0" style="width:80px; margin:0">
     <span class="muted">+дней према ⭐</span><input id="grPr" type="number" placeholder="0" style="width:70px; margin:0">
+    <span class="muted">+прем-танк 🛡️</span>
+    <select id="grTank" style="width:auto; margin:0; padding:9px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px">
+      <option value="">— нет —</option>
+      <option value="t28">T-28 (T4)</option>
+      <option value="pz4h">Pz. IV H (T4)</option>
+      <option value="ram">Ram II (T4)</option>
+      <option value="t54">T-54 (T8)</option>
+      <option value="maus">Maus (T8)</option>
+      <option value="sper">Super Pershing (T8)</option>
+    </select>
     <button style="width:auto; padding:9px 16px" onclick="doGrant()">Выдать</button>
     <span id="grOut" class="muted" style="font-size:12px"></span>
   </div>
@@ -162,23 +172,28 @@ async function testPush() {
 }
 window.testPush = testPush
 
-// выдать игроку кредиты/жетоны/премиум (по uid из поля grUid)
+const TANK_NAME = { t28: 'T-28', pz4h: 'Pz. IV H', ram: 'Ram II', t54: 'T-54', maus: 'Maus', sper: 'Super Pershing' }
+// выдать игроку кредиты/жетоны/премиум/прем-танк (по uid из поля grUid)
 async function doGrant() {
   const uid = ($('grUid').value || '').trim()
   if (!uid) { $('grOut').innerHTML = '<span class="err">введите uid</span>'; return }
-  const body = { uid, credits: +($('grCr').value || 0), tokens: +($('grTk').value || 0), premiumDays: +($('grPr').value || 0) }
-  if (!body.credits && !body.tokens && !body.premiumDays) { $('grOut').innerHTML = '<span class="err">укажи что выдать</span>'; return }
+  const tank = $('grTank').value || ''
+  const body = { uid, credits: +($('grCr').value || 0), tokens: +($('grTk').value || 0), premiumDays: +($('grPr').value || 0), tanks: tank ? [tank] : [] }
+  if (!body.credits && !body.tokens && !body.premiumDays && !tank) { $('grOut').innerHTML = '<span class="err">укажи что выдать</span>'; return }
   $('grOut').textContent = '…'
   try {
     const r = await fetch('/api/admin/grant', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify(body) })
     const d = await r.json()
     if (d.ok) {
-      const g = d.gave || {}
-      const parts = []
-      if (g.credits) parts.push('+' + g.credits + ' 🪙')
-      if (g.tokens) parts.push('+' + g.tokens + ' 💎')
-      if (g.premiumDays) parts.push('+' + g.premiumDays + 'д према ⭐')
-      $('grOut').innerHTML = '<span class="ok">✓ выдано ' + esc(parts.join(', ')) + ' (баланс: ' + (d.credits | 0) + '🪙 / ' + (d.tokens | 0) + '💎)</span>'
+      const q = d.queued || {}
+      const now = d.premiumApplied ? '+' + d.premiumApplied + 'д према ⭐ — сразу' : ''
+      const queued = []
+      if (q.credits) queued.push('+' + q.credits + ' 🪙')
+      if (q.tokens) queued.push('+' + q.tokens + ' 💎')
+      if (q.tanks && q.tanks.length) queued.push('🛡️ ' + q.tanks.map((t) => TANK_NAME[t] || t).join(', '))
+      const tail = queued.length ? (queued.join(', ') + ' — дойдёт при заходе игрока') : ''
+      $('grOut').innerHTML = '<span class="ok">✓ ' + esc([now, tail].filter(Boolean).join(' · ')) + (d.pending ? ' (в очереди: ' + d.pending + ')' : '') + '</span>'
+      $('grCr').value = ''; $('grTk').value = ''; $('grPr').value = ''; $('grTank').value = ''
     } else $('grOut').innerHTML = '<span class="err">' + esc(d.error || '?') + '</span>'
   } catch (e) { $('grOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
 }
@@ -407,12 +422,18 @@ function evLabel(e) {
     case 'battle_start': return ['⚔️ вошёл в бой', 'танк ' + esc(e.tank || '?') + ', ' + esc(e.mode || '') + ', карта ' + esc(e.map || '?') + ', живых ' + (e.humans || 1)]
     case 'battle_end': return [e.draw ? '🤝 ничья' : (e.win ? '🏆 победа' : '💀 поражение'), (e.kills || 0) + ' килов, ' + (e.dmg || 0) + ' урона, ' + (e.alive ? 'выжил' : 'уничтожен') + ', счёт ' + esc(e.score || '') + ', танк ' + esc(e.tank || '?')]
     case 'purchase': return ['⭐ покупка', esc(e.title || e.product || '') + ' за ' + (e.stars || 0) + '⭐']
-    case 'admin_grant': return ['🎁 админ выдал', [e.credits ? '+' + e.credits + '🪙' : '', e.tokens ? '+' + e.tokens + '💎' : '', e.premiumDays ? '+' + e.premiumDays + 'д према' : ''].filter(Boolean).join(', ')]
+    case 'admin_grant': return ['🎁 админ выдал', [e.credits ? '+' + e.credits + '🪙' : '', e.tokens ? '+' + e.tokens + '💎' : '', e.premiumDays ? '+' + e.premiumDays + 'д према' : '', (e.tanks && e.tanks.length) ? '🛡️ ' + e.tanks.map((t) => TANK_NAME[t] || t).join(',') : ''].filter(Boolean).join(', ')]
     case 'admin_msg': return ['✉️ админ написал', esc(e.text || '')]
     default: return [esc(e.type || '?'), esc(JSON.stringify(e).slice(0, 120))]
   }
 }
 const kv = (k, v) => '<div><span class="muted">' + k + ':</span> ' + v + '</div>'
+// свод невыданной очереди: суммируем кредиты/жетоны + список танков
+function pendSummary(pend) {
+  let c = 0, t = 0; const tanks = []
+  for (const g of pend) { if (!g) continue; c += +g.credits || 0; t += +g.tokens || 0; if (Array.isArray(g.tanks)) for (const tk of g.tanks) tanks.push(TANK_NAME[tk] || tk) }
+  return [c ? '+' + c + '🪙' : '', t ? '+' + t + '💎' : '', tanks.length ? '🛡️ ' + tanks.join(', ') : ''].filter(Boolean).join(', ') || '—'
+}
 function renderPlayer(p, events) {
   const prem = p.premiumActive ? '<span class="ok">премиум до ' + dt(p.premiumUntil) + '</span>' : '<span class="muted">нет</span>'
   const card = '<div style="display:flex; flex-wrap:wrap; gap:10px 22px; margin-bottom:14px; font-size:14px">'
@@ -424,6 +445,7 @@ function renderPlayer(p, events) {
     + kv('Танков', p.tanks || 0) + kv('Экипаж ОП', p.crewXp || 0)
     + kv('Источник', esc(p.src || '—')) + kv('Привёл', p.referredBy ? esc(String(p.referredBy).replace(/^tg_/, '')) : '—')
     + kv('Первый заход', dt(p.firstSeen)) + kv('Был', dt(p.lastSeen))
+    + ((p.pendingGrants && p.pendingGrants.length) ? kv('⏳ Не забрал', '<span class="warn">' + esc(pendSummary(p.pendingGrants)) + '</span> <span class="muted">(дойдёт при заходе)</span>') : '')
     + '</div>'
   const rows = events.map((e) => { const ld = evLabel(e); return [dt(e.t), ld[0], ld[1]] })
   const log = events.length

@@ -20,6 +20,11 @@ import { trackServer, analyticsEnabled } from './analytics.js'
 
 const ADMIN_KEY = process.env.ADMIN_KEY || ''
 
+// какие танки админ может выдать (премиум-техника из meta.js); валидируем, чтобы не
+// засунуть в owned несуществующий id и не уронить рендер гаража у игрока
+const GRANT_TANKS = new Set(['t28', 't54', 'pz4h', 'maus', 'ram', 'sper'])
+let grantSeq = 0 // уникальный хвост id гранта (в паре с Date.now())
+
 const PORT = +(process.env.PORT || 8080)
 
 // страховки процесса: одиночный сбой логируем, сервер с сотней боёв не роняем
@@ -73,10 +78,11 @@ async function handleAdmin(req, res) {
     return json(res, 200, await sendTestDigest('tg_' + digits))
   }
   if (req.url === '/api/admin/grant' && req.method === 'POST') {
-    // выдать игроку кредиты/жетоны/дни премиума. Премиум стоек (premiumUntil защищён в
-    // merge); кредиты/жетоны применятся при следующем заходе игрока (если он прямо сейчас
-    // в игре — его сейв может перезаписать, выдавай оффлайн / попроси перезайти).
-    const { uid, credits, tokens, premiumDays } = await readBody(req)
+    // выдать игроку награды. ПРЕМИУМ применяем СРАЗУ (premiumUntil защищён в merge — стоек).
+    // КРЕДИТЫ/ЖЕТОНЫ/ТАНКИ кладём в очередь pendingGrants (тоже защищена в merge): клиент
+    // применит их на ближайшем syncProfile и подтвердит claim'ом. Так выдача доходит
+    // НАДЁЖНО, даже если игрок прямо сейчас онлайн (его сейв баланса не затрёт грант).
+    const { uid, credits, tokens, premiumDays, tanks } = await readBody(req)
     const digits = String(uid || '').replace(/[^0-9]/g, '')
     if (!digits) return json(res, 400, { error: 'нет uid' })
     const key = 'tg_' + digits
@@ -85,12 +91,21 @@ async function handleAdmin(req, res) {
     const c = Math.max(0, Math.min(1e7, Math.round(+credits || 0)))
     const t = Math.max(0, Math.min(1e5, Math.round(+tokens || 0)))
     const d = Math.max(0, Math.min(3650, Math.round(+premiumDays || 0)))
-    if (c) p.credits = (p.credits || 0) + c
-    if (t) p.tokens = (p.tokens || 0) + t
+    const tk = [...new Set((Array.isArray(tanks) ? tanks : [tanks]).filter((x) => GRANT_TANKS.has(x)))]
     if (d) p.premiumUntil = Math.max(Date.now(), p.premiumUntil || 0) + d * 86400000
+    if (c || t || tk.length) {
+      if (!Array.isArray(p.pendingGrants)) p.pendingGrants = []
+      p.pendingGrants.push({ id: String(Date.now()) + '.' + ++grantSeq, credits: c, tokens: t, tanks: tk, at: Date.now() })
+    }
     await saveProfile(key, p)
-    logEvent(key, 'admin_grant', { credits: c, tokens: t, premiumDays: d })
-    return json(res, 200, { ok: true, credits: p.credits, tokens: p.tokens, premiumUntil: p.premiumUntil, gave: { credits: c, tokens: t, premiumDays: d } })
+    logEvent(key, 'admin_grant', { credits: c, tokens: t, premiumDays: d, tanks: tk })
+    return json(res, 200, {
+      ok: true,
+      premiumApplied: d,
+      premiumUntil: p.premiumUntil || 0,
+      queued: { credits: c, tokens: t, tanks: tk },
+      pending: Array.isArray(p.pendingGrants) ? p.pendingGrants.length : 0,
+    })
   }
   if (req.url === '/api/admin/message' && req.method === 'POST') {
     // написать игроку лично от game-бота (дойдёт, только если он запускал бота / дал write-access)
@@ -134,6 +149,7 @@ async function handleAdmin(req, res) {
       firstSeen: p.firstSeen || p._updatedAt || 0,
       lastSeen: p.lastSeen || p._updatedAt || 0,
       updatedAt: p._updatedAt || 0,
+      pendingGrants: Array.isArray(p.pendingGrants) ? p.pendingGrants : [], // ещё не забранные игроком выдачи
     }
     return json(res, 200, { ok: true, player, events: await readEvents(key) })
   }
@@ -422,9 +438,37 @@ async function handleApi(req, res) {
       firstSeen: prev.firstSeen || Date.now(),
       lastSeen: Date.now(),
       lang: user.lang || prev.lang || 'ru', // язык для серверных сообщений (пуши/оплата)
+      // очередь админ-выдач ведёт сервер: кладёт /api/admin/grant, применяет+чистит /api/grants-apply.
+      // Клиентский сейв НЕ может её трогать — иначе игрок затёр бы свои же невыданные награды.
+      pendingGrants: Array.isArray(prev.pendingGrants) ? prev.pendingGrants : [],
     }
     await saveProfile(user.uid, merged)
     return json(res, 200, { ok: true })
+  }
+  if (req.url === '/api/grants-apply' && req.method === 'POST') {
+    // АТОМАРНО применить очередь админ-выдач к серверному профилю и очистить её —
+    // кредиты/жетоны/танки начисляем здесь (не на клиенте), клиент лишь забирает
+    // авторитетный результат. Один load→mutate→save = ни двойного начисления (очередь
+    // чистится вместе с балансом), ни потери (упал до save — очередь цела, применим
+    // на след. синке). Премиум сюда не входит (он уже в premiumUntil).
+    const p = await loadProfile(user.uid)
+    if (!p || !Array.isArray(p.pendingGrants) || !p.pendingGrants.length) {
+      return json(res, 200, { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, owned: (p && p.owned) || [], pendingGrants: [] })
+    }
+    let n = 0
+    for (const g of p.pendingGrants) {
+      if (!g) continue
+      if (g.credits) p.credits = (p.credits || 0) + (+g.credits || 0)
+      if (g.tokens) p.tokens = (p.tokens || 0) + (+g.tokens || 0)
+      if (Array.isArray(g.tanks)) {
+        if (!Array.isArray(p.owned)) p.owned = []
+        for (const tk of g.tanks) if (tk && GRANT_TANKS.has(tk) && !p.owned.includes(tk)) p.owned.push(tk)
+      }
+      n++
+    }
+    p.pendingGrants = []
+    await saveProfile(user.uid, p)
+    return json(res, 200, { ok: true, applied: n, credits: p.credits || 0, tokens: p.tokens || 0, owned: p.owned || [], pendingGrants: [] })
   }
   if (req.url === '/api/referred' && req.method === 'POST') {
     const { ref } = await readBody(req)

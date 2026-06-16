@@ -2,7 +2,7 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiConfig } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiConfig, apiGrantsApply } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
@@ -190,6 +190,26 @@ watch(
 
 // загрузка с сервера при старте: серверный профиль главнее; нет его —
 // мигрируем туда локальный (первый вход со старым прогрессом)
+// забрать админ-выдачи из очереди pendingGrants. Начисляет их СЕРВЕР атомарно
+// (/api/grants-apply: кредиты/жетоны/танки + очистка очереди в одном сейве), мы лишь
+// принимаем авторитетный результат. Так нет ни двойного начисления, ни потери при
+// обрыве. Премиум сюда не входит — он приходит готовым в premiumUntil.
+async function applyPendingGrants() {
+  const pend = Array.isArray(profile.pendingGrants) ? profile.pendingGrants : []
+  if (!pend.length) return
+  try {
+    const r = await apiGrantsApply()
+    if (r && r.ok) {
+      profile.credits = r.credits || 0
+      profile.tokens = r.tokens || 0
+      if (Array.isArray(r.owned)) profile.owned = r.owned
+      profile.pendingGrants = Array.isArray(r.pendingGrants) ? r.pendingGrants : []
+    }
+  } catch {
+    /* не вышло — очередь на сервере цела, заберём на следующем синке */
+  }
+}
+
 export async function syncProfile() {
   try {
     const res = await apiLoadProfile()
@@ -212,6 +232,7 @@ export async function syncProfile() {
       if (!('trainingDone' in rest)) profile.trainingDone = b > 0
       if (!('secondTankChosen' in rest)) profile.secondTankChosen = b > 0
       if (!('firstBattleRewarded' in rest)) profile.firstBattleRewarded = b > 0
+      await applyPendingGrants() // забрать админ-выдачи (кредиты/жетоны/танки) из очереди
     } else {
       await apiSaveProfile(JSON.parse(JSON.stringify(profile)))
     }
