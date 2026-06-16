@@ -36,6 +36,13 @@ export const adminPage = () => `<!doctype html>
   .refbtn:disabled { opacity:.5; cursor:default; }
   .err { color:var(--red); font-size:12px; }
   #status { position:fixed; top:12px; right:16px; font-size:11px; color:var(--dim); }
+  .tabs { display:flex; gap:4px; flex-wrap:wrap; margin:18px 0 4px; border-bottom:1px solid var(--line); }
+  .tab { width:auto; padding:9px 16px; background:transparent; color:var(--dim); border:none; border-bottom:2px solid transparent; border-radius:0; font-weight:600; font-size:13px; letter-spacing:.03em; }
+  .tab:hover { color:var(--ink); }
+  .tab.active { color:var(--amber); border-bottom-color:var(--amber); }
+  .tabpane { display:none; }
+  .tabpane.active { display:block; }
+  .tabpane > h2:first-child { margin-top:14px; }
 </style>
 </head>
 <body>
@@ -48,67 +55,86 @@ export const adminPage = () => `<!doctype html>
 <div id="app" hidden>
   <h1>PANZER <b>TG</b> · админка <span class="muted" style="font-size:12px">(обновление каждые 5с)</span></h1>
   <div class="cards" id="cards"></div>
-  <h2>Трафик</h2><div class="cards" id="traffic"></div>
-  <h2>Реф-ссылка трафика</h2>
-  <div id="reflink">
-    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
-      <span class="muted">метка источника:</span>
-      <input id="srcTag" placeholder="напр. tgads, blogger1, channel" style="width:auto; flex:1; min-width:170px; margin:0" onkeydown="if(event.key==='Enter')makeLink()">
-      <button style="width:auto; padding:9px 16px" onclick="makeLink()">Сгенерировать ссылку</button>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="overview" onclick="showTab('overview')">📊 Обзор</button>
+    <button class="tab" data-tab="players" onclick="showTab('players')">👤 Игроки</button>
+    <button class="tab" data-tab="grants" onclick="showTab('grants')">🎁 Выдачи и пуши</button>
+    <button class="tab" data-tab="ops" onclick="showTab('ops')">⚔️ Бои и покупки</button>
+  </div>
+
+  <div class="tabpane active" id="tab-overview">
+    <h2>Трафик</h2><div class="cards" id="traffic"></div>
+    <h2>Источники трафика</h2><div id="sources"></div>
+    <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
+    <h2>Реф-ссылка трафика</h2>
+    <div id="reflink">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <span class="muted">метка источника:</span>
+        <input id="srcTag" placeholder="напр. tgads, blogger1, channel" style="width:auto; flex:1; min-width:170px; margin:0" onkeydown="if(event.key==='Enter')makeLink()">
+        <button style="width:auto; padding:9px 16px" onclick="makeLink()">Сгенерировать ссылку</button>
+      </div>
+      <div id="linkOut" style="margin-top:10px"></div>
     </div>
-    <div id="linkOut" style="margin-top:10px"></div>
   </div>
-  <h2>Проверка пушей</h2>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
-    <span class="muted">тест-пуш (дайджест возврата) на uid:</span>
-    <input id="pushUid" placeholder="напр. 485427336" style="width:auto; flex:1; min-width:170px; margin:0" onkeydown="if(event.key==='Enter')testPush()">
-    <button style="width:auto; padding:9px 16px" onclick="testPush()">Отправить тест-пуш</button>
-    <span id="pushOut" class="muted" style="font-size:12px"></span>
+
+  <div class="tabpane" id="tab-players">
+    <h2>Поиск игрока</h2>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+      <input id="findUid" placeholder="uid (6177596024) или имя — увидеть профиль и журнал" style="width:auto; flex:1; min-width:240px; margin:0" onkeydown="if(event.key==='Enter')findPlayer()">
+      <button style="width:auto; padding:9px 16px" onclick="findPlayer()">Найти</button>
+      <span id="findOut" class="muted" style="font-size:12px"></span>
+    </div>
+    <h2>Игроки</h2><div id="profiles"></div>
   </div>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px">
-    <button style="width:auto; padding:9px 16px" onclick="digestDry()">Прикинуть охват дайджеста</button>
-    <button style="width:auto; padding:9px 16px; background:var(--red); color:#fff" onclick="digestSend()">⚠ Разослать дайджест ВСЕМ сейчас</button>
-    <span id="digestOut" class="muted" style="font-size:12px"></span>
+
+  <div class="tabpane" id="tab-grants">
+    <h2>Выдать / написать игроку</h2>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+      <span class="muted">uid:</span>
+      <input id="grUid" placeholder="напр. 6177596024" style="width:auto; min-width:150px; margin:0">
+      <span class="muted">+кредиты 🪙</span><input id="grCr" type="number" placeholder="0" style="width:90px; margin:0">
+      <span class="muted">+жетоны 💎</span><input id="grTk" type="number" placeholder="0" style="width:80px; margin:0">
+      <span class="muted">+дней према ⭐</span><input id="grPr" type="number" placeholder="0" style="width:70px; margin:0">
+      <span class="muted">+прем-танк 🛡️</span>
+      <select id="grTank" style="width:auto; margin:0; padding:9px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px">
+        <option value="">— нет —</option>
+        <option value="t28">T-28 (T4)</option>
+        <option value="pz4h">Pz. IV H (T4)</option>
+        <option value="ram">Ram II (T4)</option>
+        <option value="t54">T-54 (T8)</option>
+        <option value="maus">Maus (T8)</option>
+        <option value="sper">Super Pershing (T8)</option>
+      </select>
+      <button style="width:auto; padding:9px 16px" onclick="doGrant()">Выдать</button>
+      <span id="grOut" class="muted" style="font-size:12px"></span>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px">
+      <span class="muted">сообщение игроку (uid выше):</span>
+      <input id="grMsg" placeholder="текст от @panzers_bot…" style="width:auto; flex:1; min-width:220px; margin:0" onkeydown="if(event.key==='Enter')doMsg()">
+      <button style="width:auto; padding:9px 16px" onclick="doMsg()">Написать</button>
+      <span id="grMsgOut" class="muted" style="font-size:12px"></span>
+    </div>
+    <div class="muted" style="font-size:11px; margin-top:6px">Премиум начисляется стойко. Кредиты/жетоны применятся при следующем заходе игрока — выдавай, когда он не в игре (иначе его сейв может перезаписать). Сообщение дойдёт, только если игрок запускал бота / разрешил писать.</div>
+    <h2>Проверка пушей</h2>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+      <span class="muted">тест-пуш (дайджест возврата) на uid:</span>
+      <input id="pushUid" placeholder="напр. 485427336" style="width:auto; flex:1; min-width:170px; margin:0" onkeydown="if(event.key==='Enter')testPush()">
+      <button style="width:auto; padding:9px 16px" onclick="testPush()">Отправить тест-пуш</button>
+      <span id="pushOut" class="muted" style="font-size:12px"></span>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px">
+      <button style="width:auto; padding:9px 16px" onclick="digestDry()">Прикинуть охват дайджеста</button>
+      <button style="width:auto; padding:9px 16px; background:var(--red); color:#fff" onclick="digestSend()">⚠ Разослать дайджест ВСЕМ сейчас</button>
+      <span id="digestOut" class="muted" style="font-size:12px"></span>
+    </div>
   </div>
-  <h2>Выдать / написать игроку</h2>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
-    <span class="muted">uid:</span>
-    <input id="grUid" placeholder="напр. 6177596024" style="width:auto; min-width:150px; margin:0">
-    <span class="muted">+кредиты 🪙</span><input id="grCr" type="number" placeholder="0" style="width:90px; margin:0">
-    <span class="muted">+жетоны 💎</span><input id="grTk" type="number" placeholder="0" style="width:80px; margin:0">
-    <span class="muted">+дней према ⭐</span><input id="grPr" type="number" placeholder="0" style="width:70px; margin:0">
-    <span class="muted">+прем-танк 🛡️</span>
-    <select id="grTank" style="width:auto; margin:0; padding:9px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px">
-      <option value="">— нет —</option>
-      <option value="t28">T-28 (T4)</option>
-      <option value="pz4h">Pz. IV H (T4)</option>
-      <option value="ram">Ram II (T4)</option>
-      <option value="t54">T-54 (T8)</option>
-      <option value="maus">Maus (T8)</option>
-      <option value="sper">Super Pershing (T8)</option>
-    </select>
-    <button style="width:auto; padding:9px 16px" onclick="doGrant()">Выдать</button>
-    <span id="grOut" class="muted" style="font-size:12px"></span>
+
+  <div class="tabpane" id="tab-ops">
+    <h2>Комнаты боёв</h2><div id="rooms"></div>
+    <h2>Покупки за звёзды</h2><div id="payments"></div>
+    <h2>Турниры</h2><div id="tournaments"></div>
   </div>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px">
-    <span class="muted">сообщение игроку (uid выше):</span>
-    <input id="grMsg" placeholder="текст от @panzers_bot…" style="width:auto; flex:1; min-width:220px; margin:0" onkeydown="if(event.key==='Enter')doMsg()">
-    <button style="width:auto; padding:9px 16px" onclick="doMsg()">Написать</button>
-    <span id="grMsgOut" class="muted" style="font-size:12px"></span>
-  </div>
-  <div class="muted" style="font-size:11px; margin-top:6px">Премиум начисляется стойко. Кредиты/жетоны применятся при следующем заходе игрока — выдавай, когда он не в игре (иначе его сейв может перезаписать). Сообщение дойдёт, только если игрок запускал бота / разрешил писать.</div>
-  <h2>Поиск игрока</h2>
-  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
-    <input id="findUid" placeholder="uid (6177596024) или имя — увидеть профиль и журнал" style="width:auto; flex:1; min-width:240px; margin:0" onkeydown="if(event.key==='Enter')findPlayer()">
-    <button style="width:auto; padding:9px 16px" onclick="findPlayer()">Найти</button>
-    <span id="findOut" class="muted" style="font-size:12px"></span>
-  </div>
-  <h2>Источники трафика</h2><div id="sources"></div>
-  <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
-  <h2>Турниры</h2><div id="tournaments"></div>
-  <h2>Комнаты боёв</h2><div id="rooms"></div>
-  <h2>Покупки за звёзды</h2><div id="payments"></div>
-  <h2>Игроки</h2><div id="profiles"></div>
 </div>
 <div id="drill" hidden>
   <div class="drillcard">
@@ -126,6 +152,13 @@ const KEY = () => localStorage.getItem('pz.adminKey') || ''
 function saveKey() { localStorage.setItem('pz.adminKey', $('key').value.trim()); boot() }
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
 const dt = (ts) => ts ? new Date(ts).toLocaleString('ru-RU') : '—'
+// вкладки админки: показать одну панель, спрятать остальные, запомнить выбор
+function showTab(name) {
+  for (const b of document.querySelectorAll('.tab')) b.classList.toggle('active', b.dataset.tab === name)
+  for (const p of document.querySelectorAll('.tabpane')) p.classList.toggle('active', p.id === 'tab-' + name)
+  try { localStorage.setItem('pz.adminTab', name) } catch {}
+}
+window.showTab = showTab
 const table = (heads, rows) => rows.length
   // заголовок числовой колонки тоже выравниваем вправо — чтобы «КРЕДИТЫ» стоял
   // над числом «700», а не уезжал влево (тип берём из первой строки данных)
@@ -514,6 +547,7 @@ async function boot() {
     await refresh()
     $('login').hidden = true
     $('app').hidden = false
+    showTab(localStorage.getItem('pz.adminTab') || 'overview') // восстановить последнюю вкладку
     clearInterval(timer)
     timer = setInterval(() => refresh().catch(() => {}), 5000)
   } catch (e) {
