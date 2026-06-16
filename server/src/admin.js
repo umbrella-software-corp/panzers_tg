@@ -87,6 +87,12 @@ export const adminPage = () => `<!doctype html>
     <span id="grMsgOut" class="muted" style="font-size:12px"></span>
   </div>
   <div class="muted" style="font-size:11px; margin-top:6px">Премиум начисляется стойко. Кредиты/жетоны применятся при следующем заходе игрока — выдавай, когда он не в игре (иначе его сейв может перезаписать). Сообщение дойдёт, только если игрок запускал бота / разрешил писать.</div>
+  <h2>Поиск игрока</h2>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+    <input id="findUid" placeholder="uid (6177596024) или имя — увидеть профиль и журнал" style="width:auto; flex:1; min-width:240px; margin:0" onkeydown="if(event.key==='Enter')findPlayer()">
+    <button style="width:auto; padding:9px 16px" onclick="findPlayer()">Найти</button>
+    <span id="findOut" class="muted" style="font-size:12px"></span>
+  </div>
   <h2>Источники трафика</h2><div id="sources"></div>
   <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
   <h2>Турниры</h2><div id="tournaments"></div>
@@ -329,7 +335,7 @@ async function refresh() {
   $('profiles').innerHTML = table(
     ['Игрок', 'UID', 'Кредиты', 'Жетоны', 'Боёв', 'Побед', 'Рейтинг', 'Танков', 'Экипаж ОП', 'Был'],
     prof.profiles.slice(0, 100).map((p) => [
-      (isOnline(p) ? '<span title="онлайн" style="color:#7cc05a">● </span>' : '') + esc(p.name),
+      (isOnline(p) ? '<span title="онлайн" style="color:#7cc05a">● </span>' : '') + '<span class="lnk" onclick="openPlayer(\\'' + esc(p.uid) + '\\')">' + esc(p.name || '—') + '</span>',
       esc(p.uid), p.credits, p.tokens, p.battles || p.srvBattles || 0, p.wins, p.rating, p.tanks, p.crewXp, dt(p.updatedAt),
     ]),
   )
@@ -355,7 +361,7 @@ function renderPlayers(title, list) {
   $('drillBody').innerHTML = table(
     ['Игрок', 'UID', 'Статус', 'Боёв', 'В апе', 'Первый заход', 'Был'],
     list.map((p) => [
-      (isOnline(p) ? '<span style="color:#7cc05a">● </span>' : '') + esc(p.name || '—'),
+      (isOnline(p) ? '<span style="color:#7cc05a">● </span>' : '') + '<span class="lnk" onclick="openPlayer(\\'' + esc(p.uid) + '\\')">' + esc(p.name || '—') + '</span>',
       esc(p.uid || '—'),
       bucketTag(p),
       p.battles || p.srvBattles || 0,
@@ -376,6 +382,80 @@ function closeDrill() { $('drill').hidden = true }
 window.showSource = showSource
 window.showRef = showRef
 window.closeDrill = closeDrill
+
+// карточка одного игрока + журнал событий («когда был, что делал») в оверлее #drill
+async function openPlayer(uid) {
+  const digits = String(uid || '').replace(/[^0-9]/g, '')
+  if (!digits) return
+  $('drillTitle').innerHTML = 'Игрок ' + esc(digits) + ' <span class="muted">· загрузка…</span>'
+  $('drillBody').innerHTML = '<div class="muted">…</div>'
+  $('drill').hidden = false
+  try {
+    const r = await fetch('/api/admin/player?uid=' + digits, { headers: { 'x-admin-key': KEY() } })
+    const d = await r.json()
+    if (!d.ok) { $('drillBody').innerHTML = '<div class="err">' + esc(d.error || 'не найден') + '</div>'; return }
+    renderPlayer(d.player, d.events || [])
+  } catch (e) { $('drillBody').innerHTML = '<div class="err">сеть: ' + esc(e.message) + '</div>' }
+}
+window.openPlayer = openPlayer
+
+const fmtMin = (m) => m >= 1440 ? Math.round(m / 1440) + 'д' : m >= 60 ? Math.round(m / 60) + 'ч' : m + 'м'
+// событие журнала → [иконка+заголовок, детали] (обе части — уже безопасный текст)
+function evLabel(e) {
+  switch (e.type) {
+    case 'open': return ['🔵 зашёл в игру', e.first ? 'первый заход' : (e.away_min != null ? 'не был ' + fmtMin(e.away_min) : '')]
+    case 'battle_start': return ['⚔️ вошёл в бой', 'танк ' + esc(e.tank || '?') + ', ' + esc(e.mode || '') + ', карта ' + esc(e.map || '?') + ', живых ' + (e.humans || 1)]
+    case 'battle_end': return [e.draw ? '🤝 ничья' : (e.win ? '🏆 победа' : '💀 поражение'), (e.kills || 0) + ' килов, ' + (e.dmg || 0) + ' урона, ' + (e.alive ? 'выжил' : 'уничтожен') + ', счёт ' + esc(e.score || '') + ', танк ' + esc(e.tank || '?')]
+    case 'purchase': return ['⭐ покупка', esc(e.title || e.product || '') + ' за ' + (e.stars || 0) + '⭐']
+    case 'admin_grant': return ['🎁 админ выдал', [e.credits ? '+' + e.credits + '🪙' : '', e.tokens ? '+' + e.tokens + '💎' : '', e.premiumDays ? '+' + e.premiumDays + 'д према' : ''].filter(Boolean).join(', ')]
+    case 'admin_msg': return ['✉️ админ написал', esc(e.text || '')]
+    default: return [esc(e.type || '?'), esc(JSON.stringify(e).slice(0, 120))]
+  }
+}
+const kv = (k, v) => '<div><span class="muted">' + k + ':</span> ' + v + '</div>'
+function renderPlayer(p, events) {
+  const prem = p.premiumActive ? '<span class="ok">премиум до ' + dt(p.premiumUntil) + '</span>' : '<span class="muted">нет</span>'
+  const card = '<div style="display:flex; flex-wrap:wrap; gap:10px 22px; margin-bottom:14px; font-size:14px">'
+    + kv('UID', esc(p.uid))
+    + kv('Кредиты', (p.credits || 0).toLocaleString('ru-RU') + ' 🪙') + kv('Жетоны', (p.tokens || 0).toLocaleString('ru-RU') + ' 💎')
+    + kv('Премиум', prem)
+    + kv('Боёв', (p.battles || p.srvBattles || 0) + ' <span class="muted">(srv ' + (p.srvBattles || 0) + ')</span>')
+    + kv('Побед', p.wins || 0) + kv('Киллов', p.kills || 0) + kv('Рейтинг', p.rating || 0)
+    + kv('Танков', p.tanks || 0) + kv('Экипаж ОП', p.crewXp || 0)
+    + kv('Источник', esc(p.src || '—')) + kv('Привёл', p.referredBy ? esc(String(p.referredBy).replace(/^tg_/, '')) : '—')
+    + kv('Первый заход', dt(p.firstSeen)) + kv('Был', dt(p.lastSeen))
+    + '</div>'
+  const rows = events.map((e) => { const ld = evLabel(e); return [dt(e.t), ld[0], ld[1]] })
+  const log = events.length
+    ? table(['Время', 'Событие', 'Детали'], rows)
+    : '<div class="muted">журнал пуст (события пишутся с момента этого деплоя — прошлое не восстановить)</div>'
+  $('drillTitle').innerHTML = (p.premiumActive ? '★ ' : '') + esc(p.name || 'игрок') + ' <span class="muted" style="font-size:13px">· ' + esc(p.uid) + '</span>'
+  $('drillBody').innerHTML = '<div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap">'
+    + '<button style="width:auto;padding:6px 12px" onclick="prefillGrant(\\'' + esc(p.uid) + '\\')">Выдать награду</button>'
+    + '<button style="width:auto;padding:6px 12px" onclick="prefillMsg(\\'' + esc(p.uid) + '\\')">Написать</button>'
+    + '</div>' + card
+    + '<h2 style="margin:8px 0">Журнал событий <span class="muted" style="font-size:13px">· ' + events.length + ' (новые сверху)</span></h2>' + log
+}
+
+// поиск: цифры (≥5) — сразу карточка по uid; иначе фильтр по имени среди выгрузки
+function findPlayer() {
+  const q = ($('findUid').value || '').trim()
+  if (!q) return
+  const digits = q.replace(/[^0-9]/g, '')
+  $('findOut').textContent = ''
+  if (digits.length >= 5) { openPlayer(digits); return }
+  const m = (DATA.profiles || []).filter((p) => (p.name || '').toLowerCase().includes(q.toLowerCase()))
+  if (!m.length) { $('findOut').innerHTML = '<span class="err">не найдено (по имени — только среди выгруженных; по uid точнее)</span>'; return }
+  if (m.length === 1) { openPlayer(m[0].uid); return }
+  renderPlayers('Поиск: «' + q + '»', m) // список — клик по строке откроет карточку
+}
+window.findPlayer = findPlayer
+
+// подставить uid в блок «Выдать / написать» и проскроллить туда
+function prefillGrant(uid) { $('grUid').value = String(uid).replace(/[^0-9]/g, ''); closeDrill(); $('grUid').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('grCr').focus() }
+function prefillMsg(uid) { $('grUid').value = String(uid).replace(/[^0-9]/g, ''); closeDrill(); $('grMsg').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('grMsg').focus() }
+window.prefillGrant = prefillGrant
+window.prefillMsg = prefillMsg
 
 async function toggleTournaments(on) {
   await fetch('/api/admin/tournaments', {

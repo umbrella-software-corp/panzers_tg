@@ -4,6 +4,7 @@
 import { botToken, hasBot } from './auth.js'
 import { loadProfile, saveProfile, paymentSeen, markPayment, listPayments, markRefunded } from './db.js'
 import { setPushEnabled } from './notifications.js'
+import { logEvent } from './eventlog.js'
 import { t, pickLang } from './i18n.js'
 
 // каталог: что начисляем за звёзды
@@ -94,6 +95,7 @@ export async function grantProduct(uid, productId, extra = {}) {
     profile.nameCustom = true // больше не перетираем ником из Telegram
   }
   await saveProfile(uid, profile)
+  logEvent(uid, 'purchase', { product: productId, title: p.title || productId, stars: p.stars || 0 })
   return true
 }
 

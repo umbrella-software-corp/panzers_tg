@@ -10,6 +10,7 @@ import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, play
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
 import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage } from './notifications.js'
+import { logEvent, readEvents } from './eventlog.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { channelConfig, claimChannelBonus } from './channel.js'
@@ -88,6 +89,7 @@ async function handleAdmin(req, res) {
     if (t) p.tokens = (p.tokens || 0) + t
     if (d) p.premiumUntil = Math.max(Date.now(), p.premiumUntil || 0) + d * 86400000
     await saveProfile(key, p)
+    logEvent(key, 'admin_grant', { credits: c, tokens: t, premiumDays: d })
     return json(res, 200, { ok: true, credits: p.credits, tokens: p.tokens, premiumUntil: p.premiumUntil, gave: { credits: c, tokens: t, premiumDays: d } })
   }
   if (req.url === '/api/admin/message' && req.method === 'POST') {
@@ -95,7 +97,45 @@ async function handleAdmin(req, res) {
     const { uid, text } = await readBody(req)
     const digits = String(uid || '').replace(/[^0-9]/g, '')
     if (!digits || !String(text || '').trim()) return json(res, 400, { error: 'нужны uid и текст' })
-    return json(res, 200, await sendAdminMessage('tg_' + digits, String(text)))
+    const out = await sendAdminMessage('tg_' + digits, String(text))
+    if (out && out.ok) logEvent('tg_' + digits, 'admin_msg', { text: String(text).slice(0, 200) })
+    return json(res, 200, out)
+  }
+  if (req.url.split('?')[0] === '/api/admin/player' && req.method === 'GET') {
+    // карточка одного игрока + его журнал событий («когда был, что делал»)
+    const q = new URL(req.url, 'http://x').searchParams
+    const digits = String(q.get('uid') || '').replace(/[^0-9]/g, '')
+    if (!digits) return json(res, 400, { error: 'нет uid' })
+    const key = 'tg_' + digits
+    const p = await loadProfile(key)
+    if (!p) return json(res, 404, { error: 'профиль не найден' })
+    const st = p.stats || {}
+    const player = {
+      uid: key,
+      name: p.name || '',
+      lang: p.lang || 'ru',
+      credits: p.credits || 0,
+      tokens: p.tokens || 0,
+      goldAmmo: p.goldAmmo || 0,
+      premiumUntil: p.premiumUntil || 0,
+      premiumActive: (p.premiumUntil || 0) > Date.now(),
+      battles: st.battles || 0,
+      srvBattles: p.srvBattles | 0,
+      wins: st.wins || 0,
+      kills: st.kills || 0,
+      rating: st.rating || 0,
+      wn8: st.wn8 || 0,
+      tanks: Array.isArray(p.owned) ? p.owned.length : 0,
+      owned: Array.isArray(p.owned) ? p.owned : [],
+      crewXp: (p.crew && p.crew.xp) || 0,
+      src: p.src || null,
+      referredBy: p.referredBy || null,
+      reachedBattle: !!p.reachedBattle,
+      firstSeen: p.firstSeen || p._updatedAt || 0,
+      lastSeen: p.lastSeen || p._updatedAt || 0,
+      updatedAt: p._updatedAt || 0,
+    }
+    return json(res, 200, { ok: true, player, events: await readEvents(key) })
   }
   if (req.url === '/api/admin/digest' && req.method === 'POST') {
     const { dry } = await readBody(req)
@@ -225,6 +265,12 @@ async function recordVisit(user) {
     dirty = true
     // источник из ПОДПИСАННОГО initData — надёжнее клиентского source_tag
     trackServer(user.uid, 'source_attributed', { source_tag: tag })
+  }
+  // новая сессия: если игрок не был активен >20 мин — это «зашёл в игру».
+  // (lastSeen обновляется не чаще раза в минуту, так что порог 20м срабатывает раз
+  // на заход, а не на каждый пинг). Журналим для админ-таймлайна «когда был».
+  if (!p.lastSeen || now - p.lastSeen > 20 * 60000) {
+    logEvent(user.uid, 'open', p.lastSeen ? { away_min: Math.round((now - p.lastSeen) / 60000) } : { first: true })
   }
   if (!p.lastSeen || now - p.lastSeen > 60000) {
     p.lastSeen = now
@@ -955,6 +1001,7 @@ function startRoom(room) {
   for (const h of room.humans) {
     if (!h.uid) continue
     recordBattleEntry(h.uid) // серверный счётчик боёв +1 + «дошёл до боя» (не зависит от клиентского stats.battles)
+    logEvent(h.uid, 'battle_start', { room: room.id, mode: room.mode, map: map.id, tank: h.tankId || null, humans: room.humans.length })
     trackServer(h.uid, 'server_match_started', {
       room_id: room.id,
       mode: room.mode,
@@ -1053,6 +1100,17 @@ function roomTick(room) {
           team: h.team,
           humans: room.humans.length,
           stats_count: stats.length,
+        })
+        const mine = stats.find((s) => s.id === h.id) // мой юнит в итоговой таблице
+        logEvent(h.uid, 'battle_end', {
+          room: room.id,
+          win: room.sim.winner === h.team,
+          draw: room.sim.winner == null,
+          score: room.sim.score[h.team] + ':' + room.sim.score[1 - h.team],
+          kills: mine ? mine.kills : 0,
+          dmg: mine ? mine.damage : 0,
+          alive: mine ? mine.alive : false,
+          tank: h.tankId || null,
         })
       }
       console.log(
