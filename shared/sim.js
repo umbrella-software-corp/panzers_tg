@@ -318,7 +318,11 @@ export class BattleSim {
 
   // --- шаг ---
 
-  step(dt) {
+  // guided — тренировочный гайд первого боя: боты-враги ЗАМОРОЖЕНЫ (стоят
+  // мишенями, не едут и не стреляют), пока сервер держит room.guided. Игрок при
+  // этом ездит/целится/стреляет как обычно — учится без угрозы. Снимается, когда
+  // клиент шлёт tutorial-done (см. server roomTick). Для обычных боёв guided=false.
+  step(dt, guided = false) {
     if (this.matchOver) return
     this.t += dt
     this.matchTime = Math.max(0, this.matchTime - dt)
@@ -327,7 +331,7 @@ export class BattleSim {
       if (!u.alive) continue
       if (u.revealT > 0) u.revealT = Math.max(0, u.revealT - dt) // тает демаскировка выстрелом
       if (u.human) this._stepHuman(u, dt)
-      else this._stepBot(u, dt)
+      else if (!guided) this._stepBot(u, dt) // тренировка: враги стоят, пока идёт гайд
     }
     this._separateUnits() // танк-в-танк: не дать машинам набиться в одну точку
     if (this.mode === 'capture') this._stepCaptures(dt) // аннигиляция — без точек

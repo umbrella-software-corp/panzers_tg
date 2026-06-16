@@ -12,15 +12,17 @@ const WS_URL =
  * onLobby({players, you, startsIn}) — обновления комнаты ожидания,
  * onStart(msg match-start) — бой начался, onClose — соединение закрылось.
  */
-export function connectMatch({ name, tankId, tint, skin, stats, battles, party, mode, uid, onLobby, onStart, onClose }, timeoutMs = 8000) {
+export function connectMatch({ name, tankId, tint, skin, stats, battles, party, mode, uid, training, onLobby, onStart, onClose }, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     let settled = false
     let ws
     // в query: токен взвода (сервер сводит друзей в одну комнату) и режим боя
-    // (захват/уничтожение — чужие режимы в разные комнаты)
+    // (захват/уничтожение — чужие режимы в разные комнаты). training=1 — отдельная
+    // тренировочная комната (соло + замороженные боты) для самого первого боя.
     const qs = []
     if (party) qs.push(`party=${encodeURIComponent(party)}`)
     if (mode === 'annihilation') qs.push('mode=annihilation')
+    if (training) qs.push('training=1')
     const url = qs.length ? `${WS_URL}?${qs.join('&')}` : WS_URL
     try {
       ws = new WebSocket(url)

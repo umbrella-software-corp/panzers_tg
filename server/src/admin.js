@@ -24,6 +24,11 @@ export const adminPage = () => `<!doctype html>
   tr:last-child td { border-bottom:none; }
   .num { text-align:right; font-variant-numeric:tabular-nums; }
   .ok { color:var(--green); } .warn { color:var(--amber); } .muted { color:var(--dim); }
+  .lnk { color:var(--blue); cursor:pointer; text-decoration:none; border-bottom:1px dashed rgba(77,163,255,.5); }
+  .lnk:hover { border-bottom-style:solid; }
+  #drill { position:fixed; inset:0; background:rgba(0,0,0,.82); z-index:50; overflow:auto; padding:20px; }
+  .drillcard { max-width:1200px; margin:8px auto; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .drillhead { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
   #login { max-width:340px; margin:80px auto; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px; }
   input { width:100%; padding:10px; background:#0d100a; border:1px solid var(--line); border-radius:8px; color:var(--ink); margin:10px 0; }
   button { width:100%; padding:10px; background:var(--amber); border:none; border-radius:8px; font-weight:700; cursor:pointer; }
@@ -60,6 +65,15 @@ export const adminPage = () => `<!doctype html>
   <h2>Покупки за звёзды</h2><div id="payments"></div>
   <h2>Игроки</h2><div id="profiles"></div>
 </div>
+<div id="drill" hidden>
+  <div class="drillcard">
+    <div class="drillhead">
+      <h2 id="drillTitle" style="margin:0"></h2>
+      <button style="width:auto; padding:6px 14px; background:var(--line); color:var(--ink)" onclick="closeDrill()">Закрыть ✕</button>
+    </div>
+    <div id="drillBody"></div>
+  </div>
+</div>
 <div id="status"></div>
 <script>
 const $ = (id) => document.getElementById(id)
@@ -80,6 +94,8 @@ async function api(path) {
   return r.json()
 }
 
+// последняя выгрузка профилей — для дродауна «игроки этого источника/реферера»
+let DATA = { profiles: [], now: 0, online: new Set() }
 // генератор реф-ссылки трафика: метка → t.me/<бот>?startapp=src_<метка>
 let LINK_BASE = ''
 function makeLink() {
@@ -101,6 +117,7 @@ window.copyLink = copyLink
 async function refresh() {
   const s = await api('/api/admin/stats')
   const prof = await api('/api/admin/profiles')
+  DATA = { profiles: prof.profiles || [], now: s.now || Date.now(), online: new Set(s.onlineUids || []) }
   $('cards').innerHTML = [
     [s.online, 'онлайн (уник. tg-id)'],
     [s.inBattle ?? 0, 'в бою сейчас'],
@@ -126,7 +143,7 @@ async function refresh() {
   $('sources').innerHTML = table(
     ['Источник', 'Игроков', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Новых 7д'],
     t.bySource.map((x) => [
-      x.src === '—' ? '— без метки (прямой заход)' : esc(x.src),
+      '<a class="lnk" onclick="showSource(\\'' + esc(x.src === '—' ? '' : x.src) + '\\')">' + (x.src === '—' ? '— без метки (прямой заход)' : esc(x.src)) + '</a>',
       x.users,
       x.played + ' · ' + pct(x.played, x.users),
       (x.ghosts || 0) + ' · ' + pct(x.ghosts || 0, x.users),
@@ -141,7 +158,7 @@ async function refresh() {
     ? table(
         ['Реферер (tg-id)', 'Привёл', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Новых 7д'],
         refs.map((x) => [
-          esc(String(x.ref).replace(/^tg_/, '')),
+          '<a class="lnk" onclick="showRef(\\'' + esc(x.ref) + '\\')">' + esc(String(x.ref).replace(/^tg_/, '')) + '</a>',
           x.came,
           x.played + ' · ' + pct(x.played, x.came),
           x.ghosts + ' · ' + pct(x.ghosts, x.came),
@@ -195,6 +212,47 @@ async function refresh() {
   )
   $('status').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU')
 }
+
+// дродаун «все игроки этого источника/реферера» + их РЕАЛЬНЫЙ статус воронки.
+// статус — та же логика, что в сводке: бой по клиентскому stats.battles, поэтому
+// «завис без боя» = наиграл, но клиент не до-сохранил battles>0 (см. оговорку в чате).
+function bucketTag(p) {
+  if ((p.battles || 0) > 0) return '<span class="ok">дошёл до боя</span>'
+  const d = (p.lastSeen || 0) - (p.firstSeen || 0)
+  return d < 60000 ? '<span class="muted">исчез &lt;1мин</span>' : '<span class="warn">завис без боя</span>'
+}
+const durMin = (ms) => (ms > 0 ? Math.round(ms / 60000) + ' мин' : '—')
+function renderPlayers(title, list) {
+  const onSet = DATA.online
+  const now = DATA.now
+  const isOnline = (p) => onSet.has(p.uid) || (p.lastSeen && now - p.lastSeen < 150000)
+  const rank = (p) => ((p.battles || 0) > 0 ? 1 : (p.lastSeen || 0) - (p.firstSeen || 0) < 60000 ? 2 : 0) // «завис» — наверх
+  list = list.slice().sort((a, b) => rank(a) - rank(b) || (b.lastSeen || 0) - (a.lastSeen || 0))
+  $('drillTitle').innerHTML = esc(title) + ' <span class="muted" style="font-size:13px">· ' + list.length + ' игроков</span>'
+  $('drillBody').innerHTML = table(
+    ['Игрок', 'UID', 'Статус', 'Боёв', 'В апе', 'Первый заход', 'Был'],
+    list.map((p) => [
+      (isOnline(p) ? '<span style="color:#7cc05a">● </span>' : '') + esc(p.name || '—'),
+      esc(p.uid || '—'),
+      bucketTag(p),
+      p.battles || 0,
+      durMin((p.lastSeen || 0) - (p.firstSeen || 0)),
+      dt(p.firstSeen),
+      dt(p.lastSeen),
+    ]),
+  )
+  $('drill').hidden = false
+}
+function showSource(src) {
+  renderPlayers('Источник: ' + (src || '— без метки (прямой заход)'), DATA.profiles.filter((p) => (src === '' ? !p.src : p.src === src)))
+}
+function showRef(ref) {
+  renderPlayers('Реферер: ' + String(ref).replace(/^tg_/, ''), DATA.profiles.filter((p) => p.referredBy === ref))
+}
+function closeDrill() { $('drill').hidden = true }
+window.showSource = showSource
+window.showRef = showRef
+window.closeDrill = closeDrill
 
 async function toggleTournaments(on) {
   await fetch('/api/admin/tournaments', {

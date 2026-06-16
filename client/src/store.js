@@ -146,6 +146,11 @@ if (typeof profile.premiumUntil !== 'number') profile.premiumUntil = 0 // пре
 if (profile.battleMode !== 'annihilation') profile.battleMode = 'capture' // режим боя: захват точек / на уничтожение
 // тур по ангару показываем один раз самому новому игроку; уже игравшим — нет
 if (typeof profile.onboarded !== 'boolean') profile.onboarded = (profile.stats?.battles || 0) > 0
+// тренировочный первый бой (соло + замороженные боты, гайд «едь/целься/стреляй»)
+// проходим один раз самому первому запуску; уже игравшим — считаем пройденным
+if (typeof profile.trainingDone !== 'boolean') profile.trainingDone = (profile.stats?.battles || 0) > 0
+// подарок «выбери второй танк» (тир-2) после первого боя — один раз самому новому
+if (typeof profile.secondTankChosen !== 'boolean') profile.secondTankChosen = (profile.stats?.battles || 0) > 0
 // бонус за первый бой выдаём только новичку; у кого уже есть бои — считаем выданным
 if (typeof profile.firstBattleRewarded !== 'boolean') profile.firstBattleRewarded = (profile.stats?.battles || 0) > 0
 
@@ -173,7 +178,12 @@ export async function syncProfile() {
     const res = await apiLoadProfile()
     if (res && res.profile) {
       const { _updatedAt, ...rest } = res.profile
+      const localDaily = profile.daily // claim мог не успеть уехать на сервер до перезапуска
       Object.assign(profile, rest)
+      // НЕ даём СТАРОМУ серверному daily.last затереть свежий локальный: иначе после
+      // claim'а (POST debounced) перезапуск мини-аппа воскрешал дейлик и давал пере-клейм
+      // со взвинчиванием стрика. Даты YYYY-MM-DD сравниваются как строки = хронологически.
+      if (localDaily && (localDaily.last || '') > ((profile.daily && profile.daily.last) || '')) profile.daily = localDaily
       // старые серверные профили без перков — дорастить форму
       if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {}
     } else {
@@ -229,6 +239,19 @@ export function buyTank(tank) {
   if (!canUnlock(tank) || profile.credits < (tank.cost || 0)) return false
   profile.credits -= tank.cost || 0
   profile.owned.push(tank.id)
+  return true
+}
+
+// бесплатный подарок танка (онбординг: «выбери второй танк» после первого боя) —
+// в ОБХОД обычного гейта (топ-модули прева 5/5 + кредиты). Добавляем во владение,
+// делаем выбранным и переключаем нацию ангара на его ветку. Идемпотентна.
+export function grantFreeTank(id) {
+  const tank = TANK_BY_ID[id]
+  if (!tank) return false
+  if (!isOwned(id)) profile.owned.push(id)
+  profile.selectedTank = id
+  profile.nation = nationOf(id)
+  profile.secondTankChosen = true
   return true
 }
 

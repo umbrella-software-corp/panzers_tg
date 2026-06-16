@@ -684,6 +684,9 @@ function setupBattleSocket(ws, room, human, ip) {
       room.sim.setInput(human.id, msg.throttle, msg.steer)
     } else if (msg.type === 'fire') {
       room.sim.fire(human.id)
+    } else if (msg.type === 'tutorial-done') {
+      // клиент закончил/пропустил обучающий гайд первого боя — будим замороженных ботов
+      if (room.training) room.guided = false
     } else if (msg.type === 'ping') {
       send(ws, { type: 'pong', ts: msg.ts })
     }
@@ -780,6 +783,12 @@ setInterval(refreshBotNames, 180000).unref?.()
 // под наплыв). Вызывать на каждом входе/«join», когда известно battles/состав.
 function scheduleStart(room) {
   if (room.started) return
+  // тренировочная комната (первый бой новичка): соло + боты, стартуем сразу как
+  // пришли статы (join) — без окна добора живых.
+  if (room.training) {
+    startRoom(room)
+    return
+  }
   const n = room.humans.length
   if (n === 0) return
   if (n >= TEAM_SIZE * 2) {
@@ -824,7 +833,9 @@ function startRoom(room) {
   // softFactor/SOFT_START в shared/config.js). Новичок почти всегда соло-против-
   // ботов, так что смягчение точечное; ветеран в миксе просто получит softFactor
   // по своему (меньшему) числу боёв — дуэль человек-vs-человек не затронута.
-  const minBattles = Math.min(...room.humans.map((h) => h.battles | 0))
+  // тренировка форсит МАКСИМАЛЬНО мягких ботов (как первый бой), даже если клиент
+  // прислал battles>0 — гайд должен быть безопасным
+  const minBattles = room.training ? 0 : Math.min(...room.humans.map((h) => h.battles | 0))
   const softF = softFactor(minBattles)
   const softStart = softF > 0
   room.sim = new BattleSim({
@@ -838,6 +849,9 @@ function startRoom(room) {
 
   // стартовый отсчёт: мир застыл до этого момента (см. roomTick) — синхронно с «3-2-1»
   room.startAt = Date.now() + COUNTDOWN_MS
+  // тренировка: враги заморожены, пока клиент ведёт гайд; бэкстоп — будим через 90с,
+  // если tutorial-done так и не пришёл (стух/закрыл вкладку)
+  if (room.training) room.guidedDeadline = Date.now() + 90000
 
   // ключи реконнекта: по unitId, переживают отвал сокета (для возврата в бой)
   room.rejoinKeys = new Map()
@@ -918,8 +932,11 @@ function roomTick(room) {
     // буфер событий инициализируем ВСЕГДА (даже в warmup) — иначе снапшот ниже
     // вызывает eventsForTeam(undefined) и комната падает на первом тике отсчёта
     if (!room.evBuf) room.evBuf = []
+    // тренировка: враги заморожены, пока идёт гайд (room.guided). Бэкстоп — если
+    // клиент не прислал tutorial-done за разумное время, будим ботов сами.
+    if (room.guided && room.guidedDeadline && Date.now() > room.guidedDeadline) room.guided = false
     if (!warming) {
-      room.sim.step(TICK_DT)
+      room.sim.step(TICK_DT, !!room.guided)
       // события копим между отправками: шлём реже тика, но НИ ОДНО не теряем
       // (выстрелы/попадания/киллы с пропущенных тиков уходят со следующим снапшотом)
       const ev = room.sim.takeEvents()
@@ -1016,6 +1033,7 @@ wss.on('connection', (ws, req) => {
   // комнату; режим (?mode=annihilation) — какой бой искать (захват по умолчанию)
   let party = null
   let mode = 'capture'
+  let training = false
   let squadId = null
   let rejoinRoom = null
   let rejoinUnit = 0
@@ -1024,6 +1042,7 @@ wss.on('connection', (ws, req) => {
     const q = new URL(req.url, 'http://x').searchParams
     party = (q.get('party') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
     mode = q.get('mode') === 'annihilation' ? 'annihilation' : 'capture'
+    training = q.get('training') === '1' // тренировочный первый бой: соло + замороженные боты
     squadId = (q.get('squad') || '').replace(/[^0-9]/g, '').slice(0, 20) || null
     rejoinRoom = (q.get('rejoin') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16) || null
     rejoinUnit = (q.get('unit') || '').replace(/[^0-9]/g, '').slice(0, 6) | 0
@@ -1089,7 +1108,9 @@ wss.on('connection', (ws, req) => {
   }
 
   const id = `p${nextId++}`
-  const room = getJoinRoom(mode)
+  // тренировочный первый бой: ОТДЕЛЬНАЯ комната (НЕ из общего пула waitingRooms),
+  // чтобы к новичку не подсел живой игрок — только он и (замороженные на гайд) боты.
+  const room = training ? Object.assign(newRoom(), { mode, training: true, guided: true }) : getJoinRoom(mode)
   // party-токен храним на игроке — по нему делим на команды в startRoom (взвод цело)
   const human = { id, party, name: tr('lobbyPlayer', 'en', { id }), team: 0, ws, stats: null, tankId: null, tint: 0, skin: null, battles: 0, uid: null }
   room.humans.push(human)
@@ -1097,11 +1118,15 @@ wss.on('connection', (ws, req) => {
   ws.room = room
 
   send(ws, { type: 'init', id, map: MAP_SIZE, tickHz: TICK_HZ, teamSize: TEAM_SIZE, waitMs: WAIT_MS })
-  console.log(`[ws] ${id} → ${room.id} (${room.humans.length} чел.)`)
+  console.log(`[ws] ${id} → ${room.id} (${room.humans.length} чел.)${training ? ' [тренировка]' : ''}`)
 
-  // первый в комнате — потолок ожидания (WAIT_MS); точный режим (новичок/≥2 живых)
-  // уточнит join-сообщение через scheduleStart. ≥2-й живой уже здесь → окно добора.
-  if (room.humans.length === 1) {
+  if (training) {
+    // тренировка: ждём только join (статы танка) → scheduleStart мгновенно стартует.
+    // фолбэк-таймер на случай, если join не дошёл (стартуем на DEFAULT_CLASS)
+    room.waitTimer = setTimeout(() => startRoom(room), 8000)
+  } else if (room.humans.length === 1) {
+    // первый в комнате — потолок ожидания (WAIT_MS); точный режим (новичок/≥2 живых)
+    // уточнит join-сообщение через scheduleStart. ≥2-й живой уже здесь → окно добора.
     room.deadline = Date.now() + WAIT_MS
     room.waitTimer = setTimeout(() => startRoom(room), WAIT_MS)
   } else {

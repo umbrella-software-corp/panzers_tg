@@ -13,6 +13,7 @@ import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // alias: `t` встречается как локальная переменная ниже
 import Results from './Results.vue'
 import PzIcon from './ui/PzIcon.vue'
+import TrainingGuide from './TrainingGuide.vue'
 
 const props = defineProps({
   loadout: { type: Object, default: null },
@@ -20,15 +21,33 @@ const props = defineProps({
   side: { type: Number, default: 0 }, // 0 — юг (синие), 1 — север (красные)
   mode: { type: String, default: 'capture' }, // 'capture' | 'annihilation'
   net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz, mode }
+  training: { type: Boolean, default: false }, // тренировочный первый бой: враги заморожены, поверх — гайд
 })
 const emit = defineEmits(['exit', 'rematch'])
 
 const stage = ref(null)
 const minimap = ref(null)
 const isNet = !!props.net
+// тренировочный первый бой: поверх живого боя ведём гайд «едь/целься/стреляй»,
+// враги заморожены сервером (room.guided), пока активен trainingActive
+const isTraining = !!props.training
+const trainingActive = ref(isTraining)
 // обучающая подсказка прицеливания: только в самом первом бою и до первого выстрела
+// (в тренировке учим стрельбе самим гайдом — старую подсказку не показываем)
 const firstBattle = (profile.stats?.battles || 0) === 0
 const firedOnce = ref(false)
+// гайд завершён/пропущен → будим замороженных ботов на сервере и помечаем тренировку
+function finishTraining() {
+  if (!trainingActive.value) return
+  trainingActive.value = false
+  try {
+    game.client && game.client.send({ type: 'tutorial-done' })
+  } catch {
+    /* сокет мог закрыться — не критично, сервер разморозит ботов по бэкстопу */
+  }
+  profile.trainingDone = true // персистится (deep watch в store) — больше не уводим в тренировку
+  track('training_guide_finished', { time_sec: battleSec() })
+}
 // онлайн-онли: бой всегда сетевой (Battle рендерится только после deploy(net)).
 const game = new NetGame(props.net)
 
@@ -667,6 +686,14 @@ onBeforeUnmount(() => {
   clearTimeout(shakeTimer)
   clearTimeout(endTimer)
   clearNetWatchdog()
+  // ушли из боя, не докрутив гайд (выход/реванш) — на всякий будим ботов на сервере
+  if (isTraining && trainingActive.value) {
+    try {
+      game.client && game.client.send({ type: 'tutorial-done' })
+    } catch {
+      /* ок */
+    }
+  }
   game.destroy()
 })
 </script>
@@ -830,10 +857,19 @@ onBeforeUnmount(() => {
 
     <!-- подсказка прицеливания в первом бою: учим ловить зелёный «захват» -->
     <transition name="fade">
-      <div v-if="firstBattle && !firedOnce && phase === 'fighting' && state.playerHp > 0" class="aim-hint pz-display">
+      <div v-if="firstBattle && !firedOnce && !isTraining && phase === 'fighting' && state.playerHp > 0" class="aim-hint pz-display">
         {{ tr('battle.aimPre') }}<b>{{ tr('battle.fire') }}</b>{{ tr('battle.aimMid') }}<b class="g">{{ tr('battle.green') }}</b>
       </div>
     </transition>
+
+    <!-- ГАЙД ПЕРВОГО БОЯ (тренировка): враги заморожены сервером, ведём «едь → целься
+         → огонь» поверх живого боя. Завершил/пропустил → будим ботов (finishTraining) -->
+    <TrainingGuide
+      v-if="isTraining && trainingActive && phase === 'fighting' && !paused && state.playerHp > 0"
+      :game="game"
+      @done="finishTraining"
+      @skip="finishTraining"
+    />
 
     <!-- ОГОНЬ -->
     <button v-show="phase === 'fighting' && !paused && state.playerHp > 0" class="fire" :class="{ cold: !state.ready, locked: state.aimLock }" @pointerdown.prevent="onFire">
