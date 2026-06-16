@@ -21,6 +21,7 @@ import ChannelSheet from './ChannelSheet.vue'
 import FeedbackSheet from './FeedbackSheet.vue'
 
 const emit = defineEmits(['play', 'go'])
+const props = defineProps({ postBattle: { type: Boolean, default: false } }) // фидбек-баннер — только сразу после боя
 const squadOpen = ref(false)
 const tasksOpen = ref(false)
 const channelOpen = ref(false)
@@ -40,7 +41,7 @@ function openChannelSheet() {
 // промо «нам важно ваше мнение → напиши в саппорт → +жетоны»: пока бонус не забран,
 // новичкам до первого боя не мешаем (как и канал)
 const feedbackOffer = computed(
-  () => serverConfig.feedback.on && !profile.feedbackClaimed && !firstSession.value,
+  () => serverConfig.feedback.on && !profile.feedbackClaimed && props.postBattle,
 )
 function openFeedbackSheet() {
   track('feedback_offer_opened', { from_screen: 'hangar' })

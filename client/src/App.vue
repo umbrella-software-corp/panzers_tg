@@ -28,6 +28,9 @@ const draw = ref({ mapId: 'polygon', side: 0 })
 // онлайн-матч от матчмейкинга ({client, mapId, side, youUnit, tickHz}). Игра онлайн-онли:
 // матчмейкинг входит в бой только с живым клиентом, офлайн-фоллбэка нет.
 const netMatch = ref(null)
+// «только что вышел из боя» — баннер фидбека показываем лишь в ангаре сразу после боя
+// (на эмоциях), а не висящим постоянно. Сбрасывается при любой навигации/новом бое.
+const cameFromBattle = ref(false)
 // первый запуск новичка: ведём сразу в тренировочный бой (соло + замороженные боты,
 // гайд «едь/целься/стреляй»), минуя ангар. Флаг едет в Matchmaking → Battle.
 const training = ref(false)
@@ -138,6 +141,7 @@ async function handleStartParam() {
 }
 
 function go(to) {
+  cameFromBattle.value = false // ушёл листать ангар/другие экраны — фидбек-баннер прячем
   screen.value = to
 }
 
@@ -207,6 +211,7 @@ watch(
   { immediate: true },
 )
 function play() {
+  cameFromBattle.value = false // ушёл в новый бой — пост-боевой баннер сбрасываем
   training.value = false // обычный бой из ангара — не тренировка
   track('play_clicked', {
     from_screen: screen.value,
@@ -288,6 +293,7 @@ function exitBattle(reward) {
     damage: reward?.damage || 0,
     kills: reward?.kills || 0,
   })
+  cameFromBattle.value = true // вернулся из боя → показать баннер фидбека (на эмоциях)
   screen.value = 'hangar'
   maybeShowDaily() // после первого боя (battles>0) дейлик всплывает здесь, а не на входе
   maybeAskPush() // только что сыграл первый бой → просим разрешение на пуши (один раз)
@@ -308,7 +314,7 @@ function rematch(reward) {
 </script>
 
 <template>
-  <Hangar v-if="screen === 'hangar'" @play="play" @go="go" />
+  <Hangar v-if="screen === 'hangar'" :post-battle="cameFromBattle" @play="play" @go="go" />
   <Tree v-else-if="screen === 'tree'" @go="go" />
   <Crew v-else-if="screen === 'crew'" @go="go" />
   <Shop v-else-if="screen === 'shop'" @go="go" />
