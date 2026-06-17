@@ -5,7 +5,9 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
-import { haptic, openSupport } from '../tg.js'
+import { haptic, openSupport, tgUserId } from '../tg.js'
+import { preload3D, TANK3D } from '../game/NetGame3D.js'
+import Tank3DView from './ui/Tank3DView.vue'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 import TankImg from './ui/TankImg.vue'
@@ -21,6 +23,47 @@ import FeedbackSheet from './FeedbackSheet.vue'
 
 const emit = defineEmits(['play', 'go'])
 const props = defineProps({ postBattle: { type: Boolean, default: false } }) // фидбек-баннер — только сразу после боя
+
+// ЭКСПЕРИМЕНТ 3D: тестеры видят на главной тоггл «3D» — следующий бой пойдёт в
+// 3D-рендере (Three.js, NetGame3D) вместо 2D. Гейт по tg-id; в деве (localhost)
+// показываем всегда для проверки. Флаг живёт в localStorage.pz3d, Battle.vue
+// читает его при монтировании боя — перезагрузка не нужна.
+const TESTERS = new Set([226201733, 6177596024, 1210592665, 485427336])
+const isTester = (() => {
+  const id = Number(tgUserId())
+  const dev = typeof location !== 'undefined' && /localhost|127\.0\.0\.1/.test(location.hostname)
+  return dev || TESTERS.has(id)
+})()
+const threeD = ref((() => { try { return localStorage.getItem('pz3d') === '1' } catch { return false } })())
+// 3D-режим: ангар показывает только 3 танка (T-90/Leopard/Abrams) в 3D, мордой к
+// игроку. Пикер сразу ставит нацию+танк (для эксперимента — без гейта владения).
+const td3Sel = ref(Math.max(0, TANK3D.findIndex((t) => t.key === profile.selectedTank)))
+const td3Index = computed(() => TANK3D[td3Sel.value].model)
+function pick3D(i) {
+  td3Sel.value = i
+  const t = TANK3D[i]
+  profile.nation = t.nation
+  profile.selectedTank = t.key
+  haptic('select')
+}
+if (threeD.value) { preload3D(); pick3D(td3Sel.value) } // 3D уже включён → греем ассеты + ставим 3D-танк
+// держим согласованность танка с режимом: в 3D — один из 3 (даже если async-профиль
+// перезатёр); ВНЕ 3D — только купленный (иначе залоченный 3D-танк не пустит в 2D-бой)
+watch([threeD, () => profile.selectedTank], () => {
+  if (threeD.value) {
+    if (!TANK3D.some((t) => t.key === profile.selectedTank)) pick3D(td3Sel.value)
+  } else if (!isOwned(profile.selectedTank)) {
+    const s = tanksOfNation(profile.nation)[0]
+    if (s) selectTank(s.id)
+  }
+}, { immediate: true })
+function toggle3D() {
+  threeD.value = !threeD.value
+  try { localStorage.setItem('pz3d', threeD.value ? '1' : '0') } catch { /* приватный режим */ }
+  if (threeD.value) { preload3D(); pick3D(td3Sel.value) } // включили → прогрев + выбрать 3D-танк
+  haptic('light')
+  track('exp_3d_toggle', { on: threeD.value })
+}
 const squadOpen = ref(false)
 const tasksOpen = ref(false)
 const channelOpen = ref(false)
@@ -127,7 +170,7 @@ const ttxStats = computed(() => {
     return { key: k, label: STAT_LABELS[k], base, value: Math.min(10, +(base * m).toFixed(1)), display: rv, displayUp: up > 0 ? +up.toFixed(k === 'rof' ? 1 : 0) : null }
   })
 })
-const locked = computed(() => !isOwned(tank.value.id))
+const locked = computed(() => !threeD.value && !isOwned(tank.value.id)) // в 3D-эксперименте 3 танка не залочены
 // первая сессия (ещё ни одного боя): на ангаре оставляем ОДИН CTA «В БОЙ» —
 // ЗАДАЧИ и ВЗВОД прячем, чтобы не размывать вход. После первого боя возвращаются.
 const firstSession = computed(() => (profile.stats?.battles || 0) === 0)
@@ -209,12 +252,16 @@ onMounted(() => {
       <!-- тень + танк -->
       <div class="tank-wrap" data-tut="tank">
         <div class="tank-shadow"></div>
-        <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-          <TankImg :tank-id="tank.id" :size="300" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
-        </div>
-        <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
-          <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
-        </div>
+        <!-- 3D-ЭКСПЕРИМЕНТ: модель танка сверху-спереди, мордой к игроку -->
+        <Tank3DView v-if="threeD" :index="td3Index" class="tank3d-host" />
+        <template v-else>
+          <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
+            <TankImg :tank-id="tank.id" :size="300" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
+          </div>
+          <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
+            <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
+          </div>
+        </template>
       </div>
 
       <!-- скримы для читаемости chrome -->
@@ -228,6 +275,8 @@ onMounted(() => {
         <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
         <!-- премиум активен: корона на главной (тап → магазин) -->
         <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive')" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}<i>{{ t('common.days', { n: premiumDaysLeft() }) }}</i></button>
+        <!-- ЭКСПЕРИМЕНТ: тестерский тоггл 3D-рендера боя -->
+        <button v-if="isTester" class="td-toggle pz-display" :class="{ on: threeD }" title="3D-рендер боя (тест)" @click="toggle3D">3D{{ threeD ? ' ✓' : '' }}</button>
       </div>
       <div style="display: flex; align-items: center; gap: 8px">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
@@ -305,8 +354,18 @@ onMounted(() => {
       </div>
     </template>
 
+    <!-- 3D-ЭКСПЕРИМЕНТ: пикер 3 танков вместо карусели -->
+    <div v-if="threeD" style="display: flex; gap: 8px; padding: 4px 14px; flex-shrink: 0; justify-content: center">
+      <button
+        v-for="(t, i) in TANK3D"
+        :key="t.key"
+        class="td-pick"
+        :class="{ on: i === td3Sel }"
+        @click="pick3D(i)"
+      >{{ t.label }}</button>
+    </div>
     <!-- карусель -->
-    <div class="pz-noscroll" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 14px; flex-shrink: 0">
+    <div v-else class="pz-noscroll" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 14px; flex-shrink: 0">
       <button
         v-for="t in tanks"
         :key="t.id"
@@ -432,6 +491,36 @@ onMounted(() => {
   font-style: normal;
   font-size: 9px;
   opacity: 0.7;
+}
+/* тестерский тоггл 3D-рендера боя */
+.td-toggle {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #9aa6b2;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.td-toggle.on {
+  color: #0b1014;
+  background: linear-gradient(180deg, #7fe0ff, #38b6ff);
+  border-color: transparent;
+  box-shadow: 0 0 10px rgba(56, 182, 255, 0.5);
+}
+/* 3D-эксперимент: хост модели в отсеке + пикер 3 танков */
+.tank3d-host { width: 340px; height: 310px; }
+.td-pick {
+  flex-shrink: 0; padding: 9px 16px;
+  font-family: 'Russo One', sans-serif; font-size: 13px; letter-spacing: 0.04em;
+  color: #cfe0ff; background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--line-strong); border-radius: 9px; cursor: pointer;
+}
+.td-pick.on {
+  color: #0b1014; background: linear-gradient(180deg, var(--amber-hi, #ffce5a), var(--amber));
+  border-color: transparent;
 }
 .prem-badge:active {
   transform: scale(0.95);
