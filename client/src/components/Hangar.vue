@@ -492,7 +492,10 @@ onMounted(() => {
    чтобы не перекрывался балансом/премиумом при любой ширине заголовка) */
 .td-toggle {
   position: absolute;
-  top: 52px;
+  /* корень .pz-screen имеет padding-top: var(--safe-top) и position:absolute, поэтому
+     абсолютный top отсчитывается ОТ САМОГО верха (под тг-кнопками). Добавляем safe-top,
+     чтобы чип сел НИЖЕ телеграм-кнопок (✕/⌄/•••), на уровень ряда наций. */
+  top: calc(var(--safe-top, 0px) + 52px);
   right: 12px;
   z-index: 30;
   padding: 4px 10px;
