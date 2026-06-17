@@ -21,6 +21,18 @@ export function tgUserId() {
   return u ? u.id : null
 }
 
+// ЭКСПЕРИМЕНТ 3D: доступ только этим tg-id (на проде). В деве (localhost) — всем,
+// для проверки. Гейтит и кнопку в ангаре, и сам запуск 3D-боя (Battle).
+const TESTERS_3D = new Set([226201733, 6177596024, 1210592665, 485427336])
+export function isTester3D() {
+  try {
+    if (/localhost|127\.0\.0\.1/.test(location.hostname)) return true
+    return TESTERS_3D.has(Number(tgUserId()))
+  } catch {
+    return false
+  }
+}
+
 // start_param из deep-link (?startapp=...): реферал «ref_<id>» или взвод «sq_<id>».
 // Вне Telegram (dev в браузере) — можно подставить через ?tgWebAppStartParam=.
 export function startParam() {

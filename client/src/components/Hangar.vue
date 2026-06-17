@@ -5,7 +5,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
-import { haptic, openSupport, tgUserId } from '../tg.js'
+import { haptic, openSupport, isTester3D } from '../tg.js'
 import { preload3D, TANK3D } from '../game/NetGame3D.js'
 import Tank3DView from './ui/Tank3DView.vue'
 import { track } from '../analytics.js'
@@ -28,12 +28,7 @@ const props = defineProps({ postBattle: { type: Boolean, default: false } }) // 
 // 3D-рендере (Three.js, NetGame3D) вместо 2D. Гейт по tg-id; в деве (localhost)
 // показываем всегда для проверки. Флаг живёт в localStorage.pz3d, Battle.vue
 // читает его при монтировании боя — перезагрузка не нужна.
-const TESTERS = new Set([226201733, 6177596024, 1210592665, 485427336])
-const isTester = (() => {
-  const id = Number(tgUserId())
-  const dev = typeof location !== 'undefined' && /localhost|127\.0\.0\.1/.test(location.hostname)
-  return dev || TESTERS.has(id)
-})()
+const isTester = isTester3D() // галка «3D» — только тестерам (на проде по tg-id)
 const threeD = ref((() => { try { return localStorage.getItem('pz3d') === '1' } catch { return false } })())
 // 3D-режим: ангар показывает только 3 танка (T-90/Leopard/Abrams) в 3D, мордой к
 // игроку. Пикер сразу ставит нацию+танк (для эксперимента — без гейта владения).

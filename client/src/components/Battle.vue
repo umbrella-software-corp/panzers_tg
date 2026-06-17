@@ -9,7 +9,7 @@ import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, party, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
 import { TANK_BY_ID, PREM_TANK, GOLD_AMMO_MULT } from '../game/meta.js'
-import { haptic } from '../tg.js'
+import { haptic, isTester3D } from '../tg.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // alias: `t` встречается как локальная переменная ниже
 import Results from './Results.vue'
@@ -50,8 +50,9 @@ function finishTraining() {
   track('training_guide_finished', { time_sec: battleSec() })
 }
 // онлайн-онли: бой всегда сетевой (Battle рендерится только после deploy(net)).
-// ЭКСПЕРИМЕНТ (тестеры): ?3d или localStorage.pz3d=1 → 3D-рендер (Three.js) тем же API.
-const use3D = (() => { try { return new URLSearchParams(location.search).has('3d') || localStorage.getItem('pz3d') === '1' } catch { return false } })()
+// ЭКСПЕРИМЕНТ: 3D-рендер ТОЛЬКО тестерам (по tg-id) И при включённом флаге
+// (?3d или localStorage.pz3d=1). Без тестер-id 3D не запустится даже через ?3d.
+const use3D = isTester3D() && (() => { try { return new URLSearchParams(location.search).has('3d') || localStorage.getItem('pz3d') === '1' } catch { return false } })()
 const game = isNet && use3D ? new NetGame3D(props.net) : new NetGame(props.net)
 
 // цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
