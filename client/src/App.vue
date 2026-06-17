@@ -283,7 +283,7 @@ function bankBattle(reward) {
   bankMedals({
     kills: reward.kills,
     damage: reward.damage,
-    blocked: reward.blocked,
+    blockedDmg: reward.blockedDmg, // медаль «wall» считает спасённый бронёй УРОН (need:2000), не число снарядов
     lightKills: reward.lightKills,
     survived: reward.survived,
     victory: reward.victory,

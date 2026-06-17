@@ -4,6 +4,7 @@
 // плавающий джойстик и hazard-кнопка ОГОНЬ с кольцом перезарядки.
 import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue'
 import { NetGame } from '../game/NetGame.js'
+import { NetGame3D } from '../game/NetGame3D.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, party, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
@@ -49,7 +50,9 @@ function finishTraining() {
   track('training_guide_finished', { time_sec: battleSec() })
 }
 // онлайн-онли: бой всегда сетевой (Battle рендерится только после deploy(net)).
-const game = new NetGame(props.net)
+// ЭКСПЕРИМЕНТ: ?3d или localStorage.pz3d=1 → 3D-рендер (Three.js) тем же API.
+const use3D = (() => { try { return new URLSearchParams(location.search).has('3d') || localStorage.getItem('pz3d') === '1' } catch { return false } })()
+const game = use3D ? new NetGame3D(props.net) : new NetGame(props.net)
 
 // цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
 const mySide = isNet ? props.net.side : props.side
@@ -424,7 +427,8 @@ const reward = computed(() => {
     // для задач дня
     damage: s.damageDealt || 0,
     lightKills: s.lightKills || 0,
-    blocked: s.blocked || 0,
+    blocked: s.blocked || 0, // число отражённых снарядов (задача дня)
+    blockedDmg: s.blockedDmg || 0, // урон, спасённый бронёй (медаль «wall»)
     victory: win,
     survived: !s.deaths, // одна жизнь: дожил до конца боя
     premTank,

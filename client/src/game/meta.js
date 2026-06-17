@@ -213,8 +213,9 @@ export const GOLD_AMMO_PACKS = [
 
 // ---------- ежедневные задачи (3 в день, ротация по дате) ----------
 // key — счётчик из итогов боя (см. bankTaskProgress): damage/kills/lightKills/
-// blocked/wins/battles. Блок бронёй копится только в боях с ботами (в PvP
-// брони пока нет).
+// blocked/wins/battles. `blocked` = ЧИСЛО снарядов, отражённых твоей бронёй за бой
+// (NetGame.blockedShells, ++ на каждый ricochet/nopen по мне). Урон, спасённый бронёй,
+// идёт отдельным `blockedDmg` (медаль «wall», need:2000) — не путать единицы.
 export const DAILY_TASKS = [
   { id: 'dmg600', goal: 4500, key: 'damage', credits: 400 },
   { id: 'kills3', goal: 3, key: 'kills', credits: 500 },
@@ -374,7 +375,7 @@ export const MEDALS = [
   { id: 'warrior', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150 } },
   { id: 'sniper', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2 } },
   { id: 'firestorm', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1 } },
-  { id: 'wall', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blocked', need: 2000, reward: { credits: 300, tokens: 1 } },
+  { id: 'wall', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blockedDmg', need: 2000, reward: { credits: 300, tokens: 1 } },
   { id: 'scout', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200 } },
   { id: 'survivor', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150 } },
   { id: 'triumph', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3 } },

@@ -62,6 +62,7 @@ export class NetGame {
     this.finalStats = null
     this.deaths = 0
     this.lightKills = 0 // для задач дня
+    this.blockedShells = 0 // снарядов отражено моей бронёй (рикошет/непробитие) — задача дня «заблокируй N»
     this.damageLog = new Map()
 
     // ввод
@@ -286,6 +287,7 @@ export class NetGame {
       } else if (ev.outcome && ev.target === this.youUnit) {
         // вражеский снаряд отскочил от МОЕЙ брони → «РИКОШЕТ ОТ БРОНИ»/«БРОНЯ НЕ ПРОБИТА»
         this.onSaved(ev.outcome)
+        this.blockedShells++ // считаем КАЖДЫЙ отражённый снаряд → задача дня «заблокируй N бронёй»
       }
     } else if (ev.type === 'hp') {
       this.flash.set(ev.unit, 0.25)
@@ -321,15 +323,25 @@ export class NetGame {
   // текущий ввод игрока (джойстик/клавиши) — общий для отправки и предикта
   _computeInput() {
     if (this.paused) return { throttle: 0, steer: 0 }
+    let throttle, steer
     const j = this.joystick
     if (j.active) {
-      const steer = Math.abs(j.x) < 0.12 ? 0 : j.x
+      steer = Math.abs(j.x) < 0.12 ? 0 : j.x
       const fwd = -j.y
-      const throttle = Math.abs(fwd) < 0.12 ? 0 : Math.max(-1, Math.min(1, fwd))
-      return { throttle, steer }
+      throttle = Math.abs(fwd) < 0.12 ? 0 : Math.max(-1, Math.min(1, fwd))
+    } else {
+      const k = this.keys
+      throttle = (k.fwd ? 1 : 0) - (k.back ? 1 : 0)
+      steer = (k.right ? 1 : 0) - (k.left ? 1 : 0)
     }
-    const k = this.keys
-    return { throttle: (k.fwd ? 1 : 0) - (k.back ? 1 : 0), steer: (k.right ? 1 : 0) - (k.left ? 1 : 0) }
+    // ЗАДНИЙ ХОД: инвертируем руль. Танк едет кормой вперёд, поэтому при том же повороте
+    // корпуса корма уходит в противоположную от пальца сторону — игрок жмёт «назад-влево»,
+    // а едет назад-вправо. Меняем знак стира на реверсе → разворачивается по интуиции.
+    // Делаем В ИСТОЧНИКЕ ввода (а не в физике): и предикт (_predict), и отправка на сервер
+    // (_sendInput) зовут _computeInput → оба получают исправленный steer, физика NetGame и
+    // shared/sim.js остаётся ОДНОЙ формулой, рассинхрона предикта с сервером нет.
+    if (throttle < 0) steer = -steer
+    return { throttle, steer }
   }
 
   // коллизия предсказанного своего танка с препятствиями/стенами/границами —
@@ -1720,7 +1732,8 @@ export class NetGame {
     this.onState({
       kills: you.kills || 0,
       lightKills: this.lightKills,
-      blocked: 0, // брони в PvP пока нет
+      blocked: this.blockedShells, // ЧИСЛО отражённых снарядов (задача дня «заблокируй N»)
+      blockedDmg: you.blocked || 0, // УРОН, спасённый бронёй (сервер: sim.js u.blocked) — для медали «wall»
       deaths: this.deaths,
       revealed: !!(you && you.revealed), // засвечен ли я врагом сейчас (чип «скрыт/виден»)
       firedReveal: !!(you && you.firedReveal), // РАСКРЫТ собственным выстрелом (чип, кольцо)
