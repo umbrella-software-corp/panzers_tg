@@ -355,7 +355,9 @@ function trafficMetrics(profiles, now) {
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
     if (p.lastSeen && now - p.lastSeen < DAY) dau++
     if (p.lastSeen && mskDay(p.lastSeen) === today) activeToday++
-    if (p.lastBattleAt && mskDay(p.lastBattleAt) === today) playedToday++
+    // играли сегодня: первый бой сегодня (новичок — ловится задним числом) ИЛИ
+    // последний бой сегодня (вернувшийся — пишется с выката lastBattleAt)
+    if ((p.firstBattleAt && mskDay(p.firstBattleAt) === today) || (p.lastBattleAt && mskDay(p.lastBattleAt) === today)) playedToday++
     const key = p.src || '—'
     const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
     e.users++
