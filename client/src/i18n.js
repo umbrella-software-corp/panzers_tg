@@ -13,13 +13,27 @@ const FALLBACK = 'en'
 let _locale = FALLBACK // выставляется initLocale() до mount (см. main.js)
 
 // ru* → 'ru', всё остальное → 'en'. Источники по приоритету: ?lang= (для dev/QA),
-// Telegram language_code, navigator.language. Любой нераспознанный код → английский.
+// ЯЗЫК КАМПАНИИ из start_param, Telegram language_code, navigator.language. Любой
+// нераспознанный код → английский.
 export function detectLocale() {
   try {
     const forced = new URL(location.href).searchParams.get('lang')
     if (forced === 'ru' || forced === 'en') return forced
   } catch {
     /* нет location — серверный/тестовый контекст */
+  }
+  // Язык РЕКЛАМНОЙ кампании из start_param (?startapp=…). Telegram Ads (§4.3) требует,
+  // чтобы язык destination совпадал с языком объявления/канала. Зритель (в т.ч.
+  // модератор) может быть с любым языком телефона — поэтому рекламные ссылки кодируют
+  // язык суффиксом: src_ads_ru → русский, src_ads_en → английский. Это перекрывает
+  // авто-детект по телефону, но ТОЛЬКО для трафика с явным тегом языка.
+  try {
+    const tg = window.Telegram && window.Telegram.WebApp
+    const sp = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || ''
+    if (/(^|[_-])ru$/i.test(sp)) return 'ru'
+    if (/(^|[_-])en$/i.test(sp)) return 'en'
+  } catch {
+    /* нет Telegram */
   }
   let code = ''
   try {
