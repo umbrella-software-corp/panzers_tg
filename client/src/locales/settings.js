@@ -1,26 +1,22 @@
-// Настройки игрока (шторка из ангара). Пока — только схема заднего хода: часть
-// игроков просила вернуть старое управление реверсом после фикса инверсии.
+// Настройки игрока (шторка из ангара): чекбокс реверсивного управления задним ходом
+// (часть игроков просила вернуть старое управление после фикса инверсии) + поддержка.
 export default {
   en: {
     title: 'Settings',
-    reverseTitle: 'Reverse steering',
-    reverseHint: 'How the tank turns while driving in reverse.',
-    reverseFollow: 'Follow joystick',
-    reverseFollowSub: 'Push back-left → tank backs left. Intuitive.',
-    reverseDirect: 'Classic',
-    reverseDirectSub: 'Steering stays as when driving forward (old controls).',
+    reverseLabel: 'Reverse steering',
+    reverseHint: 'On: in reverse the tank backs toward the joystick (push back-left → back left). Off: classic controls.',
     applyNote: 'Takes effect in your next battle.',
+    support: 'Support',
+    supportSub: 'A question or a bug? Message us.',
     done: 'Done',
   },
   ru: {
     title: 'Настройки',
-    reverseTitle: 'Управление задним ходом',
-    reverseHint: 'Как танк поворачивает, когда едешь назад.',
-    reverseFollow: 'По джойстику',
-    reverseFollowSub: 'Ведёшь назад-влево — едешь назад-влево. Интуитивно.',
-    reverseDirect: 'Классическое',
-    reverseDirectSub: 'Руль как на переднем ходу (старое управление).',
+    reverseLabel: 'Реверсивное управление',
+    reverseHint: 'Вкл: на заднем ходу корма идёт по джойстику (назад-влево → едешь назад-влево). Выкл: классическое управление.',
     applyNote: 'Применится в следующем бою.',
+    support: 'Поддержка',
+    supportSub: 'Вопрос или баг — напиши нам.',
     done: 'Готово',
   },
 }

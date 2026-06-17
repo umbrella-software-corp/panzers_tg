@@ -5,7 +5,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
-import { haptic, openSupport, isTester3D } from '../tg.js'
+import { haptic, isTester3D } from '../tg.js'
 import { preload3D, TANK3D } from '../game/NetGame3D.js'
 import Tank3DView from './ui/Tank3DView.vue'
 import { track } from '../analytics.js'
@@ -124,14 +124,6 @@ function openSquadSheet() {
     in_squad: inParty.value,
   })
   squadOpen.value = true
-}
-function openSupportTracked() {
-  track('support_opened', {
-    from_screen: 'hangar',
-    before_first_battle: (profile.stats?.battles || 0) === 0,
-  })
-  haptic('light')
-  openSupport()
 }
 // выбор танка в карусели ангара (+ отдельное событие на тап по запертому)
 function selectTankTracked(t) {
@@ -284,14 +276,6 @@ onMounted(() => {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
-        <button class="support-btn" :title="t('hangar.support')" :aria-label="t('hangar.support')" @click="openSupportTracked">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
-            <rect x="2.5" y="13" width="4" height="6" rx="1.6" />
-            <rect x="17.5" y="13" width="4" height="6" rx="1.6" />
-            <path d="M20 18v.5a3.5 3.5 0 0 1-3.5 3.5H13" />
           </svg>
         </button>
       </div>

@@ -1,21 +1,32 @@
 <script setup>
-// Шторка настроек (из шестерёнки в шапке ангара). Пока единственная настройка —
-// схема управления задним ходом: после фикса инверсии руля часть игроков попросила
-// вернуть старое поведение, поэтому даём выбор. Значение персистится в профиле
-// (store.setReverseSteer), Battle.vue читает его на старте боя → NetGame.invertReverseSteer.
+// Шторка настроек (из шестерёнки в шапке ангара). Содержит:
+//  • чекбокс «реверсивное управление» — на заднем ходу руль идёт по джойстику (фикс
+//    инверсии по тикету @anch_max). Вкл (дефолт) → invert; выкл → старое управление.
+//    Значение в профиле (store.setReverseSteer), Battle.vue читает на старте боя.
+//  • строку «Поддержка» — открывает саппорт-бот (раньше была иконкой в шапке ангара).
 // Teleport в body — чтобы модалка не срывалась на мобиле (как у FeedbackSheet).
+import { computed } from 'vue'
 import { profile, setReverseSteer } from '../store.js'
-import { haptic } from '../tg.js'
+import { haptic, openSupport } from '../tg.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 
 const emit = defineEmits(['close'])
 
-function pickReverse(mode) {
-  if (profile.reverseSteer === mode) return
+// чекбокс отмечен = режим 'follow' (руль по джойстику, дефолт); снят = 'direct' (классика)
+const reverseOn = computed(() => profile.reverseSteer !== 'direct')
+
+function toggleReverse() {
+  const mode = reverseOn.value ? 'direct' : 'follow'
   setReverseSteer(mode)
   haptic('select')
   track('settings_reverse_changed', { mode })
+}
+
+function support() {
+  track('support_opened', { from_screen: 'settings', before_first_battle: (profile.stats?.battles || 0) === 0 })
+  haptic('light')
+  openSupport()
 }
 </script>
 
@@ -26,21 +37,34 @@ function pickReverse(mode) {
         <button class="set-x" @click="emit('close')">✕</button>
         <div class="pz-display set-title">⚙ {{ t('settings.title') }}</div>
 
-        <div class="set-row">
-          <div class="set-label">{{ t('settings.reverseTitle') }}</div>
-          <div class="set-hint">{{ t('settings.reverseHint') }}</div>
-          <div class="set-opts">
-            <button class="set-opt" :class="{ on: profile.reverseSteer !== 'direct' }" @click="pickReverse('follow')">
-              <span class="set-opt-name">{{ t('settings.reverseFollow') }}</span>
-              <span class="set-opt-sub">{{ t('settings.reverseFollowSub') }}</span>
-            </button>
-            <button class="set-opt" :class="{ on: profile.reverseSteer === 'direct' }" @click="pickReverse('direct')">
-              <span class="set-opt-name">{{ t('settings.reverseDirect') }}</span>
-              <span class="set-opt-sub">{{ t('settings.reverseDirectSub') }}</span>
-            </button>
-          </div>
-          <div class="set-apply">{{ t('settings.applyNote') }}</div>
-        </div>
+        <!-- реверсивное управление: чекбокс -->
+        <button class="set-check" :class="{ on: reverseOn }" @click="toggleReverse">
+          <span class="set-check-txt">
+            <span class="set-check-label">{{ t('settings.reverseLabel') }}</span>
+            <span class="set-check-hint">{{ t('settings.reverseHint') }}</span>
+          </span>
+          <span class="set-box" :class="{ on: reverseOn }" aria-hidden="true">
+            <svg v-if="reverseOn" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          </span>
+        </button>
+        <div class="set-apply">{{ t('settings.applyNote') }}</div>
+
+        <div class="set-divider"></div>
+
+        <!-- поддержка -->
+        <button class="set-link" @click="support">
+          <svg class="set-link-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+            <rect x="2.5" y="13" width="4" height="6" rx="1.6" />
+            <rect x="17.5" y="13" width="4" height="6" rx="1.6" />
+            <path d="M20 18v.5a3.5 3.5 0 0 1-3.5 3.5H13" />
+          </svg>
+          <span class="set-link-txt">
+            <span class="set-link-label">{{ t('settings.support') }}</span>
+            <span class="set-link-sub">{{ t('settings.supportSub') }}</span>
+          </span>
+          <span class="set-chev">›</span>
+        </button>
 
         <button class="pz-cta set-cta" @click="emit('close')">{{ t('settings.done') }}</button>
       </div>
@@ -82,56 +106,112 @@ function pickReverse(mode) {
   color: var(--ink);
   text-align: center;
 }
-.set-row {
+/* чекбокс-строка */
+.set-check {
+  width: 100%;
   margin-top: 16px;
-}
-.set-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ink);
-}
-.set-hint {
-  margin-top: 3px;
-  font-size: 12px;
-  color: var(--ink-dim);
-}
-.set-opts {
-  margin-top: 10px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.set-opt {
+  align-items: center;
+  gap: 12px;
   text-align: left;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.02);
-  color: var(--ink-dim);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
-.set-opt.on {
+.set-check.on {
   border-color: var(--amber);
-  color: var(--ink);
   background: rgba(255, 176, 32, 0.08);
 }
-.set-opt-name {
+.set-check-txt {
+  flex: 1;
+  min-width: 0;
+}
+.set-check-label {
   display: block;
   font-size: 13.5px;
   font-weight: 700;
+  color: var(--ink);
 }
-.set-opt-sub {
+.set-check-hint {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 11.5px;
   line-height: 1.4;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
+}
+.set-box {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1.5px solid var(--line-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1a1208;
+  transition: background 0.15s, border-color 0.15s;
+}
+.set-box.on {
+  background: var(--amber);
+  border-color: var(--amber);
 }
 .set-apply {
   margin-top: 9px;
   font-size: 11.5px;
   color: var(--amber);
+}
+.set-divider {
+  height: 1px;
+  margin: 16px 0 0;
+  background: var(--line-strong);
+  opacity: 0.6;
+}
+/* строка-ссылка (поддержка) */
+.set-link {
+  width: 100%;
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 11px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.set-link:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+.set-link-ico {
+  flex-shrink: 0;
+  color: var(--amber);
+}
+.set-link-txt {
+  flex: 1;
+  min-width: 0;
+}
+.set-link-label {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.set-link-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+.set-chev {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--ink-faint);
+  line-height: 1;
 }
 .set-cta {
   width: 100%;
