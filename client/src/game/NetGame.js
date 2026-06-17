@@ -475,6 +475,9 @@ export class NetGame {
     texNames.forEach((n, i) => {
       if (loaded[i].status === 'fulfilled') this.tex[n] = loaded[i].value
     })
+    // КАРТ-СПЕЦИФИЧНАЯ ЗЕМЛЯ: /sprites/maps/<id>/ground.png — своя текстура на каждую
+    // карту (из утверждённых спрайт-листов). Нет файла → фоллбэк на общий ground+тинт темы.
+    this.mapGround = this.map && this.map.id ? await Assets.load(`/sprites/maps/${this.map.id}/ground.png`).catch(() => null) : null
     // хромакей баз танков — ПО ОДНОЙ с уступкой потоку: единый синхронный кусок
     // на старте боя блокировал главный поток (и приём снапшотов) → на iOS сокет
     // умирал. Дробление даёт WS-сообщениям проскочить между текстурами.
@@ -500,11 +503,13 @@ export class NetGame {
     this.terrLayer = new Container()
     this.tankLayer = new Container()
     this.fxLayer = new Container()
-    if (this.tex.ground) {
+    const groundTex = this.mapGround || this.tex.ground
+    if (groundTex) {
       const th = this.map.theme || {}
-      this.groundTile = new TilingSprite({ texture: this.tex.ground, width: this.mapSize, height: this.mapSize })
+      this.groundTile = new TilingSprite({ texture: groundTex, width: this.mapSize, height: this.mapSize })
       this.groundTile.tileScale.set(th.groundScale || 0.55)
-      this.groundTile.tint = th.ground || this.map.tint || 0xffffff
+      // карт-текстура уже своей расцветки — НЕ тинтуем; общий ground тинтуем темой
+      this.groundTile.tint = this.mapGround ? 0xffffff : th.ground || this.map.tint || 0xffffff
       this.world.addChild(this.groundTile)
     }
     this.world.addChild(this.bg, this.terrLayer, this.terrain, this.markGfx, this.tankLayer, this.gfx, this.fxLayer)
@@ -1546,7 +1551,8 @@ export class NetGame {
     if (!this.groundTile) g.rect(0, 0, this.mapSize, this.mapSize).fill(0x10141b)
     // тематический слой поверх земли: заливка (асфальт/снег — то, что тинтом по
     // оливковой текстуре не выходит) + улицы города
-    if (th.overlay != null) g.rect(0, 0, this.mapSize, this.mapSize).fill({ color: th.overlay, alpha: th.overlayAlpha ?? 0.5 })
+    // overlay (асфальт/снег тинтом) НЕ нужен поверх карт-специфичной земли — она уже готовая
+    if (th.overlay != null && !this.mapGround) g.rect(0, 0, this.mapSize, this.mapSize).fill({ color: th.overlay, alpha: th.overlayAlpha ?? 0.5 })
     if (this.map.roads && this.map.roads.length) {
       const c = this.mapSize / 2
       const sc = this.mapSize / MAP_SIZE
