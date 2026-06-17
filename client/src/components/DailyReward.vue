@@ -18,13 +18,22 @@ const nextDay = computed(() => {
 })
 const claimed = ref(null)
 
-function claim() {
-  claimed.value = claimDaily()
+const claiming = ref(false)
+async function claim() {
+  if (claiming.value) return // защита от дабл-тапа, пока идёт серверный клейм
+  claiming.value = true
+  const res = await claimDaily() // сервер решает: null = сегодня уже забрано (другое устройство) / сеть
+  claiming.value = false
+  if (!res) {
+    emit('close') // нечего забирать — закрываем без анимации
+    return
+  }
+  claimed.value = res
   track('daily_reward_claimed', {
-    streak_day: claimed.value?.day || null,
-    credits: claimed.value?.reward?.credits || 0,
-    tokens: claimed.value?.reward?.tokens || 0,
-    gold: claimed.value?.reward?.gold || 0,
+    streak_day: res.day || null,
+    credits: res.reward?.credits || 0,
+    tokens: res.reward?.tokens || 0,
+    gold: res.reward?.gold || 0,
   })
   setTimeout(() => emit('close'), 1100)
 }

@@ -15,6 +15,7 @@ import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from 
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
 import { channelConfig, claimChannelBonus } from './channel.js'
 import { feedbackConfig, claimFeedbackBonus } from './feedback.js'
+import { claimDaily } from './daily.js'
 import { adminPage } from './admin.js'
 import { trackServer, analyticsEnabled } from './analytics.js'
 
@@ -488,6 +489,11 @@ async function handleApi(req, res) {
       firstSeen: prev.firstSeen || Date.now(),
       lastSeen: Date.now(),
       lang: user.lang || prev.lang || 'ru', // язык для серверных сообщений (пуши/оплата)
+      // ежедневный вход теперь СЕРВЕРНО-авторитетен (daily.js claimDaily под локом):
+      // день/стрик двигает только /api/daily-bonus. Клиентский сейв НЕ может откатить
+      // daily.last — иначе с другого устройства (стейл-localStorage) дейлик забирался бы
+      // повторно со взвинчиванием стрика.
+      daily: prev.daily && typeof prev.daily === 'object' ? prev.daily : { last: '', streak: 0 },
       // очередь админ-выдач ведёт сервер: кладёт /api/admin/grant, применяет+чистит /api/grants-apply.
       // Клиентский сейв НЕ может её трогать — иначе игрок затёр бы свои же невыданные награды.
       pendingGrants: Array.isArray(prev.pendingGrants) ? prev.pendingGrants : [],
@@ -507,7 +513,7 @@ async function handleApi(req, res) {
     const out = await withProfileLock(user.uid, async () => {
       const p = await loadProfile(user.uid)
       if (!p || !Array.isArray(p.pendingGrants) || !p.pendingGrants.length) {
-        return { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, owned: (p && p.owned) || [], pendingGrants: [] }
+        return { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, goldAmmo: (p && p.goldAmmo) || 0, owned: (p && p.owned) || [], pendingGrants: [] }
       }
       let n = 0
       // got = что показать в in-app окне «🎁 Подарок от администрации». Только админ-выдачи
@@ -519,6 +525,7 @@ async function handleApi(req, res) {
         const reveal = !g.kind || g.kind === 'admin'
         if (g.credits) { p.credits = (p.credits || 0) + (+g.credits || 0); if (reveal) got.credits += +g.credits || 0 }
         if (g.tokens) { p.tokens = (p.tokens || 0) + (+g.tokens || 0); if (reveal) got.tokens += +g.tokens || 0 }
+        if (g.goldAmmo) { p.goldAmmo = (p.goldAmmo || 0) + (+g.goldAmmo || 0) } // золотые снаряды (дейлик); своя UI — без reveal-окна
         if (Array.isArray(g.tanks)) {
           if (!Array.isArray(p.owned)) p.owned = []
           for (const tk of g.tanks) if (tk && GRANT_TANKS.has(tk) && !p.owned.includes(tk)) { p.owned.push(tk); if (reveal) got.tanks.push(tk) }
@@ -527,7 +534,7 @@ async function handleApi(req, res) {
       }
       p.pendingGrants = []
       await saveProfile(user.uid, p)
-      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, owned: p.owned || [], pendingGrants: [] }
+      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], pendingGrants: [] }
     })
     return json(res, 200, out)
   }
@@ -548,6 +555,11 @@ async function handleApi(req, res) {
   if (req.url === '/api/feedback-bonus' && req.method === 'POST') {
     // разовый бонус за фидбек — выдаём, если игрок реально написал в саппорт-бот
     return json(res, 200, await claimFeedbackBonus(user.uid))
+  }
+  if (req.url === '/api/daily-bonus' && req.method === 'POST') {
+    // ежедневный вход — серверно-авторитетный клейм (день/стрик/выдача под локом),
+    // чтобы дейлик нельзя было забрать повторно с другого устройства/после очистки кеша
+    return json(res, 200, await claimDaily(user.uid))
   }
   if (req.url === '/api/invoice' && req.method === 'POST') {
     const { productId, name } = await readBody(req)

@@ -2,7 +2,7 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch, ref } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
@@ -48,7 +48,6 @@ import {
   SKINS,
   SKIN_BY_ID,
   combatStats,
-  DAILY_REWARDS,
   RATING_START,
   RATING_DELTA,
   GOLD_AMMO_PACKS,
@@ -225,6 +224,7 @@ async function applyPendingGrants() {
     if (r && r.ok) {
       profile.credits = r.credits || 0
       profile.tokens = r.tokens || 0
+      if (typeof r.goldAmmo === 'number') profile.goldAmmo = r.goldAmmo // золотые снаряды (награда дня)
       if (Array.isArray(r.owned)) profile.owned = r.owned
       profile.pendingGrants = Array.isArray(r.pendingGrants) ? r.pendingGrants : []
       const g = r.got
@@ -651,16 +651,25 @@ export function dailyAvailable() {
   return profile.daily.last !== dayStr()
 }
 
-// забрать награду дня; возвращает { day, reward } или null
-export function claimDaily() {
+// забрать награду дня — СЕРВЕРНО (день/стрик/выдача решает /api/daily-bonus под локом,
+// нельзя забрать дважды с разных устройств). Награда уезжает в pendingGrants, забираем
+// её атомарно через applyPendingGrants (credits/tokens/goldAmmo — авторитетно с сервера).
+// Возвращает { day, reward } или null (сегодня уже забрано / сеть). Async — caller await'ит.
+export async function claimDaily() {
   if (!dailyAvailable()) return null
-  const yesterday = dayStr(new Date(Date.now() - 86400e3))
-  profile.daily.streak = profile.daily.last === yesterday ? profile.daily.streak + 1 : 1
-  profile.daily.last = dayStr()
-  const reward = DAILY_REWARDS[(profile.daily.streak - 1) % DAILY_REWARDS.length]
-  addRewards(reward.credits || 0, reward.tokens || 0)
-  if (reward.gold) profile.goldAmmo += reward.gold
-  return { day: profile.daily.streak, reward }
+  const res = await apiDailyBonus().catch(() => null)
+  if (!res || !res.ok) {
+    // сервер сказал «уже забрано сегодня» (другое устройство) — подтянем его состояние
+    if (res && res.already) {
+      try { await syncProfile() } catch { /* офлайн — заберём на следующем синке */ }
+    }
+    return null
+  }
+  // сервер — источник правды: фиксируем его день/стрик локально (UI закроется, повторно
+  // не предложит), награду начисляем из очереди авторитетно
+  profile.daily = { last: dayStr(), streak: res.day }
+  await applyPendingGrants()
+  return { day: res.day, reward: res.reward }
 }
 
 // ---------- ежедневные задачи: 3 в день, прогресс из итогов боя ----------

@@ -80,6 +80,10 @@ export const apiChannelBonus = () => call('/api/channel-bonus', { method: 'POST'
 // разовый бонус за фидбек: сервер проверяет, писал ли игрок в саппорт-бот, и начисляет.
 // Ответ: { ok, granted } | { already } | { wrote:false } | { disabled }.
 export const apiFeedbackBonus = () => call('/api/feedback-bonus', { method: 'POST', body: '{}' })
+// ежедневный вход: серверный клейм (день/стрик/выдача под локом — нельзя забрать дважды
+// с разных устройств). Ответ: { ok, day, reward } | { already:true }. Награда уезжает
+// в pendingGrants — её надо забрать через apiGrantsApply.
+export const apiDailyBonus = () => call('/api/daily-bonus', { method: 'POST', body: '{}' })
 // атомарно применить очередь админ-выдач на сервере и забрать результат (кредиты/жетоны/
 // танки начисляет сервер, очередь чистит). Идемпотентно. Ответ: { ok, applied, credits, tokens, owned, pendingGrants }.
 export const apiGrantsApply = () => call('/api/grants-apply', { method: 'POST', body: '{}' })
