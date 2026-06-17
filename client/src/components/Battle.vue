@@ -54,6 +54,10 @@ function finishTraining() {
 // (?3d или localStorage.pz3d=1). Без тестер-id 3D не запустится даже через ?3d.
 const use3D = isTester3D() && (() => { try { return new URLSearchParams(location.search).has('3d') || localStorage.getItem('pz3d') === '1' } catch { return false } })()
 const game = isNet && use3D ? new NetGame3D(props.net) : new NetGame(props.net)
+// схема заднего хода из настроек игрока: 'direct' — без инверсии руля (старое управление),
+// иначе руль идёт по джойстику (дефолт). Читаем один раз на старте боя — менять можно
+// только в ангаре, в самом бою настроек нет. Работает и для 3D (NetGame3D extends NetGame).
+game.invertReverseSteer = profile.reverseSteer !== 'direct'
 
 // цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
 const mySide = isNet ? props.net.side : props.side

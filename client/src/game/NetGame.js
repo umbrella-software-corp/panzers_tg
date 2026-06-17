@@ -69,6 +69,9 @@ export class NetGame {
     this.joystick = { x: 0, y: 0, active: false }
     this.keys = { fwd: false, back: false, left: false, right: false }
     this.paused = false
+    // схема заднего хода (Battle.vue ставит из profile.reverseSteer): true — инвертируем
+    // руль на реверсе, корма идёт по джойстику; false — без инверсии (старое управление)
+    this.invertReverseSteer = true
     this._lastSent = { throttle: 0, steer: 0, at: 0 }
     this.specCam = null // после гибели — свободная камера наблюдения по карте
 
@@ -340,7 +343,8 @@ export class NetGame {
     // Делаем В ИСТОЧНИКЕ ввода (а не в физике): и предикт (_predict), и отправка на сервер
     // (_sendInput) зовут _computeInput → оба получают исправленный steer, физика NetGame и
     // shared/sim.js остаётся ОДНОЙ формулой, рассинхрона предикта с сервером нет.
-    if (throttle < 0) steer = -steer
+    // Под флагом: часть игроков привыкла к старому управлению (profile.reverseSteer='direct').
+    if (throttle < 0 && this.invertReverseSteer) steer = -steer
     return { throttle, steer }
   }
 

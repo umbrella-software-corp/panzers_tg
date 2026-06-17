@@ -20,6 +20,7 @@ import SquadSheet from './SquadSheet.vue'
 import TasksSheet from './TasksSheet.vue'
 import ChannelSheet from './ChannelSheet.vue'
 import FeedbackSheet from './FeedbackSheet.vue'
+import SettingsSheet from './SettingsSheet.vue'
 
 const emit = defineEmits(['play', 'go'])
 const props = defineProps({ postBattle: { type: Boolean, default: false } }) // фидбек-баннер — только сразу после боя
@@ -63,6 +64,12 @@ const squadOpen = ref(false)
 const tasksOpen = ref(false)
 const channelOpen = ref(false)
 const feedbackOpen = ref(false)
+const settingsOpen = ref(false)
+function openSettings() {
+  haptic('light')
+  track('settings_opened', { from_screen: 'hangar' })
+  settingsOpen.value = true
+}
 
 // промо «подпишись на канал → бонус» показываем, только если фича включена на сервере
 // (задан CHANNEL_ID) и бонус ещё не забран; новичкам до первого боя не мешаем.
@@ -273,6 +280,12 @@ onMounted(() => {
       </div>
       <div style="display: flex; align-items: center; gap: 8px">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
+        <button class="support-btn" :title="t('settings.title')" :aria-label="t('settings.title')" @click="openSettings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
         <button class="support-btn" :title="t('hangar.support')" :aria-label="t('hangar.support')" @click="openSupportTracked">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
@@ -464,6 +477,7 @@ onMounted(() => {
     <TasksSheet v-if="tasksOpen" @close="tasksOpen = false" />
     <ChannelSheet v-if="channelOpen" @close="channelOpen = false" />
     <FeedbackSheet v-if="feedbackOpen" @close="feedbackOpen = false" />
+    <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 
