@@ -348,16 +348,14 @@ function trafficMetrics(profiles, now) {
   let newToday = 0
   let new7d = 0
   let dau = 0
-  let activeToday = 0 // заходили именно сегодня (календарный день МСК)
-  let playedToday = 0 // из них реально играли бой (хоть раз) — «живые» игроки
+  let activeToday = 0 // открыли приложение сегодня (календарный день МСК)
+  let playedToday = 0 // реально вошли в бой сегодня (по серверному lastBattleAt) — «живые» игроки
   for (const p of profiles) {
     if (p.firstSeen && now - p.firstSeen < DAY) newToday++
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
     if (p.lastSeen && now - p.lastSeen < DAY) dau++
-    if (p.lastSeen && mskDay(p.lastSeen) === today) {
-      activeToday++
-      if ((p.battles | 0) > 0) playedToday++
-    }
+    if (p.lastSeen && mskDay(p.lastSeen) === today) activeToday++
+    if (p.lastBattleAt && mskDay(p.lastBattleAt) === today) playedToday++
     const key = p.src || '—'
     const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
     e.users++

@@ -211,7 +211,9 @@ export async function recordBattleEntry(uid) {
       const p = await loadProfile(uid)
       if (!p) return
       p.reachedBattle = true
-      if (!p.firstBattleAt) p.firstBattleAt = Date.now()
+      const nowTs = Date.now()
+      if (!p.firstBattleAt) p.firstBattleAt = nowTs
+      p.lastBattleAt = nowTs // время последнего входа в бой — для «сыграли бой сегодня» (МСК)
       p.srvBattles = (p.srvBattles | 0) + 1
       profilesCache = null
       await saveProfile(uid, p)
@@ -363,6 +365,7 @@ async function listProfilesUncached() {
         srvBattles: p.srvBattles | 0, // серверный счётчик входов в бой (надёжнее клиентского stats.battles)
         firstSeen: p.firstSeen || p._updatedAt || 0,
         lastSeen: p.lastSeen || p._updatedAt || 0,
+        lastBattleAt: p.lastBattleAt || 0, // время последнего входа в бой — для «сыграли бой сегодня»
       })
     } catch {
       /* битый файл — пропускаем */
