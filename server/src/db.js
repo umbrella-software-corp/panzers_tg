@@ -158,6 +158,25 @@ export async function saveProfile(uid, profile) {
   return job
 }
 
+// КРИТИЧЕСКАЯ СЕКЦИЯ НА ОДИН uid: сериализует ВЕСЬ цикл load→mutate→save (а не только
+// саму запись, как saveChain). Без неё два писателя одного профиля делают lost-update —
+// оба грузят файл, меняют разные поля, второй save затирает первого. Так пропадали
+// купленные/выданные награды и админ-выдачи из pendingGrants (один writer воскрешал уже
+// применённую очередь или ронял свежедобавленную). ВСЕ, кто грузит-меняет-сохраняет
+// профиль, обязаны оборачивать секцию в withProfileLock(uid, fn).
+// ВАЖНО: внутри fn НЕЛЬЗЯ брать лок на ДРУГОЙ uid (дедлок) — для двух профилей берём
+// локи последовательно, не вложенно (см. registerReferral).
+const profileLocks = new Map()
+export function withProfileLock(uid, fn) {
+  const key = safe(uid)
+  const prev = profileLocks.get(key) || Promise.resolve()
+  const run = prev.then(() => fn(), () => fn()) // продолжаем цепочку и после ошибки предыдущего
+  const tail = run.then(() => {}, () => {})
+  profileLocks.set(key, tail)
+  tail.then(() => { if (profileLocks.get(key) === tail) profileLocks.delete(key) }) // не копим Map
+  return run
+}
+
 // серверно-авторитетный «дошёл до боя»: помечаем профиль вошедшего в бой (по uid),
 // чтобы воронка не зависела от того, до-сохранил ли клиент stats.battles (а он часто
 // не доезжает → реально игравшие падали в «завис без боя»). reachedMem гасит повторные
@@ -165,18 +184,20 @@ export async function saveProfile(uid, profile) {
 const reachedMem = new Set()
 export async function markReachedBattle(uid) {
   if (!uid || reachedMem.has(uid)) return
-  try {
-    const p = await loadProfile(uid)
-    if (!p) return
-    reachedMem.add(uid)
-    if (p.reachedBattle) return
-    p.reachedBattle = true
-    if (!p.firstBattleAt) p.firstBattleAt = Date.now()
-    profilesCache = null // сводка для админки обновится сразу, не через 5с
-    await saveProfile(uid, p)
-  } catch {
-    /* профиль битый/гонка — не критично, пометим в следующий бой */
-  }
+  return withProfileLock(uid, async () => {
+    try {
+      const p = await loadProfile(uid)
+      if (!p) return
+      reachedMem.add(uid)
+      if (p.reachedBattle) return
+      p.reachedBattle = true
+      if (!p.firstBattleAt) p.firstBattleAt = Date.now()
+      profilesCache = null // сводка для админки обновится сразу, не через 5с
+      await saveProfile(uid, p)
+    } catch {
+      /* профиль битый/гонка — не критично, пометим в следующий бой */
+    }
+  })
 }
 
 // серверный СЧЁТЧИК боёв: +1 при КАЖДОМ входе человека в бой (startRoom). В отличие
@@ -185,17 +206,19 @@ export async function markReachedBattle(uid) {
 // боёв»). Тоже ставит reachedBattle. Админка показывает max(клиентский, серверный).
 export async function recordBattleEntry(uid) {
   if (!uid) return
-  try {
-    const p = await loadProfile(uid)
-    if (!p) return
-    p.reachedBattle = true
-    if (!p.firstBattleAt) p.firstBattleAt = Date.now()
-    p.srvBattles = (p.srvBattles | 0) + 1
-    profilesCache = null
-    await saveProfile(uid, p)
-  } catch {
-    /* гонка/битый профиль — не критично */
-  }
+  return withProfileLock(uid, async () => {
+    try {
+      const p = await loadProfile(uid)
+      if (!p) return
+      p.reachedBattle = true
+      if (!p.firstBattleAt) p.firstBattleAt = Date.now()
+      p.srvBattles = (p.srvBattles | 0) + 1
+      profilesCache = null
+      await saveProfile(uid, p)
+    } catch {
+      /* гонка/битый профиль — не критично */
+    }
+  })
 }
 
 // журнал платежей: и идемпотентность по charge id, и записи для админки.

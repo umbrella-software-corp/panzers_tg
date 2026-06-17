@@ -166,6 +166,15 @@ function setPage(i) {
         <div style="font-size: 11.5px; font-weight: 600; opacity: 0.75; text-align: center; margin-top: 8px">
           {{ t('results.branchLine', { branch: branchLabel, branchXp, crewXp }) }}
         </div>
+        <!-- прем-танк: кристаллы (💎) — выдача этого боя или счётчик до следующей -->
+        <div v-if="reward.gems" class="prem-gems">
+          <PzIcon name="token" :size="16" />
+          <span class="pz-display">+{{ reward.gems }} {{ t('results.crystals') }}</span>
+        </div>
+        <div v-else-if="reward.premTank" class="prem-gems prem-gems-hint">
+          <PzIcon name="token" :size="14" />
+          <span>{{ t('results.crystalsIn', { n: reward.gemsIn }) }}</span>
+        </div>
         <!-- морковка за первый завершённый бой (показываем только когда выдана) -->
         <div v-if="firstBonus" class="first-bonus">
           <PzIcon name="coin" :size="16" />
@@ -401,6 +410,32 @@ function setPage(i) {
   color: #5a3e08;
   font-size: 14px;
   animation: pz-pop 0.4s 0.3s ease both;
+}
+/* прем-кристаллы: выдача этого боя (синий акцент) */
+.prem-gems {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1.5px solid #2f6f93;
+  border-radius: 6px;
+  background: rgba(47, 111, 147, 0.14);
+  color: #1d4663;
+  font-size: 14px;
+  animation: pz-pop 0.4s 0.35s ease both;
+}
+/* подсказка «до кристаллов N боёв» — тише, без рамки-акцента */
+.prem-gems-hint {
+  border: none;
+  background: none;
+  padding: 4px 0 0;
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0.7;
+  animation: none;
 }
 .cell {
   text-align: center;

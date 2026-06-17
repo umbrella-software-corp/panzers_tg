@@ -94,6 +94,24 @@ export function fmtNum(n) {
   }
 }
 
+// КОМПАКТНОЕ число для тесных чипов шапки: 6 006 956 → «6М», 10125 → «10,1к».
+// До 10 000 — обычная запись (коротко и точно). От 10к — к (тысячи), от 1М — М (млн),
+// одна значащая дробь без хвостового «,0». RU: к/М и запятая; EN: k/M и точка.
+export function fmtShort(n) {
+  const x = Number(n)
+  if (!isFinite(x)) return String(n)
+  const ru = _locale === 'ru'
+  const one = (v, suf) => {
+    let s = (Math.round(v * 10) / 10).toFixed(1) // одна дробь
+    if (s.endsWith('.0')) s = s.slice(0, -2) // 6.0 → 6
+    return (ru ? s.replace('.', ',') : s) + suf
+  }
+  const a = Math.abs(x)
+  if (a >= 1e6) return one(x / 1e6, ru ? 'М' : 'M')
+  if (a >= 1e4) return one(x / 1e3, ru ? 'к' : 'k')
+  return fmtNum(x)
+}
+
 // дата боя в истории — короткая, локализованная
 export function fmtDate(ts) {
   try {

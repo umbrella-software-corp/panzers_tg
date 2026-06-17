@@ -11,7 +11,7 @@
 //  - «друг в бою» — только реальным (battles>=1) и недавно активным друзьям,
 //    с жёстким троттлингом отправителя (фильтр автоматически отсекает реф-ферму).
 import { botToken, hasBot } from './auth.js'
-import { listProfiles, loadProfile, saveProfile } from './db.js'
+import { listProfiles, loadProfile, saveProfile, withProfileLock } from './db.js'
 import { t, langOf } from './i18n.js'
 
 const MIN = 60_000
@@ -95,22 +95,27 @@ async function sendPush(uid, body, { now = Date.now(), force = false } = {}) {
   if (!force && p.lastPushAt && now - p.lastPushAt < PUSH_COOLDOWN) return { sent: false, reason: 'cooldown' }
   const lang = langOf(p)
   const text = typeof body === 'function' ? body(lang, p) : body // p — для персонализации (имя/серия)
+  // мутацию профиля (поле-флаг пуша) пишем ПОД локом со свежим перечитыванием — чтобы
+  // не затереть параллельный сейв профиля / выдачу одним устаревшим снимком
+  const markPush = (patch) =>
+    withProfileLock(uid, async () => {
+      const pr = (await loadProfile(uid)) || p
+      Object.assign(pr, patch)
+      await saveProfile(uid, pr)
+    })
   if (DRY_RUN) {
     console.log(`[push:dry] → ${uid}: ${text.split('\n')[0]}`)
-    p.lastPushAt = now
-    await saveProfile(uid, p)
+    await markPush({ lastPushAt: now })
     return { sent: true, reason: 'dry' }
   }
   const res = await api('sendMessage', { chat_id: chatId, text, reply_markup: playButton(lang), disable_web_page_preview: true })
   if (res && res.ok) {
-    p.lastPushAt = now
-    await saveProfile(uid, p)
+    await markPush({ lastPushAt: now })
     return { sent: true, reason: 'sent' }
   }
   const desc = (res && res.description) || ''
   if ((res && res.error_code === 403) || /chat not found|bot was blocked|user is deactivated|can't initiate/i.test(desc)) {
-    p.pushBlocked = true // юзер не запускал/заблокировал бота — больше не пишем
-    await saveProfile(uid, p)
+    await markPush({ pushBlocked: true }) // юзер не запускал/заблокировал бота — больше не пишем
     return { sent: false, reason: 'blocked' }
   }
   return { sent: false, reason: 'fail' }
@@ -218,11 +223,13 @@ export async function notifyFriendsInBattle(player) {
 // включить/выключить уведомления (для /start и /stop в payments.js)
 export async function setPushEnabled(uid, on) {
   if (!tgIdOf(uid)) return
-  const p = await loadProfile(uid)
-  if (!p) return
-  p.pushOff = !on
-  if (on) p.pushBlocked = false // снова пишет боту → разблокируем
-  await saveProfile(uid, p)
+  await withProfileLock(uid, async () => {
+    const p = await loadProfile(uid)
+    if (!p) return
+    p.pushOff = !on
+    if (on) p.pushBlocked = false // снова пишет боту → разблокируем
+    await saveProfile(uid, p)
+  })
 }
 
 // ---------- планировщик: раз в сутки в вечернем окне по МСК ----------

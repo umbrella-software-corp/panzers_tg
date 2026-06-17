@@ -97,6 +97,7 @@ export const profile = reactive(
     credits: 500,
     tokens: 10,
     goldAmmo: 5,
+    premTankBattles: 0, // счётчик боёв на премиум-танках (каждый 10-й → кристаллы)
     owned: [...STARTERS],
     modules: {}, // { tankId: { gun:1..3, tur, eng, trk, rad } }
     party: [],
@@ -240,11 +241,28 @@ export async function syncProfile() {
     if (res && res.profile) {
       const { _updatedAt, ...rest } = res.profile
       const localDaily = profile.daily // claim мог не успеть уехать на сервер до перезапуска
+      const localTasks = profile.tasks // то же про ЗАДАЧИ ДНЯ — клейм мог не доехать
       Object.assign(profile, rest)
       // НЕ даём СТАРОМУ серверному daily.last затереть свежий локальный: иначе после
       // claim'а (POST debounced) перезапуск мини-аппа воскрешал дейлик и давал пере-клейм
       // со взвинчиванием стрика. Даты YYYY-MM-DD сравниваются как строки = хронологически.
       if (localDaily && (localDaily.last || '') > ((profile.daily && profile.daily.last) || '')) profile.daily = localDaily
+      // АНАЛОГИЧНО для задач дня: серверная копия tasks могла быть СТАРЕЕ свежего клейма
+      // (POST дебаунсится 1.5с, Telegram рвёт вебвью раньше) → задача снова показывала
+      // «ЗАБРАТЬ» и забиралась повторно (баг «забираю 8 раз в день»). Тот же день —
+      // ОБЪЕДИНЯЕМ клеймы и берём max прогресса, чтобы ни одна устаревшая копия не
+      // воскресила уже забранную задачу. Новее локальный день — берём его целиком.
+      const srvTasks = profile.tasks
+      if (localTasks && localTasks.date) {
+        if (!srvTasks || !srvTasks.date || localTasks.date > srvTasks.date) {
+          profile.tasks = localTasks
+        } else if (localTasks.date === srvTasks.date) {
+          const claimed = [...new Set([...(srvTasks.claimed || []), ...(localTasks.claimed || [])])]
+          const progress = { ...(srvTasks.progress || {}) }
+          for (const [k, v] of Object.entries(localTasks.progress || {})) progress[k] = Math.max(progress[k] || 0, v || 0)
+          profile.tasks = { date: localTasks.date, progress, claimed }
+        }
+      }
       // старые серверные профили без перков — дорастить форму
       if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {}
       // Онбординг-флаги выводим из СЕРВЕРНЫХ battles, если сервер их не прислал (легаси-

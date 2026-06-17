@@ -1,8 +1,7 @@
 <script setup>
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { apiOnline } from '../api.js'
+import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
@@ -49,21 +48,8 @@ function openFeedbackSheet() {
   feedbackOpen.value = true
 }
 
-// живой счётчик «N в сети» на главной — опрос раз в 30с
-const online = ref(null)
-let _onlineTimer = null
-async function refreshOnline() {
-  try {
-    online.value = (await apiOnline()).online
-  } catch {}
-}
-onMounted(() => {
-  refreshOnline()
-  _onlineTimer = setInterval(refreshOnline, 30000)
-})
-onUnmounted(() => {
-  if (_onlineTimer) clearInterval(_onlineTimer)
-})
+// «N в сети» показываем ТОЛЬКО в поиске боя (Matchmaking.vue), на главной убрано —
+// в ангаре пустой зал смущал. Чип и опрос /api/online живут теперь там.
 
 // режим боя: захват точек / на уничтожение (персистится в профиле)
 function pickMode(m) {
@@ -242,10 +228,6 @@ onMounted(() => {
         <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
         <!-- премиум активен: корона на главной (тап → магазин) -->
         <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive')" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}<i>{{ t('common.days', { n: premiumDaysLeft() }) }}</i></button>
-        <span v-if="online" class="pz-chip" :title="t('common.online')" style="padding: 2px 8px; gap: 5px; color: var(--ink-dim)">
-          <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 5px var(--green); display: inline-block"></span>
-          <span class="pz-pixel" style="font-size: 8px">{{ t('common.onlineNow', { n: online }) }}</span>
-        </span>
       </div>
       <div style="display: flex; align-items: center; gap: 8px">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />

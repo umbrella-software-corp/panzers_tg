@@ -93,6 +93,7 @@ function connectParams() {
   return {
     name: profile.name,
     tankId: profile.selectedTank,
+    tier: (TANK_BY_ID[profile.selectedTank] || {}).tier || 1, // для ±1 подбора ботов на сервере
     tint: (SKIN_BY_ID[profile.skin] || {}).tint || 0xffffff,
     skin: profile.skin,
     battles: profile.stats.battles,

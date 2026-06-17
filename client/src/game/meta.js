@@ -74,9 +74,12 @@ export const TANKS_BY_NATION = {
 
 // плоские каталоги
 // Премиум-техника: покупается за ⭐ (Telegram Stars, см. payments PRODUCTS pt_<id>),
-// НЕ исследуется. В бою даёт бонусы (PREM_TANK: +5% опыт/кредиты, 1/10 боёв +10 жетонов).
+// НЕ исследуется. В бою даёт бонусы (PREM_TANK: +5% опыт/кредиты, КАЖДЫЙ 10-й бой +10 💎).
 // nation/tier — для тир-брекета и группировки; спрайт <id>.png уже в sprites/tanks.
-export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemChance: 0.1, gems: 10 }
+// gemEvery — кристаллы начисляются ДЕТЕРМИНИРОВАННО раз в N боёв на премиуме (а не
+// рандомом 1/10 — рандом стрик'ал: игрок мог отыграть 15+ боёв без кристаллов и решить,
+// что обещание из карточки не выполняется).
+export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemEvery: 10, gems: 10 }
 export const PREMIUM_TANKS = [
   { id: 't28', nation: 'ussr', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 99, stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
   { id: 't54', nation: 'ussr', tier: 8, cls: 'Средний', premium: true, stars: 99, stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },

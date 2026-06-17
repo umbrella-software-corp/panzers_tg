@@ -140,6 +140,22 @@ export const BOT_TANK_IDS = {
   medium: ['t34', 't3485', 't72', 'pz4', 'pnt', 'leo1', 'sher', 'e8', 'm48', 'm60'],
   heavy: ['kv1', 'is2', 'tgr', 'tgr2', 'per', 'abr', 't14'],
 }
+// тир каждого спрайта из BOT_TANK_IDS — для подбора ±1 к тиру боя (берётся из
+// каталога meta.js; держать синхронно при добавлении бот-танков). Пул неполон по
+// тирам (нет хай-тир лёгких и т.п.) → выбираем БЛИЖАЙШИЙ доступный, не строго ±1.
+export const BOT_TANK_TIER = {
+  t26: 1, bt7: 2, pz2: 1, pz3: 2, m2l: 1, stu: 2,
+  t34: 3, t3485: 4, t72: 7, pz4: 3, pnt: 4, leo1: 7, sher: 3, e8: 4, m48: 6, m60: 7,
+  kv1: 5, is2: 6, tgr: 5, tgr2: 6, per: 5, abr: 8, t14: 10,
+}
+const clampTier = (t) => Math.max(1, Math.min(10, Math.round(t) || 5))
+// масштаб боевой силы бота под ТИР боя. Форма повторяет combatStats игрока
+// (hp ∝ 60+hp★·14, урон ∝ 14+dmg★·4.5), нормирована к тиру 5 = текущая «плоская»
+// сила бота → мид-тир без регрессии. Боты остаются мягче игрока (BOT_DMG_MULT);
+// здесь ТОЛЬКО тировая шкала HP/урона: хай-тир игрок не вытаптывает плоских ботов,
+// лоу-тир не упирается в стену. Инвариант честного засвета НЕ трогаем. ПОД ПЛЕЙТЕСТ.
+export const botTierHpMult = (tier) => (60 + 14 * clampTier(tier)) / (60 + 14 * 5)
+export const botTierDmgMult = (tier) => (14 + 4.5 * clampTier(tier)) / (14 + 4.5 * 5)
 export const BOT_DMG_MULT = 0.45
 export const BOT_SPEED_MULT = 0.85
 export const BOT_SPOT_VISION = 480 // вклад бота в засвет для команды

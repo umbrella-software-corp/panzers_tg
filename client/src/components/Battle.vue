@@ -7,7 +7,7 @@ import { NetGame } from '../game/NetGame.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, party, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
-import { TANK_BY_ID, TANKS, combatStats, GOLD_AMMO_MULT } from '../game/meta.js'
+import { TANK_BY_ID, PREM_TANK, GOLD_AMMO_MULT } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // alias: `t` встречается как локальная переменная ниже
@@ -411,6 +411,11 @@ const reward = computed(() => {
   const s = state.value
   const win = s.result === 'victory'
   const draw = s.result === 'draw'
+  // прем-танк: ПРОГНОЗ кристаллов для экрана итогов (фактически начисляет bankBattle по
+  // тому же счётчику — формула одна, расходиться не могут). gems>0 → этот бой даёт 💎;
+  // gemsIn — через сколько боёв следующая выдача (для подсказки игроку).
+  const premTank = !!(TANK_BY_ID[profile.selectedTank] && TANK_BY_ID[profile.selectedTank].premium)
+  const premAfter = premTank ? (profile.premTankBattles || 0) + 1 : 0
   return {
     xp: (win ? 200 : draw ? 120 : 80) + s.kills * 45 + s.hits * 4 + (s.bonusXp || 0),
     silver: (win ? 260 : draw ? 150 : 100) + s.kills * 45 + Math.round(s.allyScore * 6),
@@ -422,6 +427,9 @@ const reward = computed(() => {
     blocked: s.blocked || 0,
     victory: win,
     survived: !s.deaths, // одна жизнь: дожил до конца боя
+    premTank,
+    gems: premTank && premAfter % PREM_TANK.gemEvery === 0 ? PREM_TANK.gems : 0,
+    gemsIn: premTank ? PREM_TANK.gemEvery - (premAfter % PREM_TANK.gemEvery) : 0,
   }
 })
 
@@ -637,10 +645,8 @@ function startCountdown() {
 }
 
 onMounted(async () => {
-  // матчмейкинг ±1 тир: боты — конкретные танки соседних уровней
-  const myTier = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
-  const pool = TANKS.filter((t) => Math.abs(t.tier - myTier) <= 1).map((t) => ({ ...combatStats(t), tankId: t.id }))
-  game.setBotTanks(pool)
+  // матчмейкинг ±1 тир: HP/урон/спрайт ботов под тир игрока набирает СЕРВЕР
+  // (sim.js anchorTier по msg.tier из Matchmaking). Клиент шлёт только свой тир.
   game.playerTankId = profile.selectedTank // реальный спрайт своей машины
   game.playerCamo = tankCamo(profile.selectedTank) // per-tank камуфляж (перекрашенный спрайт)
   // статы до mount: спрайт игрока выбирается по классу лоадаута

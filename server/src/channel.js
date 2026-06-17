@@ -8,7 +8,9 @@
 // Фича ВЫКЛЮЧЕНА, пока не задан CHANNEL_ID (env). Тогда channelEnabled() === false →
 // /api/config отдаёт on:false → клиент прячет кнопку, эндпоинт возвращает { disabled }.
 import { botToken, hasBot } from './auth.js'
-import { loadProfile, saveProfile } from './db.js'
+import { loadProfile, saveProfile, withProfileLock } from './db.js'
+
+let grantSeq = 0 // уникальный хвост id гранта бонуса за подписку
 
 const CHANNEL_ID = process.env.CHANNEL_ID || '' // @username ИЛИ -100…; пусто = фича выключена
 // ссылка для кнопки «Подписаться»: явный CHANNEL_URL, иначе соберём из @username
@@ -60,14 +62,18 @@ export async function isSubscribed(tgId) {
 //  { disabled:true } — фича выключена (нет CHANNEL_ID).
 export async function claimChannelBonus(uid) {
   if (!channelEnabled()) return { disabled: true }
-  const profile = (await loadProfile(uid)) || {}
-  if (profile.channelBonusClaimed) return { already: true }
-  if (!(await isSubscribed(tgIdOf(uid)))) return { subscribed: false }
-  // начисляем прямо в профиль (как grantProduct в payments.js) и ставим флаг — клиент
-  // после ответа дёрнет syncProfile() и подтянет новый баланс (как после покупки за Stars).
-  profile.credits = (profile.credits || 0) + REWARD_CREDITS
-  profile.tokens = (profile.tokens || 0) + REWARD_TOKENS
-  profile.channelBonusClaimed = true
-  await saveProfile(uid, profile)
-  return { ok: true, granted: { credits: REWARD_CREDITS, tokens: REWARD_TOKENS } }
+  return withProfileLock(uid, async () => {
+    const profile = (await loadProfile(uid)) || {}
+    if (profile.channelBonusClaimed) return { already: true }
+    if (!(await isSubscribed(tgIdOf(uid)))) return { subscribed: false }
+    // валюту — через pendingGrants (как grantProduct), чтобы клиентский сейв профиля её
+    // не затёр; клиент заберёт атомарно на syncProfile (как после покупки за Stars).
+    if (REWARD_CREDITS || REWARD_TOKENS) {
+      if (!Array.isArray(profile.pendingGrants)) profile.pendingGrants = []
+      profile.pendingGrants.push({ id: 'ch.' + Date.now() + '.' + ++grantSeq, kind: 'bonus', credits: REWARD_CREDITS, tokens: REWARD_TOKENS, tanks: [], at: Date.now() })
+    }
+    profile.channelBonusClaimed = true
+    await saveProfile(uid, profile)
+    return { ok: true, granted: { credits: REWARD_CREDITS, tokens: REWARD_TOKENS } }
+  })
 }

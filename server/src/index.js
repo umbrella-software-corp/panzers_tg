@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap, softFactor } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { t as tr } from './i18n.js'
-import { loadProfile, saveProfile, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
+import { loadProfile, saveProfile, withProfileLock, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
 import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage } from './notifications.js'
@@ -86,18 +86,24 @@ async function handleAdmin(req, res) {
     const digits = String(uid || '').replace(/[^0-9]/g, '')
     if (!digits) return json(res, 400, { error: 'нет uid' })
     const key = 'tg_' + digits
-    const p = await loadProfile(key)
-    if (!p) return json(res, 404, { error: 'профиль не найден (игрок не открывал игру)' })
     const c = Math.max(0, Math.min(1e7, Math.round(+credits || 0)))
     const t = Math.max(0, Math.min(1e5, Math.round(+tokens || 0)))
     const d = Math.max(0, Math.min(3650, Math.round(+premiumDays || 0)))
     const tk = [...new Set((Array.isArray(tanks) ? tanks : [tanks]).filter((x) => GRANT_TANKS.has(x)))]
-    if (d) p.premiumUntil = Math.max(Date.now(), p.premiumUntil || 0) + d * 86400000
-    if (c || t || tk.length) {
-      if (!Array.isArray(p.pendingGrants)) p.pendingGrants = []
-      p.pendingGrants.push({ id: String(Date.now()) + '.' + ++grantSeq, credits: c, tokens: t, tanks: tk, at: Date.now() })
-    }
-    await saveProfile(key, p)
+    // load→mutate→save под локом — чтобы конкурентный сейв профиля / визит не уронил
+    // только что добавленную выдачу (и наоборот). Возвращаем profile наружу для уведомления.
+    const p = await withProfileLock(key, async () => {
+      const pr = await loadProfile(key)
+      if (!pr) return null
+      if (d) pr.premiumUntil = Math.max(Date.now(), pr.premiumUntil || 0) + d * 86400000
+      if (c || t || tk.length) {
+        if (!Array.isArray(pr.pendingGrants)) pr.pendingGrants = []
+        pr.pendingGrants.push({ id: String(Date.now()) + '.' + ++grantSeq, kind: 'admin', credits: c, tokens: t, tanks: tk, at: Date.now() })
+      }
+      await saveProfile(key, pr)
+      return pr
+    })
+    if (!p) return json(res, 404, { error: 'профиль не найден (игрок не открывал игру)' })
     logEvent(key, 'admin_grant', { credits: c, tokens: t, premiumDays: d, tanks: tk })
     // уведомляем игрока: «подарок от администрации» (best-effort — дойдёт, если он
     // запускал бота / дал write-access). Награда всё равно начислится на заходе.
@@ -261,20 +267,28 @@ async function registerReferral(user, ref) {
   if (!refId) return { ok: false, reason: 'no-ref' }
   const inviterUid = `tg_${refId}`
   if (inviterUid === user.uid) return { ok: false, reason: 'self' }
-  const me = (await loadProfile(user.uid)) || {}
-  if (me.referredBy) return { ok: false, reason: 'already' }
-  me.referredBy = inviterUid
-  await saveProfile(user.uid, me)
-  const inviter = await loadProfile(inviterUid)
-  if (!inviter) return { ok: true, credited: false } // реферер ещё не заходил в игру
-  if (!Array.isArray(inviter.referrals)) inviter.referrals = []
-  if (!Array.isArray(inviter.referralIds)) inviter.referralIds = []
-  if (!inviter.referralIds.includes(user.uid)) {
-    inviter.referralIds.push(user.uid)
-    inviter.referrals.push(user.name || tr('defaultName', user.lang))
-    await saveProfile(inviterUid, inviter)
-  }
-  return { ok: true, credited: true }
+  // привязка новичка к рефереру (под локом своего uid)
+  const bound = await withProfileLock(user.uid, async () => {
+    const me = (await loadProfile(user.uid)) || {}
+    if (me.referredBy) return false
+    me.referredBy = inviterUid
+    await saveProfile(user.uid, me)
+    return true
+  })
+  if (!bound) return { ok: false, reason: 'already' }
+  // зачёт рекрута рефереру (под ОТДЕЛЬНЫМ локом — последовательно, не вложенно: без дедлока)
+  return withProfileLock(inviterUid, async () => {
+    const inviter = await loadProfile(inviterUid)
+    if (!inviter) return { ok: true, credited: false } // реферер ещё не заходил в игру
+    if (!Array.isArray(inviter.referrals)) inviter.referrals = []
+    if (!Array.isArray(inviter.referralIds)) inviter.referralIds = []
+    if (!inviter.referralIds.includes(user.uid)) {
+      inviter.referralIds.push(user.uid)
+      inviter.referrals.push(user.name || tr('defaultName', user.lang))
+      await saveProfile(inviterUid, inviter)
+    }
+    return { ok: true, credited: true }
+  })
 }
 
 // зафиксировать визит существующего игрока для метрик: проставить источник (один
@@ -284,38 +298,46 @@ async function recordVisit(user) {
   if (!user || user.uid.startsWith('g_')) {
     // dev-гость: профиля может не быть, но визит всё равно полезно учесть на POST
   }
-  const p = await loadProfile(user.uid)
-  if (!p) return
-  const now = Date.now()
-  let dirty = false
-  if (!p.firstSeen) {
-    p.firstSeen = p._updatedAt || now
-    dirty = true
-  }
-  const tag = srcTag(user.startParam)
-  if (!p.src && tag) {
-    p.src = tag
-    dirty = true
-    // источник из ПОДПИСАННОГО initData — надёжнее клиентского source_tag
-    trackServer(user.uid, 'source_attributed', { source_tag: tag })
-  }
-  // новая сессия: если игрок не был активен >20 мин — это «зашёл в игру».
-  // (lastSeen обновляется не чаще раза в минуту, так что порог 20м срабатывает раз
-  // на заход, а не на каждый пинг). Журналим для админ-таймлайна «когда был».
-  if (!p.lastSeen || now - p.lastSeen > 20 * 60000) {
-    logEvent(user.uid, 'open', p.lastSeen ? { away_min: Math.round((now - p.lastSeen) / 60000) } : { first: true })
-  }
-  if (!p.lastSeen || now - p.lastSeen > 60000) {
-    p.lastSeen = now
-    dirty = true
-  }
-  // язык интерфейса из подписанного initData — обновляем при смене (для пушей/оплаты)
-  if (user.lang && p.lang !== user.lang) {
-    p.lang = user.lang
-    dirty = true
-  }
-  if (dirty) await saveProfile(user.uid, p)
+  await withProfileLock(user.uid, async () => {
+    const p = await loadProfile(user.uid)
+    if (!p) return
+    const now = Date.now()
+    let dirty = false
+    if (!p.firstSeen) {
+      p.firstSeen = p._updatedAt || now
+      dirty = true
+    }
+    const tag = srcTag(user.startParam)
+    if (!p.src && tag) {
+      p.src = tag
+      dirty = true
+      // источник из ПОДПИСАННОГО initData — надёжнее клиентского source_tag
+      trackServer(user.uid, 'source_attributed', { source_tag: tag })
+    }
+    // новая сессия: если игрок не был активен >20 мин — это «зашёл в игру».
+    // (lastSeen обновляется не чаще раза в минуту, так что порог 20м срабатывает раз
+    // на заход, а не на каждый пинг). Журналим для админ-таймлайна «когда был».
+    if (!p.lastSeen || now - p.lastSeen > 20 * 60000) {
+      logEvent(user.uid, 'open', p.lastSeen ? { away_min: Math.round((now - p.lastSeen) / 60000) } : { first: true })
+    }
+    if (!p.lastSeen || now - p.lastSeen > 60000) {
+      p.lastSeen = now
+      dirty = true
+    }
+    // язык интерфейса из подписанного initData — обновляем при смене (для пушей/оплаты)
+    if (user.lang && p.lang !== user.lang) {
+      p.lang = user.lang
+      dirty = true
+    }
+    if (dirty) await saveProfile(user.uid, p)
+  })
 }
+
+// индекс календарного дня по МСК (UTC+3, как граница дайджеста). Для ретеншна
+// «2-й день+»: считаем по СМЕНЕ дня, а не по span>20ч (тот зависел от времени суток —
+// вечерний первый заход + возврат днём = <20ч → терялся, хотя это явно 2-й день).
+const mskDayIndex = (ts) => Math.floor((ts + 3 * 3600000) / 86400000)
+const returnedDay2 = (p) => !!(p.firstSeen && p.lastSeen && mskDayIndex(p.lastSeen) > mskDayIndex(p.firstSeen))
 
 // агрегат метрик трафика из сводки профилей (для админки)
 function trafficMetrics(profiles, now) {
@@ -336,7 +358,7 @@ function trafficMetrics(profiles, now) {
     if (p.battles > 0 || p.reachedBattle) e.played++
     else if (dwell < 60000) e.ghosts++
     else e.lingered++
-    if (dwell > 20 * 3600000) e.returned++
+    if (returnedDay2(p)) e.returned++ // заходил на БОЛЕЕ поздний календарный день (МСК)
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
     bySrc.set(key, e)
   }
@@ -365,7 +387,7 @@ function referrerMetrics(profiles, now) {
     if (p.battles > 0 || p.reachedBattle) e.played++
     else if (dwell < 60000) e.ghosts++ // открыл <1 мин, без боя — бот/фейк-клик
     else e.lingered++ // полазил ≥1 мин, но в бой так и не пошёл
-    if (dwell > 20 * 3600000) e.returned++ // заходил на 2-й день+ (ретеншн; копится со временем)
+    if (returnedDay2(p)) e.returned++ // заходил на 2-й день+ (МСК-календарь; копится со временем)
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
     by.set(p.referredBy, e)
   }
@@ -425,6 +447,10 @@ async function handleApi(req, res) {
     if (!body || typeof body.profile !== 'object') return json(res, 400, { error: 'bad profile' })
     // серверные поля (рефералы/реферер) ведёт сервер — клиент их НЕ перезаписывает,
     // иначе сейв профиля затирал бы засчитанных рекрутов. Берём прежние из хранилища.
+    // Весь load prev→merge→save под локом: иначе между чтением prev и записью merged
+    // мог влезть grants-apply (слил очередь) — и мы бы воскресили уже выданную выдачу
+    // из prev.pendingGrants → двойное начисление. Лок сериализует это с grants-apply.
+    await withProfileLock(user.uid, async () => {
     const prev = (await loadProfile(user.uid)) || {}
     const merged = {
       ...body.profile,
@@ -437,6 +463,13 @@ async function handleApi(req, res) {
       // премиум выдаёт ТОЛЬКО платёж (payments.js): клиент НЕ может проставить себе
       // premiumUntil сейвом профиля. Иначе любой через localStorage даёт себе корону.
       premiumUntil: prev.premiumUntil || 0,
+      // позывной: пока nameCustom=false — имя ведёт клиент (ник из Telegram). Как только
+      // ОПЛАЧЕННАЯ смена выставила nameCustom=true (payments grantProduct, под локом),
+      // клиентский дебаунс-сейв со СТАРЫМ именем больше НЕ может его перетереть — иначе
+      // оплаченная смена откатывалась назад («смена имени не работает»). nameCustom
+      // серверно-авторитетен (клиент не может выставить его сам, минуя оплату).
+      name: prev.nameCustom ? prev.name || body.profile.name : body.profile.name || prev.name,
+      nameCustom: prev.nameCustom || false,
       // атрибуция трафика — серверные поля, клиент их не пишет. src ставится один
       // раз (на первом сейве нового игрока из start_param), firstSeen — тоже.
       src: prev.src || srcTag(user.startParam) || null,
@@ -460,6 +493,7 @@ async function handleApi(req, res) {
       pendingGrants: Array.isArray(prev.pendingGrants) ? prev.pendingGrants : [],
     }
     await saveProfile(user.uid, merged)
+    })
     return json(res, 200, { ok: true })
   }
   if (req.url === '/api/grants-apply' && req.method === 'POST') {
@@ -468,25 +502,34 @@ async function handleApi(req, res) {
     // авторитетный результат. Один load→mutate→save = ни двойного начисления (очередь
     // чистится вместе с балансом), ни потери (упал до save — очередь цела, применим
     // на след. синке). Премиум сюда не входит (он уже в premiumUntil).
-    const p = await loadProfile(user.uid)
-    if (!p || !Array.isArray(p.pendingGrants) || !p.pendingGrants.length) {
-      return json(res, 200, { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, owned: (p && p.owned) || [], pendingGrants: [] })
-    }
-    let n = 0
-    const got = { credits: 0, tokens: 0, tanks: [] } // сумма выданного — для in-app «подарок от администрации»
-    for (const g of p.pendingGrants) {
-      if (!g) continue
-      if (g.credits) { p.credits = (p.credits || 0) + (+g.credits || 0); got.credits += +g.credits || 0 }
-      if (g.tokens) { p.tokens = (p.tokens || 0) + (+g.tokens || 0); got.tokens += +g.tokens || 0 }
-      if (Array.isArray(g.tanks)) {
-        if (!Array.isArray(p.owned)) p.owned = []
-        for (const tk of g.tanks) if (tk && GRANT_TANKS.has(tk) && !p.owned.includes(tk)) { p.owned.push(tk); got.tanks.push(tk) }
+    // под локом — сериализуем с сейвом профиля и с собой же (двойной apply иначе
+    // удвоил бы валюту: оба грузят очередь, оба применяют, оба чистят).
+    const out = await withProfileLock(user.uid, async () => {
+      const p = await loadProfile(user.uid)
+      if (!p || !Array.isArray(p.pendingGrants) || !p.pendingGrants.length) {
+        return { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, owned: (p && p.owned) || [], pendingGrants: [] }
       }
-      n++
-    }
-    p.pendingGrants = []
-    await saveProfile(user.uid, p)
-    return json(res, 200, { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, owned: p.owned || [], pendingGrants: [] })
+      let n = 0
+      // got = что показать в in-app окне «🎁 Подарок от администрации». Только админ-выдачи
+      // (kind 'admin' или легаси без kind) сюда попадают; покупки/бонусы (kind purchase|bonus)
+      // применяем к балансу, но окно НЕ показываем — у них своя кнопка-подтверждение.
+      const got = { credits: 0, tokens: 0, tanks: [] }
+      for (const g of p.pendingGrants) {
+        if (!g) continue
+        const reveal = !g.kind || g.kind === 'admin'
+        if (g.credits) { p.credits = (p.credits || 0) + (+g.credits || 0); if (reveal) got.credits += +g.credits || 0 }
+        if (g.tokens) { p.tokens = (p.tokens || 0) + (+g.tokens || 0); if (reveal) got.tokens += +g.tokens || 0 }
+        if (Array.isArray(g.tanks)) {
+          if (!Array.isArray(p.owned)) p.owned = []
+          for (const tk of g.tanks) if (tk && GRANT_TANKS.has(tk) && !p.owned.includes(tk)) { p.owned.push(tk); if (reveal) got.tanks.push(tk) }
+        }
+        n++
+      }
+      p.pendingGrants = []
+      await saveProfile(user.uid, p)
+      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, owned: p.owned || [], pendingGrants: [] }
+    })
+    return json(res, 200, out)
   }
   if (req.url === '/api/referred' && req.method === 'POST') {
     const { ref } = await readBody(req)
@@ -834,6 +877,9 @@ function setupBattleSocket(ws, room, human, ip) {
       if (typeof msg.tint === 'number' && Number.isFinite(msg.tint)) human.tint = msg.tint & 0xffffff
       if (typeof msg.skin === 'string' && ID_RE.test(msg.skin)) human.skin = msg.skin
       if (typeof msg.battles === 'number' && Number.isFinite(msg.battles)) human.battles = Math.max(0, Math.min(1e6, msg.battles | 0))
+      // тир машины игрока (1..10) — по нему сервер подбирает ботам ±1 тир (HP/урон+спрайт).
+      // Скаляр, жёстко клампим: клиент НЕ задаёт статы ботов (иначе слал бы себе слабых).
+      if (typeof msg.tier === 'number' && Number.isFinite(msg.tier)) human.tier = Math.max(1, Math.min(10, msg.tier | 0))
       // best-effort tg-id ТОЛЬКО для аналитики (не авторизация): сшивает серверные
       // server_match_* с клиентским tg_<id>. Нет/гость — событий просто не шлём.
       if (typeof msg.uid === 'string' && /^\d{3,20}$/.test(msg.uid)) human.uid = 'tg_' + msg.uid
@@ -1021,6 +1067,9 @@ function startRoom(room) {
   const minBattles = room.training ? 0 : Math.min(...room.humans.map((h) => h.battles | 0))
   const softF = softFactor(minBattles)
   const softStart = softF > 0
+  // тир боя = макс. среди живых (соло-PvE = тир игрока). По нему боты весят ±1 тира.
+  const humanTiers = room.humans.map((h) => h.tier).filter((t) => t >= 1 && t <= 10)
+  const anchorTier = humanTiers.length ? Math.max(...humanTiers) : null
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
     mapId: map.id,
@@ -1028,6 +1077,7 @@ function startRoom(room) {
     softFactor: softF,
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
     botNames: realBotNames, // маскировка: боты берут имена реальных аккаунтов + BOT_NICKS
+    anchorTier,
   })
 
   // стартовый отсчёт: мир застыл до этого момента (см. roomTick) — синхронно с «3-2-1»

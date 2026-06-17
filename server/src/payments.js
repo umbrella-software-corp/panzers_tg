@@ -2,7 +2,7 @@
 // pre_checkout_query и successful_payment. Товары — серверный каталог
 // (клиентским ценам не верим). Идемпотентность по telegram charge id.
 import { botToken, hasBot } from './auth.js'
-import { loadProfile, saveProfile, paymentSeen, markPayment, listPayments, markRefunded } from './db.js'
+import { loadProfile, saveProfile, withProfileLock, paymentSeen, markPayment, listPayments, markRefunded } from './db.js'
 import { setPushEnabled } from './notifications.js'
 import { logEvent } from './eventlog.js'
 import { t, pickLang } from './i18n.js'
@@ -71,32 +71,45 @@ export async function createInvoice(uid, productId, extra = {}) {
   return { link: res.result }
 }
 
-// начисление товара профилю (используется и поллингом, и dev-эндпоинтом)
+let grantSeq = 0 // уникальный хвост id выданного гранта (в паре с Date.now())
+
+// начисление товара профилю (используется и поллингом, и dev-эндпоинтом).
+// КРЕДИТЫ/ЖЕТОНЫ/ТАНК кладём в pendingGrants (как админ-выдача), а НЕ напрямую в баланс:
+// прямой баланс клиент затирал своим дебаунс-сейвом профиля (absolute credits из
+// localStorage) → купленное пропадало. Очередь защищена в index.js merge, клиент
+// заберёт её атомарно через /api/grants-apply на ближайшем syncProfile. Премиум и
+// смену ника оставляем прямыми (premiumUntil защищён в merge; ник — разовое поле).
 export async function grantProduct(uid, productId, extra = {}) {
   const p = PRODUCTS[productId]
   if (!p) return false
-  const profile = (await loadProfile(uid)) || {}
-  if (p.credits) profile.credits = (profile.credits || 0) + p.credits
-  if (p.tokens) profile.tokens = (profile.tokens || 0) + p.tokens
-  if (p.premiumDays) {
-    // продлеваем от текущего конца премиума (или от сейчас, если истёк)
-    const base = Math.max(Date.now(), profile.premiumUntil || 0)
-    profile.premiumUntil = base + p.premiumDays * 86400000
-  }
-  if (p.tank) {
-    // премиум-танк в гараж (один раз; повтор-покупка не дублирует)
-    if (!Array.isArray(profile.owned)) profile.owned = []
-    if (!profile.owned.includes(p.tank)) profile.owned.push(p.tank)
-  }
+  // имя для rename валидируем ДО входа в лок, чтобы не «съесть» оплату молча
+  let name
   if (p.rename) {
-    const name = cleanName(extra.name)
-    if (!name) return false // недопустимое имя — не «съедаем» оплату молча
-    profile.name = name
-    profile.nameCustom = true // больше не перетираем ником из Telegram
+    name = cleanName(extra.name)
+    if (!name) return false
   }
-  await saveProfile(uid, profile)
-  logEvent(uid, 'purchase', { product: productId, title: p.title || productId, stars: p.stars || 0 })
-  return true
+  return withProfileLock(uid, async () => {
+    const profile = (await loadProfile(uid)) || {}
+    // валюта/танк — через очередь (kind:'purchase' → in-app окно «подарок» НЕ показываем,
+    // у покупки своя кнопка-подтверждение; charge — чтобы рефанд точно нашёл невыданное)
+    const grant = { credits: p.credits || 0, tokens: p.tokens || 0, tanks: p.tank ? [p.tank] : [] }
+    if (grant.credits || grant.tokens || grant.tanks.length) {
+      if (!Array.isArray(profile.pendingGrants)) profile.pendingGrants = []
+      profile.pendingGrants.push({ id: 'pay.' + Date.now() + '.' + ++grantSeq, kind: 'purchase', charge: extra.charge || null, ...grant, at: Date.now() })
+    }
+    if (p.premiumDays) {
+      // продлеваем от текущего конца премиума (или от сейчас, если истёк)
+      const base = Math.max(Date.now(), profile.premiumUntil || 0)
+      profile.premiumUntil = base + p.premiumDays * 86400000
+    }
+    if (p.rename) {
+      profile.name = name
+      profile.nameCustom = true // больше не перетираем ником из Telegram
+    }
+    await saveProfile(uid, profile)
+    logEvent(uid, 'purchase', { product: productId, title: p.title || productId, stars: p.stars || 0 })
+    return true
+  })
 }
 
 // рефанд звёзд игроку по charge id (из админки): возвращает звёзды через
@@ -117,12 +130,24 @@ export async function refundPayment(charge) {
   // откат начисленного товара (кламп ≥0)
   const p = PRODUCTS[rec.productId]
   if (p) {
-    const profile = (await loadProfile(rec.uid)) || {}
-    if (p.credits) profile.credits = Math.max(0, (profile.credits || 0) - p.credits)
-    if (p.tokens) profile.tokens = Math.max(0, (profile.tokens || 0) - p.tokens)
-    if (p.premiumDays) profile.premiumUntil = Math.max(Date.now(), (profile.premiumUntil || 0) - p.premiumDays * 86400000)
-    if (p.tank) profile.owned = (profile.owned || []).filter((id) => id !== p.tank) // рефанд — убираем танк
-    await saveProfile(rec.uid, profile)
+    await withProfileLock(rec.uid, async () => {
+      const profile = (await loadProfile(rec.uid)) || {}
+      // если покупка ещё ВИСИТ в очереди (клиент не успел забрать) — её валюта/танк в
+      // баланс не попадали: просто убираем запись, баланс не трогаем (иначе ушли бы в минус).
+      const pend = Array.isArray(profile.pendingGrants) ? profile.pendingGrants : []
+      const i = pend.findIndex((g) => g && g.charge === charge)
+      if (i >= 0) {
+        pend.splice(i, 1)
+        profile.pendingGrants = pend
+      } else {
+        // уже применено к балансу (или старый прямой формат) — откатываем с клампом
+        if (p.credits) profile.credits = Math.max(0, (profile.credits || 0) - p.credits)
+        if (p.tokens) profile.tokens = Math.max(0, (profile.tokens || 0) - p.tokens)
+        if (p.tank) profile.owned = (profile.owned || []).filter((id) => id !== p.tank) // рефанд — убираем танк
+      }
+      if (p.premiumDays) profile.premiumUntil = Math.max(Date.now(), (profile.premiumUntil || 0) - p.premiumDays * 86400000)
+      await saveProfile(rec.uid, profile)
+    })
   }
   await markRefunded(charge)
   console.log(`[pay] РЕФАНД ${rec.uid} · ${rec.productId} · ${rec.stars} XTR возвращены`)
@@ -141,11 +166,13 @@ async function greet(chatId, lang) {
 
 // сохранить язык юзера на профиле (если он уже есть) — для будущих пушей/счетов
 async function storeLang(uid, lang) {
-  const p = await loadProfile(uid)
-  if (p && p.lang !== lang) {
-    p.lang = lang
-    await saveProfile(uid, p)
-  }
+  await withProfileLock(uid, async () => {
+    const p = await loadProfile(uid)
+    if (p && p.lang !== lang) {
+      p.lang = lang
+      await saveProfile(uid, p)
+    }
+  })
 }
 
 // поллинг бота: подтверждаем pre_checkout и начисляем по successful_payment
@@ -183,7 +210,7 @@ export function startPaymentsLoop() {
             const charge = sp.telegram_payment_charge_id
             if (await paymentSeen(charge)) continue
             const { uid, productId, name } = JSON.parse(sp.invoice_payload || '{}')
-            if (uid && productId && (await grantProduct(uid, productId, { name }))) {
+            if (uid && productId && (await grantProduct(uid, productId, { name, charge }))) {
               await markPayment(charge, { uid, productId, stars: sp.total_amount })
               console.log(`[pay] ${uid} оплатил ${productId} (${sp.total_amount} XTR)`)
             }

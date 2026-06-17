@@ -260,10 +260,15 @@ function bankBattle(reward) {
   if (premTank) m += PREM_TANK.creditMult
   addRewards(Math.round((reward.silver || 0) * m))
   bankBattleXp(Math.round(reward.xp * m)) // 50% в ветку танка, 50% экипажу
-  // прем-танк: 1 из 10 боёв — синие кристаллы (жетоны)
-  if (premTank && Math.random() < PREM_TANK.gemChance) {
-    addRewards(0, PREM_TANK.gems)
-    track('prem_tank_gem_drop', { tank_id: profile.selectedTank, gems: PREM_TANK.gems })
+  // прем-танк: КАЖДЫЙ 10-й бой гарантированно даёт синие кристаллы (детерминированно,
+  // не рандом — иначе игрок мог отыграть много боёв без кристаллов и счесть это обманом).
+  // Прогноз этой выдачи показывает Results (reward.gems) по тому же счётчику — сходится.
+  if (premTank) {
+    profile.premTankBattles = (profile.premTankBattles || 0) + 1
+    if (profile.premTankBattles % PREM_TANK.gemEvery === 0) {
+      addRewards(0, PREM_TANK.gems)
+      track('prem_tank_gem_drop', { tank_id: profile.selectedTank, gems: PREM_TANK.gems, prem_tank_battles: profile.premTankBattles })
+    }
   }
   bankTaskProgress({
     damage: reward.damage,

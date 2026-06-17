@@ -21,6 +21,9 @@ import {
   ARMOR,
   BOT_CLASS_MIX,
   BOT_TANK_IDS,
+  BOT_TANK_TIER,
+  botTierHpMult,
+  botTierDmgMult,
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
   BOT_SPOT_VISION,
@@ -40,8 +43,11 @@ export class BattleSim {
    * humans: [{ id, team: 0|1, name, stats? }] — stats в deg-форме (лоадаут
    * клиента) или null → DEFAULT_CLASS. Обе команды добираются ботами до teamSize.
    */
-  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null, botNames = [] } = {}) {
+  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null, botNames = [], anchorTier = null } = {}) {
     this.teamSize = teamSize
+    // ТИР боя (макс. среди живых, с сервера): боты по нему берут HP/урон и спрайт
+    // в пределах ±1. null → старое поведение (плоские классовые боты).
+    this.anchorTier = anchorTier && anchorTier >= 1 && anchorTier <= 10 ? Math.round(anchorTier) : null
     this.map = MAP_BY_ID[mapId] || MAPS[0]
     this.mapId = this.map.id
     this.mapSize = this.map.size || MAP_SIZE // размер карты (большие карты — больше места)
@@ -149,10 +155,26 @@ export class BattleSim {
         : TANK_CLASSES[DEFAULT_CLASS]
       : TANK_CLASSES[botClsId]
     const stats = classToRadians(cls)
-    // боту — реальная машина его класса (вместо классовой болванки в цвете
-    // команды): разнообразие по id+team, своя у каждой стороны
+    // боту — реальная машина его класса (вместо классовой болванки в цвете команды).
+    // ТИР боя задан (anchorTier) → бот «весит» в пределах ±1 тира игрока: спрайт
+    // БЛИЖАЙШЕГО доступного тира + HP/урон по тиру (botTierHpMult/DmgMult). Без
+    // anchorTier — старое плоское классовое поведение. Тир варьируем по слоту (−1/0/+1).
     const botPool = BOT_TANK_IDS[botClsId] || BOT_TANK_IDS.medium
-    const botTankId = botPool[(id + team * 3) % botPool.length]
+    const botTier = !human && this.anchorTier ? Math.max(1, Math.min(10, this.anchorTier + ((slot % 3) - 1))) : null
+    let botTankId
+    if (botTier) {
+      // ближайший по тиру спрайт класса (пул неполон по тирам → точного ±1 может не быть);
+      // тай-брейк (id+team) — разнообразие и разные машины у двух сторон
+      const dist = (x) => Math.abs((BOT_TANK_TIER[x] || 5) - botTier)
+      const best = Math.min(...botPool.map(dist))
+      const near = botPool.filter((x) => dist(x) === best)
+      botTankId = near[(id + team * 3) % near.length]
+    } else {
+      botTankId = botPool[(id + team * 3) % botPool.length]
+    }
+    const hpMult = botTier ? botTierHpMult(botTier) : 1
+    const dmgMult = botTier ? botTierDmgMult(botTier) : 1
+    const unitHp = Math.round(stats.hp * hpMult) // у людей hpMult=1 (botTier null)
     const sc = this.mapSize / MAP_SIZE // спавны тоже растягиваем под размер карты
     const spread = ((slot - (this.teamSize - 1) / 2) / Math.max(1, this.teamSize)) * 1000 * sc
     const c = this.mapSize / 2
@@ -173,8 +195,8 @@ export class BattleSim {
       y: team === 0 ? c + 560 * sc : c - 560 * sc,
       hull: team === 0 ? -Math.PI / 2 : Math.PI / 2,
       speed: 0,
-      hp: stats.hp,
-      maxHp: stats.hp,
+      hp: unitHp,
+      maxHp: unitHp,
       alive: true,
       input: { throttle: 0, steer: 0 }, // люди
       reload: 0, // люди: сек до готовности
@@ -189,7 +211,7 @@ export class BattleSim {
       spotSeen: new Set(), // id врагов, чей первый засвет уже зачтён
       revealT: 0, // сек демаскировки выстрелом: пока >0 — видно врагу из тумана
       // боты (урон режется softStart-множителем в «мягком первом бою»)
-      botDamage: Math.round(stats.damage * this.botDmgMult),
+      botDamage: Math.round(stats.damage * this.botDmgMult * dmgMult),
       botSpeed: stats.maxSpeed * BOT_SPEED_MULT,
       botTurn: stats.turnRate * 0.9,
       fireCd: 1 + slot * 0.2,
