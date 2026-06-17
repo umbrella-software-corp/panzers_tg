@@ -320,13 +320,15 @@ async function refresh() {
   const bb = $('battleBadge')
   if (bb) { bb.textContent = liveBattles; bb.classList.toggle('live', liveBattles > 0) }
 
-  const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, bySource:[] }
+  const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, activeToday:0, playedToday:0, bySource:[] }
   LINK_BASE = s.linkBase || ''
   $('traffic').innerHTML = [
     [t.total, 'всего игроков'],
     [t.newToday, 'новых сегодня'],
+    [t.activeToday, 'активны сегодня (МСК)'],
+    [t.playedToday, 'играли сегодня'],
     [t.new7d, 'новых за 7 дней'],
-    [t.dau, 'актив сегодня (DAU)'],
+    [t.dau, 'актив за 24ч (DAU)'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + (v||0).toLocaleString('ru-RU') + '</div><div class="l">' + l + '</div></div>').join('')
 
   const pct = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '—')

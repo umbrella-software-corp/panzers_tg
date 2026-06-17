@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, withProfileLock, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage, mskDay } from './notifications.js'
 import { logEvent, readEvents } from './eventlog.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
@@ -343,14 +343,21 @@ const returnedDay2 = (p) => !!(p.firstSeen && p.lastSeen && mskDayIndex(p.lastSe
 // агрегат метрик трафика из сводки профилей (для админки)
 function trafficMetrics(profiles, now) {
   const DAY = 86400000
+  const today = mskDay(now) // календарный «сегодня» по МСК
   const bySrc = new Map()
   let newToday = 0
   let new7d = 0
   let dau = 0
+  let activeToday = 0 // заходили именно сегодня (календарный день МСК)
+  let playedToday = 0 // из них реально играли бой (хоть раз) — «живые» игроки
   for (const p of profiles) {
     if (p.firstSeen && now - p.firstSeen < DAY) newToday++
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
     if (p.lastSeen && now - p.lastSeen < DAY) dau++
+    if (p.lastSeen && mskDay(p.lastSeen) === today) {
+      activeToday++
+      if ((p.battles | 0) > 0) playedToday++
+    }
     const key = p.src || '—'
     const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
     e.users++
@@ -368,6 +375,8 @@ function trafficMetrics(profiles, now) {
     newToday,
     new7d,
     dau,
+    activeToday,
+    playedToday,
     bySource: [...bySrc.values()].sort((a, b) => b.users - a.users),
   }
 }
