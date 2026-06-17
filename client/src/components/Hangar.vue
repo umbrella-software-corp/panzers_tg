@@ -270,8 +270,6 @@ onMounted(() => {
         <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
         <!-- премиум активен: корона на главной (тап → магазин) -->
         <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive')" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}<i>{{ t('common.days', { n: premiumDaysLeft() }) }}</i></button>
-        <!-- ЭКСПЕРИМЕНТ: тестерский тоггл 3D-рендера боя -->
-        <button v-if="isTester" class="td-toggle pz-display" :class="{ on: threeD }" title="3D-рендер боя (тест)" @click="toggle3D">3D{{ threeD ? ' ✓' : '' }}</button>
       </div>
       <div style="display: flex; align-items: center; gap: 8px">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
@@ -285,6 +283,9 @@ onMounted(() => {
         </button>
       </div>
     </header>
+
+    <!-- ЭКСПЕРИМЕНТ: тестерский тоггл 3D — плавающий, чтобы не перекрывался шапкой/балансом -->
+    <button v-if="isTester" class="td-toggle pz-display" :class="{ on: threeD }" title="3D-рендер боя (тест)" @click="toggle3D">3D{{ threeD ? ' ✓' : '' }}</button>
 
     <NationSwitch :nation="profile.nation" style="padding: 2px 14px" @pick="setNation" />
 
@@ -487,16 +488,20 @@ onMounted(() => {
   font-size: 9px;
   opacity: 0.7;
 }
-/* тестерский тоггл 3D-рендера боя */
+/* тестерский тоггл 3D-рендера боя — плавающий справа под шапкой (вне потока,
+   чтобы не перекрывался балансом/премиумом при любой ширине заголовка) */
 .td-toggle {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  font-size: 11px;
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  z-index: 30;
+  padding: 4px 10px;
+  font-size: 12px;
   letter-spacing: 0.08em;
-  color: #9aa6b2;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 7px;
+  color: #cfe0ff;
+  background: rgba(8, 12, 18, 0.82);
+  border: 1px solid rgba(120, 180, 255, 0.5);
+  border-radius: 8px;
   cursor: pointer;
 }
 .td-toggle.on {
