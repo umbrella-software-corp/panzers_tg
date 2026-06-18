@@ -396,12 +396,23 @@ function trafficMetrics(profiles, now) {
   let dau = 0
   let activeToday = 0 // открыли приложение сегодня (календарный день МСК)
   let playedToday = 0 // реально вошли в бой сегодня (по серверному lastBattleAt) — «живые» игроки
+  let reachedTotal = 0 // всего дошли до боя (реальные игроки, не мусорный трафик)
+  let returnedReal = 0 // из них вернулись на 2-й день+ — чистая ретенция без гостов/ботов
   for (const p of profiles) {
     if (p.firstSeen && now - p.firstSeen < DAY) newToday++
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
     if (p.lastSeen && now - p.lastSeen < DAY) dau++
     if (p.lastSeen && mskDay(p.lastSeen) === today) activeToday++
-    if (p.lastBattleAt && mskDay(p.lastBattleAt) === today) playedToday++
+    // играли сегодня: первый бой сегодня (новичок — ловится задним числом) ИЛИ
+    // последний бой сегодня (вернувшийся — пишется с выката lastBattleAt)
+    if ((p.firstBattleAt && mskDay(p.firstBattleAt) === today) || (p.lastBattleAt && mskDay(p.lastBattleAt) === today)) playedToday++
+    // чистая ретенция: считаем возвраты ТОЛЬКО среди дошедших до боя (мусорный трафик —
+    // гости <1мин и кликеры — исключаются)
+    const reached = p.battles > 0 || p.reachedBattle
+    if (reached) {
+      reachedTotal++
+      if (returnedDay2(p)) returnedReal++
+    }
     const key = p.src || '—'
     const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
     e.users++
@@ -421,6 +432,8 @@ function trafficMetrics(profiles, now) {
     dau,
     activeToday,
     playedToday,
+    reachedTotal,
+    returnedReal,
     bySource: [...bySrc.values()].sort((a, b) => b.users - a.users),
   }
 }

@@ -368,6 +368,7 @@ async function listProfilesUncached() {
         firstSeen: p.firstSeen || p._updatedAt || 0,
         lastSeen: p.lastSeen || p._updatedAt || 0,
         lastBattleAt: p.lastBattleAt || 0, // время последнего входа в бой — для «сыграли бой сегодня»
+        firstBattleAt: p.firstBattleAt || 0, // время первого боя — ловит сегодняшних новичков задним числом
       })
     } catch {
       /* битый файл — пропускаем */
