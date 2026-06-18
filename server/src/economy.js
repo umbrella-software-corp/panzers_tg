@@ -42,6 +42,8 @@ export function econPreserve(prev, bodyProfile) {
     modules: prev.modules && typeof prev.modules === 'object' ? prev.modules : {},
     // crew: xp/skills.* приходят с клиента (xp — прогресс), но skills (перки за кредиты) — серверные
     crew: { ...bodyCrew, skills: (prevCrew.skills && typeof prevCrew.skills === 'object') ? prevCrew.skills : {} },
+    // опыт ветки — теперь исследовательская ВАЛЮТА (тратится на открытие танков) → серверный
+    branchXp: prev.branchXp && typeof prev.branchXp === 'object' ? prev.branchXp : {},
     camoOwned: Array.isArray(prev.camoOwned) ? prev.camoOwned : [],
     skins: Array.isArray(prev.skins) ? prev.skins : ['std'],
     premTankBattles: prev.premTankBattles | 0,
@@ -64,6 +66,7 @@ function wallet(p) {
     owned: Array.isArray(p.owned) ? p.owned : [],
     modules: p.modules || {},
     crew: p.crew || { xp: 0, skills: {} },
+    branchXp: p.branchXp && typeof p.branchXp === 'object' ? p.branchXp : {}, // опыт ветки — исследовательская валюта
     camoOwned: Array.isArray(p.camoOwned) ? p.camoOwned : [],
     skins: Array.isArray(p.skins) ? p.skins : ['std'],
   }
@@ -85,6 +88,15 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     const premTank = E.isPremiumTank(h.tankId)
     if (premTank) m += E.PREM_TANK.creditMult
     credits += Math.round(r.credits * m)
+    // ОПЫТ ВЕТКИ за бой (как клиент: половина боевого опыта в ветку текущей нации) с
+    // премиум-множителем. Опыт — серверная исследовательская валюта (тратится на открытие).
+    const xpTotal = Math.round(r.xp * m)
+    const branchShare = xpTotal - Math.round(xpTotal / 2)
+    if (branchShare > 0) {
+      if (!p.branchXp || typeof p.branchXp !== 'object') p.branchXp = {}
+      const nat = E.tankNation(h.tankId)
+      p.branchXp[nat] = (p.branchXp[nat] || 0) + branchShare
+    }
     // прем-танк: каждый 10-й бой гарантированно +жетоны (детерминированно)
     if (premTank) {
       p.premTankBattles = (p.premTankBattles | 0) + 1
@@ -129,16 +141,22 @@ const err = (e) => ({ ok: false, error: e })
 export function buyTank(uid, tankId) {
   return withProfileLock(uid, async () => {
     const p = await loadProfile(uid); if (!p) return err('no-profile')
-    if (!E.RESEARCH_TANKS[tankId]) return err('bad-tank') // премиум — только за ⭐, не тут
+    const t = E.RESEARCH_TANKS[tankId]
+    if (!t) return err('bad-tank') // премиум — только за ⭐, не тут
     if (!Array.isArray(p.owned)) p.owned = [...E.STARTERS]
     if (p.owned.includes(tankId)) return ok(p, { already: true })
-    if (!E.canUnlockTank(p.owned, p.modules || {}, tankId)) return err('locked')
-    const cost = E.tankCost(E.tankTier(tankId))
+    // гейт: предыдущий куплен + его модули 5/5 + опыт ветки ≥ стоимости исследования
+    if (!E.canUnlockTank(p.owned, p.modules || {}, tankId, p.branchXp || {})) return err('locked')
+    const cost = E.tankCost(t.tier)
     if ((p.credits || 0) < cost) return err('funds')
+    const xpCost = E.tankResearchXp(t.tier)
+    // списываем И опыт ветки, И кредиты (canUnlockTank уже проверил, что опыта хватает)
     p.credits -= cost
+    if (!p.branchXp || typeof p.branchXp !== 'object') p.branchXp = {}
+    p.branchXp[t.nation] = Math.max(0, (p.branchXp[t.nation] || 0) - xpCost)
     p.owned.push(tankId)
     await saveProfile(uid, p)
-    logEvent(uid, 'buy_tank', { tank: tankId, cost })
+    logEvent(uid, 'buy_tank', { tank: tankId, cost, xp: xpCost })
     return ok(p, { bought: tankId })
   })
 }

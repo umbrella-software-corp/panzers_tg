@@ -134,7 +134,7 @@ export default {
     ratingBands: { ace: 'ACE', great: 'GREAT', good: 'GOOD', avg: 'AVERAGE', below: 'BELOW AVG', novice: 'NOVICE' },
     refMilestones: ['500 credits', 'Officer crate', '25 tokens'],
     ratingRivals: ['Maverick', 'RoadkillRoy', 'Steelhound', 'CritHappens', 'GhostTurret', 'BoomstickBob', 'HullDownHank', 'SnailGun', 'RNGesus', 'TankNSpank'],
-    unlock: { research: 'Research {name}', modules: 'Research {name} modules ({n}/5)' },
+    unlock: { research: 'Research {name}', modules: 'Research {name} modules ({n}/5)', xp: 'Branch XP {have} / {need}' },
   },
   ru: {
     defaultName: 'Боец',
@@ -267,6 +267,6 @@ export default {
     ratingBands: { ace: 'АС', great: 'ОТЛИЧНО', good: 'ХОРОШО', avg: 'СРЕДНЕ', below: 'НИЖЕ СРЕДНЕГО', novice: 'НОВИЧОК' },
     refMilestones: ['500 кредитов', 'Офицерский ящик', '25 жетонов'],
     ratingRivals: ['Kolyan_T34', 'дед_максим', 'Shtorm_88', 'Виталя_98', 'KOT_B_TANKE', 'Лёха77', 'sn1per_x', 'Бородач', 'MaxPower', 'Кефир'],
-    unlock: { research: 'Исследуйте {name}', modules: 'Изучите модули {name} ({n}/5)' },
+    unlock: { research: 'Исследуйте {name}', modules: 'Изучите модули {name} ({n}/5)', xp: 'Опыт ветки {have} / {need}' },
   },
 }

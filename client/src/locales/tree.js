@@ -11,6 +11,7 @@ export default {
     // чеклист разблокировки
     checkResearch: ({ name }) => `Research ${name}`,
     checkTopModules: ({ name }) => `Top modules ${name}`,
+    checkXp: 'Branch XP',
     checkCredits: 'Credits',
     // переход к недостающему шагу
     stepUnlock: ({ name }) => `Unlock ${name}`,
@@ -38,6 +39,7 @@ export default {
     available: 'Доступен к исследованию',
     checkResearch: ({ name }) => `Исследовать ${name}`,
     checkTopModules: ({ name }) => `Топ-модули ${name}`,
+    checkXp: 'Опыт ветки',
     checkCredits: 'Кредиты',
     stepUnlock: ({ name }) => `Открыть ${name}`,
     stepModules: ({ name }) => `К модулям ${name}`,

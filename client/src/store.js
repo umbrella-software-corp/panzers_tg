@@ -22,6 +22,7 @@ function adoptWallet(r) {
   if (Array.isArray(r.owned)) profile.owned = r.owned
   if (r.modules && typeof r.modules === 'object') profile.modules = r.modules
   if (r.crew && typeof r.crew === 'object') profile.crew = r.crew
+  if (r.branchXp && typeof r.branchXp === 'object') profile.branchXp = r.branchXp // опыт ветки — серверный
   if (Array.isArray(r.camoOwned)) profile.camoOwned = r.camoOwned
   if (Array.isArray(r.skins)) profile.skins = r.skins
   if (r.camos && typeof r.camos === 'object') profile.camos = r.camos
@@ -68,6 +69,7 @@ import {
   MODULE_DEFS,
   MODULE_COMBAT,
   moduleCost,
+  tankResearchXp,
   modLevel,
   modsMaxedCount,
   REF_MILESTONES,
@@ -282,7 +284,11 @@ if (typeof document !== 'undefined') {
 export const grantReveal = ref(null)
 export async function applyPendingGrants() {
   const pend = Array.isArray(profile.pendingGrants) ? profile.pendingGrants : []
-  if (!pend.length) return
+  // Под авторитетностью награды за бой (кредиты/опыт) сервер кладёт в pendingGrants, о
+  // которых клиент локально ещё НЕ знает → нельзя пропускать запрос по локальной длине
+  // очереди, иначе награда за бой не подтянется. Под ON всегда спрашиваем сервер (на
+  // пустой очереди он no-op). Под OFF — как было (без лишнего запроса).
+  if (!econOn() && !pend.length) return
   try {
     const r = await apiGrantsApply()
     if (r && r.ok) {
@@ -290,6 +296,7 @@ export async function applyPendingGrants() {
       profile.tokens = r.tokens || 0
       if (typeof r.goldAmmo === 'number') profile.goldAmmo = r.goldAmmo // золотые снаряды (награда дня)
       if (Array.isArray(r.owned)) profile.owned = r.owned
+      if (econOn() && r.branchXp && typeof r.branchXp === 'object') profile.branchXp = r.branchXp // опыт ветки — серверный (под ON)
       profile.pendingGrants = Array.isArray(r.pendingGrants) ? r.pendingGrants : []
       const g = r.got
       if (r.applied && g && (g.credits || g.tokens || (g.tanks && g.tanks.length))) grantReveal.value = g
@@ -416,8 +423,15 @@ export function prevTank(tank) {
 }
 
 // можно ли купить танк: предыдущий куплен и его топ-модули собраны 5/5
+// опыт ветки этого танка (нации) и сколько нужно на исследование
+export const branchXpOf = (tank) => (profile.branchXp || {})[nationOf(tank.id)] || 0
+export const researchXpNeed = (tank) => tankResearchXp(tank.tier)
+export const hasResearchXp = (tank) => branchXpOf(tank) >= researchXpNeed(tank)
+
+// открыть = предыдущий куплен + его 5 модулей макс + опыт ветки ≥ стоимости исследования
 export function canUnlock(tank) {
   if (isOwned(tank.id)) return false
+  if (!hasResearchXp(tank)) return false
   const prev = prevTank(tank)
   if (!prev) return true // tier 1
   return isOwned(prev.id) && modsMaxedCount(profile.modules, prev.id) >= 5
@@ -428,6 +442,7 @@ export function unlockReason(tank) {
   if (prev && !isOwned(prev.id)) return t('game.unlock.research', { name: prev.name })
   if (prev && modsMaxedCount(profile.modules, prev.id) < 5)
     return t('game.unlock.modules', { name: prev.name, n: modsMaxedCount(profile.modules, prev.id) })
+  if (!hasResearchXp(tank)) return t('game.unlock.xp', { have: Math.floor(branchXpOf(tank)).toLocaleString('ru-RU'), need: researchXpNeed(tank).toLocaleString('ru-RU') })
   return null
 }
 
@@ -440,6 +455,9 @@ export async function buyTank(tank) {
   }
   if (!canUnlock(tank) || profile.credits < (tank.cost || 0)) return false
   profile.credits -= tank.cost || 0
+  // списываем и опыт ветки (исследование), и кредиты (покупка)
+  const nat = nationOf(tank.id)
+  profile.branchXp[nat] = Math.max(0, (profile.branchXp[nat] || 0) - researchXpNeed(tank))
   profile.owned.push(tank.id)
   return true
 }
@@ -581,6 +599,7 @@ export async function upgradeCrewPerk(id) {
 
 // опыт ветки нации (копится с боёв на её танках)
 export function addBranchXp(nation, xp) {
+  if (econOn()) return // под авторитетностью опыт ветки начисляет СЕРВЕР (grantBattle) → клиент подтянет через applyPendingGrants
   profile.branchXp[nation] = (profile.branchXp[nation] || 0) + Math.max(0, Math.round(xp || 0))
 }
 

@@ -235,6 +235,11 @@ export const REF_MILESTONES = [
 // танка. Прокачка 5 модулей = 600×tier кредитов (было 5250×tier).
 export const moduleCost = (tier, level) => tier * (level === 2 ? 40 : 80)
 
+// ИССЛЕДОВАНИЕ: стоимость открытия танка в ОПЫТЕ ВЕТКИ по тиру (тратится, отдельно от
+// кредитов). ЗЕРКАЛО shared/economy.js TIER_XP — менять В ОБОИХ местах.
+export const TIER_XP = { 1: 0, 2: 800, 3: 2500, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
+export const tankResearchXp = (tier) => TIER_XP[tier] || 0
+
 // ---------- голдовые снаряды ----------
 export const GOLD_AMMO_MULT = 1.35 // множитель урона голдового снаряда
 export const GOLD_AMMO_PACKS = [

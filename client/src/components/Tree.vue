@@ -14,6 +14,8 @@ import {
   upgradeModule,
   tankModLevel,
   prevTank,
+  branchXpOf,
+  researchXpNeed,
   syncProfile,
 } from '../store.js'
 import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
@@ -91,6 +93,7 @@ const checklist = computed(() => {
     const maxed = Math.min(5, maxedCount(prev.id))
     rows.push({ done: maxed >= 5, label: tr('tree.checkTopModules', { name: prev.name }), value: `${maxed}/5` })
   }
+  rows.push({ done: branchXpOf(tk) >= researchXpNeed(tk), label: tr('tree.checkXp'), value: `${fmt(branchXpOf(tk))} / ${fmt(researchXpNeed(tk))}` })
   rows.push({ done: profile.credits >= (tk.cost || 0), label: tr('tree.checkCredits'), value: `${fmt(profile.credits)} / ${fmt(tk.cost || 0)}` })
   return rows
 })

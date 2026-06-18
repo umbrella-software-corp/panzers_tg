@@ -595,7 +595,7 @@ async function handleApi(req, res) {
     const out = await withProfileLock(user.uid, async () => {
       const p = await loadProfile(user.uid)
       if (!p || !Array.isArray(p.pendingGrants) || !p.pendingGrants.length) {
-        return { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, goldAmmo: (p && p.goldAmmo) || 0, owned: (p && p.owned) || [], pendingGrants: [] }
+        return { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, goldAmmo: (p && p.goldAmmo) || 0, owned: (p && p.owned) || [], branchXp: (p && p.branchXp) || {}, pendingGrants: [] }
       }
       let n = 0
       // got = что показать в in-app окне «🎁 Подарок от администрации». Только админ-выдачи
@@ -616,7 +616,7 @@ async function handleApi(req, res) {
       }
       p.pendingGrants = []
       await saveProfile(user.uid, p)
-      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], pendingGrants: [] }
+      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], branchXp: p.branchXp || {}, pendingGrants: [] }
     })
     return json(res, 200, out)
   }

@@ -9,6 +9,12 @@
 export const TIER_COST = { 1: 0, 2: 1500, 3: 4000, 4: 10000, 5: 25000, 6: 62000, 7: 155000, 8: 390000, 9: 980000, 10: 2500000 }
 export const tankCost = (tier) => TIER_COST[tier] || 0
 
+// ---------- ИССЛЕДОВАНИЕ: стоимость в опыте ветки по тиру (WoT-модель) ----------
+// Опыт ветки (branchXp[нация]) копится в боях на танках нации и ТРАТИТСЯ при открытии
+// след. танка — отдельно от кредитов. ЗЕРКАЛО client/src/game/meta.js TIER_XP.
+export const TIER_XP = { 1: 0, 2: 800, 3: 2500, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
+export const tankResearchXp = (tier) => TIER_XP[tier] || 0
+
 // ---------- модули: 5 слотов × 3 уровня ----------
 export const MODULE_SLOTS = ['gun', 'tur', 'eng', 'trk', 'rad']
 export const MODULE_MAX = 3
@@ -28,7 +34,10 @@ export const STARTERS = ['t26', 'pz2', 'm2l']
 // премиум-танки (только за ⭐, не исследуются) — тир для стоимости модулей/тир-брекета
 export const PREMIUM_TANK_IDS = ['t28', 't54', 'pz4h', 'maus', 'ram', 'sper']
 export const PREMIUM_TANK_TIER = { t28: 4, t54: 8, pz4h: 4, maus: 8, ram: 4, sper: 8 }
+export const PREMIUM_TANK_NATION = { t28: 'ussr', t54: 'ussr', pz4h: 'ger', maus: 'ger', ram: 'usa', sper: 'usa' }
 export const isPremiumTank = (id) => PREMIUM_TANK_TIER[id] != null
+// нация танка (для начисления опыта ветки за бой) — исследуемый/премиум; иначе ussr
+export const tankNation = (id) => (RESEARCH_TANKS[id] && RESEARCH_TANKS[id].nation) || PREMIUM_TANK_NATION[id] || 'ussr'
 export const tankTier = (id) => (RESEARCH_TANKS[id] && RESEARCH_TANKS[id].tier) || PREMIUM_TANK_TIER[id] || 1
 // танк существует (исследуемый или премиум) — для валидации id из клиента
 export const tankExists = (id) => !!RESEARCH_TANKS[id] || PREMIUM_TANK_TIER[id] != null
@@ -40,15 +49,17 @@ export function prevTankId(tankId) {
   return Object.keys(RESEARCH_TANKS).find((id) => RESEARCH_TANKS[id].nation === t.nation && RESEARCH_TANKS[id].tier === t.tier - 1) || null
 }
 
-// можно ли РАЗБЛОКИРОВАТЬ танк: предыдущий по тиру куплен и его 5 модулей собраны (3/3).
-// owned — массив id, modules — { tankId: { slot: 1..3 } }. Не проверяет деньги.
-export function canUnlockTank(owned, modules, tankId) {
+// можно ли РАЗБЛОКИРОВАТЬ танк: предыдущий куплен + его 5 модулей собраны (3/3) +
+// накоплен опыт ветки ≥ стоимости исследования. owned — массив id, modules —
+// { tankId: { slot: 1..3 } }, branchXp — { nation: xp }. Деньги НЕ проверяет (отдельно).
+export function canUnlockTank(owned, modules, tankId, branchXp) {
   const t = RESEARCH_TANKS[tankId]
   if (!t) return false
   if ((owned || []).includes(tankId)) return false
+  const xpOk = ((branchXp || {})[t.nation] || 0) >= tankResearchXp(t.tier)
   const prev = prevTankId(tankId)
-  if (!prev) return true // тир-1
-  return (owned || []).includes(prev) && modsMaxedCount(modules, prev) >= MODULE_SLOTS.length
+  if (!prev) return xpOk // тир-1 (xp=0 → true; но стартеры и так owned)
+  return (owned || []).includes(prev) && modsMaxedCount(modules, prev) >= MODULE_SLOTS.length && xpOk
 }
 
 // ---------- награда за бой из АВТОРИТЕТНЫХ серверных чисел ----------
