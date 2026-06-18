@@ -276,7 +276,7 @@ onMounted(() => {
           <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
             <TankImg :tank-id="tank.id" :size="300" :hangar="true" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
           </div>
-          <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
+          <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); color: var(--amber); background: rgba(0,0,0,0.82); white-space: nowrap; z-index: 3">
             <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}
           </div>
         </template>
@@ -467,10 +467,10 @@ onMounted(() => {
         </span>
         {{ t('hangar.platoon') }}
       </button>
-      <button class="pz-cta pz-cta--hazard playbtn" data-tut="play" @click="locked ? openOrUnlock() : emit('play')">
+      <button class="pz-cta playbtn" :class="locked ? 'pz-cta--muted' : 'pz-cta--hazard'" data-tut="play" @click="locked ? openOrUnlock() : emit('play')">
         <span v-if="locked" class="play-stack">
           <span class="play-main">{{ t('hangar.openTank') }}</span>
-          <span class="play-sub">{{ t('hangar.openTankSub') }}</span>
+          <span class="play-sub">▸ {{ tank.name }}</span>
         </span>
         <span v-else class="play-stack">
           <span class="play-main">{{ t('common.play') }}<template v-if="inParty">{{ t('hangar.battlePlatoon') }}</template></span>

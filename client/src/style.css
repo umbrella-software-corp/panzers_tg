@@ -247,6 +247,16 @@ body {
   filter: grayscale(0.8) brightness(0.6);
   pointer-events: none;
 }
+/* приглушённый CTA: для залоченного танка — НЕ яркий «В БОЙ», а тусклая вторичная
+   кнопка «в Развитии» (кликабельна, ведёт в дерево). Тот же размер → вёрстка не прыгает. */
+.pz-cta--muted {
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c3128, #21261e);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 3px 0 #14180f,
+    0 8px 18px rgba(0, 0, 0, 0.3);
+}
 
 /* вторичная кнопка */
 .pz-btn2 {
@@ -290,7 +300,9 @@ body {
 /* ============ стат-бары ============ */
 .pz-stat {
   display: grid;
-  grid-template-columns: 118px 1fr 28px;
+  /* колонка чисел расширена под КРУПНЫЕ реальные значения («907 +51», «2900») —
+     раньше было 28px под шкалу 1-10, и большие числа не влезали/обрезались */
+  grid-template-columns: 112px 1fr 78px;
   gap: 10px;
   align-items: center;
 }
@@ -320,6 +332,8 @@ body {
   font-family: var(--font-display);
   font-size: 12px;
   color: var(--ink-dim);
+  text-align: right;
+  white-space: nowrap; /* «907 +51» одной строкой, не переносить */
 }
 
 /* ============ нижняя навигация ============ */
