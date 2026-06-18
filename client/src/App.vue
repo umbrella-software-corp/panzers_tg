@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, markRaw } from 'vue'
-import { setBackButton, startParam, tgUserId, requestWriteAccess, tgConfirm } from './tg.js'
+import { setBackButton, startParam, tgUserId, requestWriteAccess, tgConfirm, openSupport } from './tg.js'
 import { apiReferred, apiPushAllow } from './api.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
@@ -202,6 +202,23 @@ async function offerPushBonus() {
   if (granted && granted.tokens) track('push_bonus_claimed', { tokens: granted.tokens })
 }
 
+// ПРИЗЫВ ПОДЕЛИТЬСЯ МНЕНИЕМ → саппорт-бот (свободный текст падает в группу «Panzers
+// Support», там читаем мнение игроков). Раз в 3 дня на устройство, только вовлечённым
+// (≥3 боёв) и НЕ поверх дейлика/пуш-промпта — чтобы не нудить.
+const FB_PROMPT_KEY = 'pz.fbPrompt'
+let fbOffered = false
+async function offerFeedback() {
+  if (fbOffered || pushOffered || daily.value || !tgUserId() || (profile.stats?.battles || 0) < 3) return
+  try {
+    if (Date.now() - +(localStorage.getItem(FB_PROMPT_KEY) || 0) < 3 * 86400000) return // не чаще раза в 3 дня
+  } catch { return }
+  fbOffered = true
+  try { localStorage.setItem(FB_PROMPT_KEY, String(Date.now())) } catch {}
+  track('feedback_nudge_shown', {})
+  const yes = await tgConfirm('💬 Нам важно твоё мнение! Что нравится, что бесит, что улучшить — напиши нам пару слов.')
+  if (yes) { track('feedback_nudge_accepted', {}); openSupport() }
+}
+
 // кнопка «Назад» Telegram: на корне (ангар) и в бою — спрятана (там свои
 // выходы), на остальных экранах ведёт в ангар вместо сворачивания мини-аппа
 watch(
@@ -312,6 +329,7 @@ function exitBattle(reward) {
   screen.value = 'hangar'
   maybeShowDaily() // после первого боя (battles>0) дейлик всплывает здесь, а не на входе
   offerPushBonus() // после боя/тренировки первый бой → просим разрешение на пуши (один раз)
+  offerFeedback() // изредка (раз в 3 дня, вовлечённым) — «напиши нам мнение» → саппорт
 }
 function rematch(reward) {
   track('rematch_clicked', {
