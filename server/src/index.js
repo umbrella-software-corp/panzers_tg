@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, withProfileLock, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage, mskDay } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage, mskDay, claimPushBonus, PUSH_BONUS_TOKENS } from './notifications.js'
 import { logEvent, readEvents } from './eventlog.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
@@ -517,7 +517,7 @@ async function handleApi(req, res) {
   if (req.url === '/api/config' && req.method === 'GET') {
     // econAuthority — флаг серверно-авторитетной экономики; клиент по нему роутит
     // покупки/награды на сервер (а не считает локально). По умолчанию OFF.
-    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig(), feedback: feedbackConfig(), econAuthority: await econ.econAuthority() })
+    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig(), feedback: feedbackConfig(), econAuthority: await econ.econAuthority(), pushBonusTokens: PUSH_BONUS_TOKENS })
   }
   if (req.url === '/api/profile' && req.method === 'POST') {
     const body = await readBody(req)
@@ -558,6 +558,7 @@ async function handleApi(req, res) {
       // getChatMember). Флаг серверный — клиент не может его сбросить сейвом профиля
       // и заклеймить повторно через подчистку localStorage.
       channelBonusClaimed: prev.channelBonusClaimed || false,
+      pushBonusClaimed: prev.pushBonusClaimed || false, // бонус за включение уведомлений — серверный (разовый)
       // бонус за фидбек: «написал в саппорт» (ставит support.js) + «забрал» — серверные
       wroteSupport: prev.wroteSupport || false,
       feedbackClaimed: prev.feedbackClaimed || false,
@@ -651,6 +652,11 @@ async function handleApi(req, res) {
     // чтобы возврат-рассылка до него дошла (раньше вебапп-юзеры были недосягаемы для бота)
     await setPushEnabled(user.uid, true)
     return json(res, 200, { ok: true })
+  }
+  if (req.url === '/api/push-bonus' && req.method === 'POST') {
+    // разовый бонус за включение уведомлений: СЕРВЕР верифицирует доступ реальной
+    // отправкой и начисляет жетоны (если бот всё ещё не может писать — не даём)
+    return json(res, 200, await claimPushBonus(user.uid))
   }
   if (req.url === '/api/channel-bonus' && req.method === 'POST') {
     // разовый бонус за подписку на канал — проверка подписки + начисление на сервере

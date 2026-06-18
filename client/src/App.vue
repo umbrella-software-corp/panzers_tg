@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, markRaw } from 'vue'
-import { setBackButton, startParam, tgUserId, requestWriteAccess } from './tg.js'
+import { setBackButton, startParam, tgUserId, requestWriteAccess, tgConfirm } from './tg.js'
 import { apiReferred, apiPushAllow } from './api.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
@@ -12,7 +12,7 @@ import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
 import Onboarding from './components/Onboarding.vue'
 import SecondTankChoice from './components/SecondTankChoice.vue'
-import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants } from './store.js'
+import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus } from './store.js'
 import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
@@ -107,7 +107,7 @@ onMounted(async () => {
   handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
   maybeShowDaily() // первую сессию (0 боёв) НЕ перехватываем — дейлик всплывёт после первого боя
   maybeStartTraining() // самый первый запуск → сразу тренировочный бой (мимо ангара)
-  maybeAskPush() // вовлечённому (battles>0) — разрешение боту на пуши; новичка спросим после первого боя
+  offerPushBonus() // вовлечённому (battles>0) — разрешение боту на пуши; новичка спросим после первого боя
   // сплэш держим минимум ~750мс, чтобы не моргал на быстром старте
   setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - t0)))
 })
@@ -181,23 +181,25 @@ function cancelMatchmaking() {
   go('hangar')
 }
 
-// ОДИН раз спрашиваем у вовлечённого игрока разрешение боту на пуши (нативный попап
-// Telegram requestWriteAccess). Без него бот не может писать вебапп-юзерам — рассылка
-// возврата уходит «в 0». Разрешил → снимаем pushBlocked на сервере. Спрашиваем после
-// первого боя (battles>0), чтобы не в лоб на холодном старте.
-async function maybeAskPush() {
-  if (profile.pushAsked || (profile.stats?.battles || 0) < 1 || !tgUserId()) return
-  profile.pushAsked = true // спрашиваем единожды (персистится), даже если откажет — не нудим
-  track('push_access_requested', {})
+// ВКЛЮЧИ УВЕДОМЛЕНИЯ → БОНУС: большинство открывают Mini-App по ссылке и НЕ жмут /start,
+// поэтому бот не может им писать (рассылка возврата уходит «в 0», ~94% недосягаемы).
+// Перегоняем в «доступные» через requestWriteAccess + морковку: сначала свой текст с
+// выгодой (нативный confirm), потом нативный запрос доступа, при согласии сервер
+// верифицирует доступ реальной отправкой и начисляет жетоны. Спрашиваем максимум раз
+// за сессию, только после тренировки (не в лоб новичку), и не нудим забравшему.
+let pushOffered = false
+async function offerPushBonus() {
+  if (profile.pushBonusClaimed || pushOffered || !tgUserId() || !profile.trainingDone) return
+  pushOffered = true
+  const n = serverConfig.pushBonusTokens || 25
+  track('push_bonus_offered', { tokens: n })
+  const wants = await tgConfirm(`🔔 Включи уведомления — не пропусти награды и события.\n\nБонус за включение: +${n} 💎`)
+  if (!wants) { track('push_bonus_declined', { stage: 'confirm' }); return }
   const ok = await requestWriteAccess()
   track('push_access_result', { granted: !!ok })
-  if (ok) {
-    try {
-      await apiPushAllow()
-    } catch {
-      /* офлайн — снимем pushBlocked при следующем заходе/пуше */
-    }
-  }
+  if (!ok) { track('push_bonus_declined', { stage: 'access' }); return }
+  const granted = await claimPushBonus() // сервер верифицирует доступ + начислит жетоны
+  if (granted && granted.tokens) track('push_bonus_claimed', { tokens: granted.tokens })
 }
 
 // кнопка «Назад» Telegram: на корне (ангар) и в бою — спрятана (там свои
@@ -309,7 +311,7 @@ function exitBattle(reward) {
   cameFromBattle.value = true // вернулся из боя → показать баннер фидбека (на эмоциях)
   screen.value = 'hangar'
   maybeShowDaily() // после первого боя (battles>0) дейлик всплывает здесь, а не на входе
-  maybeAskPush() // только что сыграл первый бой → просим разрешение на пуши (один раз)
+  offerPushBonus() // после боя/тренировки первый бой → просим разрешение на пуши (один раз)
 }
 function rematch(reward) {
   track('rematch_clicked', {

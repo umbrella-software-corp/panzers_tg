@@ -2,12 +2,12 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch, ref } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef, apiPushBonus } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
 // серверный конфиг (флаги админки: турниры вкл/выкл; бонус за подписку на канал)
-export const serverConfig = reactive({ tournaments: false, channel: { on: false, url: '', credits: 0, tokens: 0 }, feedback: { on: false, tokens: 0, credits: 0 }, econAuthority: false })
+export const serverConfig = reactive({ tournaments: false, channel: { on: false, url: '', credits: 0, tokens: 0 }, feedback: { on: false, tokens: 0, credits: 0 }, econAuthority: false, pushBonusTokens: 25 })
 
 // серверно-авторитетная экономика включена? Тогда деньги/танки/модули ведёт СЕРВЕР:
 // покупки идут через эндпоинты, награды за бой приходят в pendingGrants, локальные
@@ -58,6 +58,7 @@ export async function loadConfig() {
     if (c.channel) serverConfig.channel = c.channel
     if (c.feedback) serverConfig.feedback = c.feedback
     serverConfig.econAuthority = !!c.econAuthority
+    if (typeof c.pushBonusTokens === 'number') serverConfig.pushBonusTokens = c.pushBonusTokens
   } catch {
     /* офлайн — оставляем дефолт */
   }
@@ -199,6 +200,7 @@ if (typeof profile.firstBattleRewarded !== 'boolean') profile.firstBattleRewarde
 // разрешение боту на пуши (requestWriteAccess) спрашиваем ОДИН раз — иначе бот не
 // может писать вебапп-юзерам (Telegram: нельзя инициировать чат без /start)
 if (typeof profile.pushAsked !== 'boolean') profile.pushAsked = false
+if (typeof profile.pushBonusClaimed !== 'boolean') profile.pushBonusClaimed = false // бонус за включение уведомлений (разовый, серверный)
 
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()
@@ -396,6 +398,20 @@ export async function bootSync() {
     syncRetryTimer = setTimeout(() => retry(0), 2000)
   }
   return ok
+}
+
+// забрать РАЗОВЫЙ бонус за включение уведомлений. Вызывать ПОСЛЕ успешного
+// requestWriteAccess (caller). Сервер верифицирует доступ реальной отправкой и кладёт
+// жетоны в pendingGrants; syncProfile подтягивает их + флаги. Возвращает { tokens } или null.
+export async function claimPushBonus() {
+  if (profile.pushBonusClaimed) return null
+  const r = await apiPushBonus().catch(() => null)
+  if (!r) return null
+  if (r.already) { profile.pushBonusClaimed = true; return null }
+  if (!r.ok) return null // 'not-granted' — доступа реально нет, НЕ помечаем (можно повторить)
+  profile.pushBonusClaimed = true
+  await syncProfile() // подтянуть начисленные жетоны + серверные флаги (pushBlocked снят)
+  return r.granted || null
 }
 
 // ---------- танки ----------

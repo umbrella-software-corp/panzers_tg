@@ -220,6 +220,43 @@ export async function notifyFriendsInBattle(player) {
   }
 }
 
+// РАЗОВЫЙ бонус за включение уведомлений (requestWriteAccess). Клиент уже вызвал
+// requestWriteAccess и юзер согласился; СЕРВЕР верифицирует доступ РЕАЛЬНОЙ отправкой
+// (если бот всё ещё не может писать — 403 — бонус не даём, доступа на самом деле нет),
+// снимает pushBlocked/pushOff и кладёт награду в pendingGrants (клиент заберёт атомарно).
+// Возвращает { ok:true, granted } | { already } | { ok:false, reason:'not-granted' }.
+export const PUSH_BONUS_TOKENS = Math.max(0, +(process.env.PUSH_BONUS_TOKENS || 25))
+let pbSeq = 0
+export async function claimPushBonus(uid) {
+  if (!tgIdOf(uid)) return { ok: false, reason: 'no-tg' }
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid)
+    if (!p) return { ok: false, reason: 'no-profile' }
+    if (p.pushBonusClaimed) { // уже забирал — на всякий снимем блок (доступ есть) и выходим
+      if (p.pushBlocked || p.pushOff) { p.pushBlocked = false; p.pushOff = false; await saveProfile(uid, p) }
+      return { already: true }
+    }
+    const lang = langOf(p)
+    const confirmText = lang === 'en'
+      ? '🔔 Notifications on! Here’s your reward — open the game.'
+      : '🔔 Уведомления включены! Лови награду — загляни в игру.'
+    if (hasBot()) {
+      // верификация: реально ли дали доступ? пробуем написать. 403/нельзя → доступа нет.
+      const res = await api('sendMessage', { chat_id: tgIdOf(uid), text: confirmText, reply_markup: playButton(lang), disable_web_page_preview: true })
+      if (!(res && res.ok)) return { ok: false, reason: 'not-granted' } // бот по-прежнему не может писать
+    } // без бота (dev) — считаем, что доступ дан, чтобы прокликать флоу
+    p.pushBlocked = false
+    p.pushOff = false
+    p.pushBonusClaimed = true
+    if (PUSH_BONUS_TOKENS > 0) {
+      if (!Array.isArray(p.pendingGrants)) p.pendingGrants = []
+      p.pendingGrants.push({ id: 'pb.' + Date.now() + '.' + ++pbSeq, kind: 'bonus', credits: 0, tokens: PUSH_BONUS_TOKENS, tanks: [], at: Date.now() })
+    }
+    await saveProfile(uid, p)
+    return { ok: true, granted: { tokens: PUSH_BONUS_TOKENS } }
+  })
+}
+
 // включить/выключить уведомления (для /start и /stop в payments.js)
 export async function setPushEnabled(uid, on) {
   if (!tgIdOf(uid)) return

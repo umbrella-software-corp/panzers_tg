@@ -74,6 +74,9 @@ export const apiPlayer = (rank) => call('/api/player?rank=' + rank)
 export const apiReferred = (ref) => call('/api/referred', { method: 'POST', body: JSON.stringify({ ref: String(ref) }) })
 // юзер дал разрешение боту писать ему (requestWriteAccess) → сервер снимает pushBlocked/pushOff
 export const apiPushAllow = () => call('/api/push-allow', { method: 'POST', body: '{}' })
+// разовый бонус за включение уведомлений: сервер верифицирует доступ реальной отправкой
+// и начисляет жетоны. Ответ: { ok, granted:{tokens} } | { already } | { ok:false, reason }.
+export const apiPushBonus = () => call('/api/push-bonus', { method: 'POST', body: '{}' })
 // разовый бонус за подписку на канал: сервер проверяет подписку (getChatMember) и
 // начисляет. Ответ: { ok, granted } | { already } | { subscribed:false } | { disabled }.
 export const apiChannelBonus = () => call('/api/channel-bonus', { method: 'POST', body: '{}' })

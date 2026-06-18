@@ -182,6 +182,20 @@ export function requestWriteAccess() {
   })
 }
 
+// нативный диалог-подтверждение Telegram (кастомный текст + OK/Отмена). Резолвится
+// true, если нажал OK. Вне Telegram — true (чтобы прокликать флоу в браузере/dev).
+export function tgConfirm(message) {
+  return new Promise((resolve) => {
+    try {
+      const tg = window.Telegram && window.Telegram.WebApp
+      if (tg && typeof tg.showConfirm === 'function') tg.showConfirm(String(message || ''), (ok) => resolve(!!ok))
+      else resolve(true)
+    } catch {
+      resolve(true)
+    }
+  })
+}
+
 export function initTelegram() {
   const tg = window.Telegram && window.Telegram.WebApp
   const root = document.documentElement
