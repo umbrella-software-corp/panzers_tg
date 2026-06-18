@@ -320,22 +320,23 @@ async function refresh() {
   const bb = $('battleBadge')
   if (bb) { bb.textContent = liveBattles; bb.classList.toggle('live', liveBattles > 0) }
 
-  const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, activeToday:0, playedToday:0, reachedTotal:0, returnedReal:0, bySource:[] }
+  const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, activeToday:0, playedToday:0, reachedTotal:0, returnedReal:0, pushBlocked:0, pushReachable:0, bySource:[] }
   LINK_BASE = s.linkBase || ''
   const retPct = t.reachedTotal ? Math.round((t.returnedReal / t.reachedTotal) * 100) : 0
+  const reachPct = t.reachedTotal ? Math.round((t.pushReachable / t.reachedTotal) * 100) : 0
   $('traffic').innerHTML = [
     [t.total, 'всего игроков'],
     [t.newToday, 'новых сегодня'],
     [t.activeToday, 'активны сегодня (МСК)'],
     [t.playedToday, 'играли сегодня'],
     [(t.returnedReal||0).toLocaleString('ru-RU') + ' · ' + retPct + '%', 'вернулись (игроки, не мусор)'],
-    [t.new7d, 'новых за 7 дней'],
+    [(t.pushReachable||0).toLocaleString('ru-RU') + ' · ' + reachPct + '%', 'доступны для пуша'],
     [t.dau, 'актив за 24ч (DAU)'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + (typeof v === 'number' ? v.toLocaleString('ru-RU') : v) + '</div><div class="l">' + l + '</div></div>').join('')
 
   const pct = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '—')
   $('sources').innerHTML = table(
-    ['Источник', 'Игроков', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Новых 7д'],
+    ['Источник', 'Игроков', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Заблок. бота', 'Новых 7д'],
     t.bySource.map((x) => [
       '<a class="lnk" onclick="showSource(\\'' + esc(x.src === '—' ? '' : x.src) + '\\')">' + (x.src === '—' ? '— без метки (прямой заход)' : esc(x.src)) + '</a>',
       x.users,
@@ -343,6 +344,7 @@ async function refresh() {
       (x.ghosts || 0) + ' · ' + pct(x.ghosts || 0, x.users),
       (x.lingered || 0) + ' · ' + pct(x.lingered || 0, x.users),
       (x.returned || 0) + ' · ' + pct(x.returned || 0, x.users),
+      (x.blocked || 0) + ' · ' + pct(x.blocked || 0, x.users),
       x.new7d,
     ]),
   )
@@ -350,7 +352,7 @@ async function refresh() {
   const refs = s.referrers || []
   $('referrers').innerHTML = refs.length
     ? table(
-        ['Реферер (tg-id)', 'Привёл', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Новых 7д'],
+        ['Реферер (tg-id)', 'Привёл', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Заблок. бота', 'Новых 7д'],
         refs.map((x) => [
           '<a class="lnk" onclick="showRef(\\'' + esc(x.ref) + '\\')">' + esc(String(x.ref).replace(/^tg_/, '')) + '</a>',
           x.came,
@@ -358,6 +360,7 @@ async function refresh() {
           x.ghosts + ' · ' + pct(x.ghosts, x.came),
           x.lingered + ' · ' + pct(x.lingered, x.came),
           x.returned + ' · ' + pct(x.returned, x.came),
+          (x.blocked || 0) + ' · ' + pct(x.blocked || 0, x.came),
           x.new7d,
         ]),
       )

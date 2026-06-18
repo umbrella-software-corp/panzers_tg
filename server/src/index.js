@@ -398,6 +398,8 @@ function trafficMetrics(profiles, now) {
   let playedToday = 0 // реально вошли в бой сегодня (по серверному lastBattleAt) — «живые» игроки
   let reachedTotal = 0 // всего дошли до боя (реальные игроки, не мусорный трафик)
   let returnedReal = 0 // из них вернулись на 2-й день+ — чистая ретенция без гостов/ботов
+  let pushBlocked = 0 // бот недоступен (заблокировал ИЛИ не дал write-access) — пуш не доходит
+  let pushReachable = 0 // дошли до боя И боту можно писать — реальная аудитория пушей/дайджеста
   for (const p of profiles) {
     if (p.firstSeen && now - p.firstSeen < DAY) newToday++
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
@@ -412,9 +414,11 @@ function trafficMetrics(profiles, now) {
     if (reached) {
       reachedTotal++
       if (returnedDay2(p)) returnedReal++
+      if (!p.pushBlocked && !p.pushOff) pushReachable++ // боту можно писать → дойдёт пуш
     }
+    if (p.pushBlocked) pushBlocked++
     const key = p.src || '—'
-    const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
+    const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, blocked: 0, new7d: 0 }
     e.users++
     // та же воронка, что у рефереров: бой / зашёл-и-исчез(<1мин) / завис-без-боя / вернулись(2-й день+)
     const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
@@ -422,6 +426,7 @@ function trafficMetrics(profiles, now) {
     else if (dwell < 60000) e.ghosts++
     else e.lingered++
     if (returnedDay2(p)) e.returned++ // заходил на БОЛЕЕ поздний календарный день (МСК)
+    if (p.pushBlocked) e.blocked++ // бот недоступен (заблок./не дал write-access)
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
     bySrc.set(key, e)
   }
@@ -434,6 +439,8 @@ function trafficMetrics(profiles, now) {
     playedToday,
     reachedTotal,
     returnedReal,
+    pushBlocked,
+    pushReachable,
     bySource: [...bySrc.values()].sort((a, b) => b.users - a.users),
   }
 }
@@ -447,8 +454,9 @@ function referrerMetrics(profiles, now) {
   const by = new Map()
   for (const p of profiles) {
     if (!p.referredBy) continue
-    const e = by.get(p.referredBy) || { ref: p.referredBy, came: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, new7d: 0 }
+    const e = by.get(p.referredBy) || { ref: p.referredBy, came: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, blocked: 0, new7d: 0 }
     e.came++
+    if (p.pushBlocked) e.blocked++ // бот недоступен (заблок./не дал write-access)
     const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
     // непересекающийся разбор: бой / открыл-и-исчез / полазил-без-боя = came
     if (p.battles > 0 || p.reachedBattle) e.played++
