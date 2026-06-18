@@ -33,6 +33,8 @@ const emit = defineEmits(['go'])
 
 const tanks = computed(() => tanksOfNation(profile.nation))
 const premiums = computed(() => premiumOfNation(profile.nation)) // прем-техника нации (за ⭐)
+// накопленный опыт ВЫБРАННОЙ ветки (нации) — исследовательская валюта; копится за бои
+const nationXp = computed(() => Math.floor((profile.branchXp || {})[profile.nation] || 0))
 const premSel = ref(null) // развёрнутый ТТХ прем-танка (тап по строке)
 // ТТХ прем-танка (базовые статы 0..10 для оценки ДО покупки)
 const premStats = (t) => {
@@ -219,7 +221,13 @@ watch(selected, (t) => {
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
     </header>
 
-    <NationSwitch :nation="profile.nation" style="padding: 2px 14px 8px" @pick="pickNation" />
+    <NationSwitch :nation="profile.nation" style="padding: 2px 14px 4px" @pick="pickNation" />
+
+    <!-- накопленный опыт ветки (исследовательская валюта): копится в боях, тратится на открытие -->
+    <div style="padding: 0 14px 8px; display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 12px; color: var(--ink-dim)">
+      <span>🔬 {{ tr('tree.branchXp') }}:</span>
+      <b class="pz-display" style="color: var(--amber); font-size: 14px">{{ nationXp.toLocaleString('ru-RU') }}</b>
+    </div>
 
     <!-- ===== ветка ===== -->
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 14px 14px 10px; position: relative">

@@ -12,6 +12,7 @@ export default {
     checkResearch: ({ name }) => `Research ${name}`,
     checkTopModules: ({ name }) => `Top modules ${name}`,
     checkXp: 'Branch XP',
+    branchXp: 'Branch XP',
     checkCredits: 'Credits',
     // переход к недостающему шагу
     stepUnlock: ({ name }) => `Unlock ${name}`,
@@ -40,6 +41,7 @@ export default {
     checkResearch: ({ name }) => `Исследовать ${name}`,
     checkTopModules: ({ name }) => `Топ-модули ${name}`,
     checkXp: 'Опыт ветки',
+    branchXp: 'Опыт ветки',
     checkCredits: 'Кредиты',
     stepUnlock: ({ name }) => `Открыть ${name}`,
     stepModules: ({ name }) => `К модулям ${name}`,
