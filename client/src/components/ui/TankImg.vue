@@ -6,6 +6,11 @@ import { ref, watch, onMounted } from 'vue'
 import { SKIN_BY_ID } from '../../game/meta.js'
 import { applyCamo } from '../../game/camo.js'
 
+// Версия спрайтов — cache-bust: спрайты лежат под теми же именами, поэтому при
+// обновлении арта браузер (и память сессии) может отдавать старые. Бампать при
+// каждой замене пачки спрайтов, чтобы URL стал новым и арт перезагрузился.
+const SPRITE_VER = '?v=20260618'
+
 const props = defineProps({
   tankId: { type: String, required: true },
   size: { type: Number, default: 132 },
@@ -26,15 +31,15 @@ function render() {
   // hangar-рендер — детальный спрайт для большого превью в ангаре; только когда нет камо
   const usingHangar = !usingCamo && props.hangar
   img.src = usingCamo
-    ? `/sprites/camo/${props.tankId}_${props.camo}.png`
+    ? `/sprites/camo/${props.tankId}_${props.camo}.png${SPRITE_VER}`
     : usingHangar
-      ? `/sprites/hangar/${props.tankId}.png`
-      : `/sprites/tanks/${props.tankId}.png`
+      ? `/sprites/hangar/${props.tankId}.png${SPRITE_VER}`
+      : `/sprites/tanks/${props.tankId}.png${SPRITE_VER}`
   img.onerror = () => {
     // камо ещё не сгенерён ИЛИ нет hangar-рендера → откат на базовый заводской спрайт
     if (usingCamo || usingHangar) {
       img.onerror = null
-      img.src = `/sprites/tanks/${props.tankId}.png`
+      img.src = `/sprites/tanks/${props.tankId}.png${SPRITE_VER}`
     }
   }
   img.onload = () => {

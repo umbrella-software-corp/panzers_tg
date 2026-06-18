@@ -89,7 +89,6 @@ import {
   CAMO_BY_ID,
   expectedBattle,
   battleScore,
-  EXTRA_TANK_IDS,
 } from './game/meta.js'
 
 // ключ кеша — ПЕР-АККАУНТ (по tg-id): иначе на одном устройстве два Telegram-аккаунта
@@ -393,9 +392,7 @@ export async function bootSync() {
 }
 
 // ---------- танки ----------
-// EXTRA_TANKS (ПТ/доп. техника борда) пока «просто доступны» — считаем
-// владельческими без покупки, чтобы их можно было выбрать и водить в ангаре.
-export const isOwned = (id) => profile.owned.includes(id) || EXTRA_TANK_IDS.has(id)
+export const isOwned = (id) => profile.owned.includes(id)
 export const selectedTank = () => TANK_BY_ID[profile.selectedTank] || TANK_BY_ID[STARTERS[0]]
 
 export function setNation(nation) {

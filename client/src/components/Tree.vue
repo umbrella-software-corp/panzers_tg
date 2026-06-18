@@ -309,7 +309,8 @@ watch(selected, (t) => {
 
     <!-- ===== док выбранной машины ===== -->
     <div v-if="selected" :key="selected.id" class="pz-plate dock">
-      <div style="display: flex; gap: 12px; align-items: center">
+      <button class="dock-close" :aria-label="tr('common.close')" :title="tr('common.close')" @click="sel = null">✕</button>
+      <div style="display: flex; gap: 12px; align-items: center; padding-right: 28px">
         <TankImg :tank-id="selected.id" :size="48" :style="{ filter: isOwned(selected.id) ? 'none' : 'grayscale(0.9) brightness(0.6)', flexShrink: 0 }" />
         <div style="flex: 1">
           <div class="pz-display" style="font-size: 16px">{{ selected.name }}</div>
@@ -455,12 +456,35 @@ watch(selected, (t) => {
   transform: rotate(45deg);
 }
 .dock {
+  position: relative;
   margin: 0 14px 10px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   animation: pz-slide-up 0.25s ease;
+}
+.dock-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--ink-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+.dock-close:active {
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--ink);
 }
 .mod-tab {
   display: flex;
