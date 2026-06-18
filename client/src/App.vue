@@ -187,10 +187,17 @@ function cancelMatchmaking() {
 // выгодой (нативный confirm), потом нативный запрос доступа, при согласии сервер
 // верифицирует доступ реальной отправкой и начисляет жетоны. Спрашиваем максимум раз
 // за сессию, только после тренировки (не в лоб новичку), и не нудим забравшему.
+const PUSH_PROMPT_KEY = 'pz.pushPrompt'
 let pushOffered = false
 async function offerPushBonus() {
   if (profile.pushBonusClaimed || pushOffered || !tgUserId() || !profile.trainingDone) return
+  // НЕ чаще раза в 5 дней (а не каждый заход) — кто отказался, того не нудим (маркер в
+  // localStorage переживает перезапуск; pushOffered один — сессионный, сбрасывался каждый раз)
+  try {
+    if (Date.now() - +(localStorage.getItem(PUSH_PROMPT_KEY) || 0) < 5 * 86400000) return
+  } catch { return }
   pushOffered = true
+  try { localStorage.setItem(PUSH_PROMPT_KEY, String(Date.now())) } catch {}
   const n = serverConfig.pushBonusTokens || 25
   track('push_bonus_offered', { tokens: n })
   const wants = await tgConfirm(`🔔 Включи уведомления — не пропусти награды и события.\n\nБонус за включение: +${n} 💎`)
