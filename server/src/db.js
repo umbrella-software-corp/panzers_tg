@@ -365,6 +365,8 @@ async function listProfilesUncached() {
         referredBy: p.referredBy || null, // кто привёл (tg_<id> реферера) — для воронки по реф-ссылке
         reachedBattle: !!p.reachedBattle, // серверный факт входа в бой (надёжнее клиентского battles)
         srvBattles: p.srvBattles | 0, // серверный счётчик входов в бой (надёжнее клиентского stats.battles)
+        pushBlocked: !!p.pushBlocked, // бот недоступен (заблок./не дал write-access) — для метрики «заблок. бота»
+        pushOff: !!p.pushOff, // сам отписался от пушей (/stop)
         firstSeen: p.firstSeen || p._updatedAt || 0,
         lastSeen: p.lastSeen || p._updatedAt || 0,
         lastBattleAt: p.lastBattleAt || 0, // время последнего входа в бой — для «сыграли бой сегодня»
