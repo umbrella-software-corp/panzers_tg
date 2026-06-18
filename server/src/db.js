@@ -367,6 +367,7 @@ async function listProfilesUncached() {
         srvBattles: p.srvBattles | 0, // серверный счётчик входов в бой (надёжнее клиентского stats.battles)
         pushBlocked: !!p.pushBlocked, // бот недоступен (заблок./не дал write-access) — для метрики «заблок. бота»
         pushOff: !!p.pushOff, // сам отписался от пушей (/stop)
+        used3D: !!p.used3D, // включал 3D-режим хоть раз — для метрики эксперимента
         firstSeen: p.firstSeen || p._updatedAt || 0,
         lastSeen: p.lastSeen || p._updatedAt || 0,
         lastBattleAt: p.lastBattleAt || 0, // время последнего входа в бой — для «сыграли бой сегодня»

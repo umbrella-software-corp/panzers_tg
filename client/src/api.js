@@ -77,6 +77,8 @@ export const apiPushAllow = () => call('/api/push-allow', { method: 'POST', body
 // разовый бонус за включение уведомлений: сервер верифицирует доступ реальной отправкой
 // и начисляет жетоны. Ответ: { ok, granted:{tokens} } | { already } | { ok:false, reason }.
 export const apiPushBonus = () => call('/api/push-bonus', { method: 'POST', body: '{}' })
+// игрок включил 3D-режим — серверный липкий флаг used3D (метрика эксперимента в админке)
+export const apiUsed3D = () => call('/api/used-3d', { method: 'POST', body: '{}' })
 // разовый бонус за подписку на канал: сервер проверяет подписку (getChatMember) и
 // начисляет. Ответ: { ok, granted } | { already } | { subscribed:false } | { disabled }.
 export const apiChannelBonus = () => call('/api/channel-bonus', { method: 'POST', body: '{}' })

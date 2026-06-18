@@ -400,6 +400,7 @@ function trafficMetrics(profiles, now) {
   let returnedReal = 0 // из них вернулись на 2-й день+ — чистая ретенция без гостов/ботов
   let pushBlocked = 0 // бот недоступен (заблокировал ИЛИ не дал write-access) — пуш не доходит
   let pushReachable = 0 // дошли до боя И боту можно писать — реальная аудитория пушей/дайджеста
+  let used3D = 0 // включали 3D-режим хоть раз (эксперимент)
   for (const p of profiles) {
     if (p.firstSeen && now - p.firstSeen < DAY) newToday++
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) new7d++
@@ -417,6 +418,7 @@ function trafficMetrics(profiles, now) {
       if (!p.pushBlocked && !p.pushOff) pushReachable++ // боту можно писать → дойдёт пуш
     }
     if (p.pushBlocked) pushBlocked++
+    if (p.used3D) used3D++
     const key = p.src || '—'
     const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, blocked: 0, new7d: 0 }
     e.users++
@@ -441,6 +443,7 @@ function trafficMetrics(profiles, now) {
     returnedReal,
     pushBlocked,
     pushReachable,
+    used3D,
     bySource: [...bySrc.values()].sort((a, b) => b.users - a.users),
   }
 }
@@ -559,6 +562,7 @@ async function handleApi(req, res) {
       // и заклеймить повторно через подчистку localStorage.
       channelBonusClaimed: prev.channelBonusClaimed || false,
       pushBonusClaimed: prev.pushBonusClaimed || false, // бонус за включение уведомлений — серверный (разовый)
+      used3D: prev.used3D || body.profile.used3D || false, // включал 3D — липкий флаг (от сервера ИЛИ клиента)
       // бонус за фидбек: «написал в саппорт» (ставит support.js) + «забрал» — серверные
       wroteSupport: prev.wroteSupport || false,
       feedbackClaimed: prev.feedbackClaimed || false,
@@ -651,6 +655,14 @@ async function handleApi(req, res) {
     // клиент вызвал requestWriteAccess и юзер РАЗРЕШИЛ боту писать → снимаем pushBlocked/pushOff,
     // чтобы возврат-рассылка до него дошла (раньше вебапп-юзеры были недосягаемы для бота)
     await setPushEnabled(user.uid, true)
+    return json(res, 200, { ok: true })
+  }
+  if (req.url === '/api/used-3d' && req.method === 'POST') {
+    // игрок впервые включил 3D-режим — ставим липкий флаг (метрика эксперимента в админке)
+    await withProfileLock(user.uid, async () => {
+      const p = await loadProfile(user.uid)
+      if (p && !p.used3D) { p.used3D = true; p.used3DAt = Date.now(); await saveProfile(user.uid, p) }
+    })
     return json(res, 200, { ok: true })
   }
   if (req.url === '/api/push-bonus' && req.method === 'POST') {

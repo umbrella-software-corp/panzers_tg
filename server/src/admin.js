@@ -320,7 +320,7 @@ async function refresh() {
   const bb = $('battleBadge')
   if (bb) { bb.textContent = liveBattles; bb.classList.toggle('live', liveBattles > 0) }
 
-  const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, activeToday:0, playedToday:0, reachedTotal:0, returnedReal:0, pushBlocked:0, pushReachable:0, bySource:[] }
+  const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, activeToday:0, playedToday:0, reachedTotal:0, returnedReal:0, pushBlocked:0, pushReachable:0, used3D:0, bySource:[] }
   LINK_BASE = s.linkBase || ''
   const retPct = t.reachedTotal ? Math.round((t.returnedReal / t.reachedTotal) * 100) : 0
   const reachPct = t.reachedTotal ? Math.round((t.pushReachable / t.reachedTotal) * 100) : 0
@@ -332,6 +332,7 @@ async function refresh() {
     [(t.returnedReal||0).toLocaleString('ru-RU') + ' · ' + retPct + '%', 'вернулись (игроки, не мусор)'],
     [(t.pushReachable||0).toLocaleString('ru-RU') + ' · ' + reachPct + '%', 'доступны для пуша'],
     [t.dau, 'актив за 24ч (DAU)'],
+    [t.used3D, 'перешли в 3D'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + (typeof v === 'number' ? v.toLocaleString('ru-RU') : v) + '</div><div class="l">' + l + '</div></div>').join('')
 
   const pct = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '—')

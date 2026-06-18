@@ -6,6 +6,7 @@ import { profile, party, setNation, selectTank, isOwned, buyTank, canUnlock, cre
 import { squad } from '../game/squad.js'
 import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
 import { haptic, isTester3D } from '../tg.js'
+import { apiUsed3D } from '../api.js'
 import { preload3D, TANK3D } from '../game/NetGame3D.js'
 import Tank3DView from './ui/Tank3DView.vue'
 import { track } from '../analytics.js'
@@ -65,7 +66,10 @@ watch([threeD, () => profile.selectedTank], () => {
 function toggle3D() {
   threeD.value = !threeD.value
   try { localStorage.setItem('pz3d', threeD.value ? '1' : '0') } catch { /* приватный режим */ }
-  if (threeD.value) { preload3D(); pick3D(td3Sel.value) } // включили → прогрев + выбрать 3D-танк
+  if (threeD.value) {
+    preload3D(); pick3D(td3Sel.value) // включили → прогрев + выбрать 3D-танк
+    if (!profile.used3D) { profile.used3D = true; apiUsed3D().catch(() => {}) } // метрика «перешёл в 3D» (липкий флаг)
+  }
   haptic('light')
   track('exp_3d_toggle', { on: threeD.value })
 }

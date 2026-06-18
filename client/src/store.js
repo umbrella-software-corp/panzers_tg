@@ -201,6 +201,7 @@ if (typeof profile.firstBattleRewarded !== 'boolean') profile.firstBattleRewarde
 // может писать вебапп-юзерам (Telegram: нельзя инициировать чат без /start)
 if (typeof profile.pushAsked !== 'boolean') profile.pushAsked = false
 if (typeof profile.pushBonusClaimed !== 'boolean') profile.pushBonusClaimed = false // бонус за включение уведомлений (разовый, серверный)
+if (typeof profile.used3D !== 'boolean') profile.used3D = false // включал 3D-режим хоть раз (метрика эксперимента)
 
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()
