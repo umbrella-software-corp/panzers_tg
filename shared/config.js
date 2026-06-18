@@ -12,7 +12,7 @@ export const TANK_CLASSES = {
     sweepPeriod: 1.9,
     toleranceDeg: 5.5,
     reload: 2.2,
-    damage: 160, // крупные числа: база 22 ×DMG_SCALE(7.25) — синхрон с meta.js
+    damage: 319, // база 22 ×DMG_SCALE(14.5) — синхрон с meta.js (был ×7.25 → боты били вдвое слабее игрока)
     hp: 1160, // база 80 ×HP_SCALE(14.5) — бои «мясистее» (~6-8 выстрелов)
     range: 560,
     vision: 440, // обзор урезан (был 520 — «слишком далеко»); ЧИСЛА ПОД ПЛЕЙТЕСТ
@@ -27,7 +27,7 @@ export const TANK_CLASSES = {
     sweepPeriod: 2.5,
     toleranceDeg: 4,
     reload: 3.4,
-    damage: 247, // база 34 ×DMG_SCALE(7.25)
+    damage: 493, // база 34 ×DMG_SCALE(14.5)
     hp: 1740, // база 120 ×HP_SCALE(14.5)
     range: 600,
     vision: 380, // обзор урезан (был 440)
@@ -42,7 +42,7 @@ export const TANK_CLASSES = {
     sweepPeriod: 3.8,
     toleranceDeg: 3.5,
     reload: 5.0,
-    damage: 377, // база 52 ×DMG_SCALE(7.25)
+    damage: 754, // база 52 ×DMG_SCALE(14.5)
     hp: 2610, // база 180 ×HP_SCALE(14.5)
     range: 640,
     vision: 310, // обзор урезан (был 360)

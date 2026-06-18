@@ -23,7 +23,7 @@ export const TANK_CLASSES = {
     sweepPeriod: 1.9,
     toleranceDeg: 5.5,
     reload: 2.2,
-    damage: 160, // крупные числа ×DMG_SCALE(7.25) — синхрон с meta.js/shared
+    damage: 319, // ×DMG_SCALE(14.5) — синхрон с meta.js/shared (был ×7.25)
     hp: 1160, // ×HP_SCALE(14.5)
     range: 560,
     vision: 520,
@@ -38,7 +38,7 @@ export const TANK_CLASSES = {
     sweepPeriod: 2.5,
     toleranceDeg: 4,
     reload: 3.4,
-    damage: 247, // ×DMG_SCALE(7.25)
+    damage: 493, // ×DMG_SCALE(14.5)
     hp: 1740, // ×HP_SCALE(14.5)
     range: 600,
     vision: 440,
@@ -53,7 +53,7 @@ export const TANK_CLASSES = {
     sweepPeriod: 3.8,
     toleranceDeg: 3.5,
     reload: 5.0,
-    damage: 377, // ×DMG_SCALE(7.25)
+    damage: 754, // ×DMG_SCALE(14.5)
     hp: 2610, // ×HP_SCALE(14.5)
     range: 640,
     vision: 360,
