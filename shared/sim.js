@@ -26,6 +26,8 @@ import {
   botTierDmgMult,
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
+  BOT_SEP_RADIUS,
+  BOT_SEP_PUSH,
   BOT_SPOT_VISION,
   FIRE_REVEAL_SEC,
   TANK_RADIUS,
@@ -400,29 +402,51 @@ export class BattleSim {
       }
     }
 
+    // КАППЕР: в режиме захвата ~40% ботов (по id) ДЕРЖАТ точку даже при видимом враге —
+    // едут к ней и стоят в круге (= захват), а не бросают её в погоню. По врагу стреляют,
+    // если он попал в их сектор (блок стрельбы ниже). Остальные боты — охотники.
+    let capGoal = null
+    if (this.mode === 'capture' && b.id % 5 < 2) {
+      const open = this.caps.filter((cap) => cap.owner !== b.team)
+      if (open.length) {
+        open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
+        const cap = open[b.id % open.length]
+        const off = ((b.id % 7) / 7) * Math.PI * 2
+        const r = cap.r || 70
+        capGoal = { cx: cap.x, cy: cap.y, x: cap.x + Math.cos(off) * r * 0.7, y: cap.y + Math.sin(off) * r * 0.7, r }
+      }
+    }
+
     if (target) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
-      // лёгкое вилянье курсом вместо «краба» — танки боком не ездят
-      const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18
-      const diff = angleDiff(steerA, b.hull)
-      const maxTurn = b.botTurn * dt
-      b.hull += Math.max(-maxTurn, Math.min(maxTurn, diff))
-
-      let move = 0
-      // порог и готовность отступать — РАЗНЫЕ у каждого бота (не разом и не одинаково):
-      // ~1/3 «храбрых» не пятятся вовсе, у остальных порог 22–34% HP.
-      const brave = b.id % 3 === 0
-      const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025)
-      if (!brave && b.hp < retreatHp) move = -1 // мало хп — отступаем, продолжая отстреливаться
-      else if (bestD > ai.idealRange * 1.15) move = 1
-      else if (bestD < ai.idealRange * 0.5) move = -0.5 // пятится только в упор
-      wantMove = move !== 0
-
-      // движение вдоль корпуса; РЕВЕРС как у игрока (×REVERSE_MULT). Раньше бот
-      // пятился на ПОЛНОМ ходу — быстрее игрока, палевно и неестественно.
-      const mag = move < 0 ? Math.abs(move) * REVERSE_MULT : move
-      b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
-      b.y += Math.sin(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
+      if (capGoal) {
+        // держим точку: курс на свою позицию у круга, в круге — стоп (захват идёт)
+        let a = Math.atan2(capGoal.y - b.y, capGoal.x - b.x)
+        if (b.avoidT > 0) a += b.avoidDir * 1.5
+        b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, angleDiff(a, b.hull)))
+        const onCap = Math.hypot(b.x - capGoal.cx, b.y - capGoal.cy) <= capGoal.r
+        wantMove = !onCap
+        if (!onCap) {
+          b.x += Math.cos(b.hull) * b.botSpeed * 0.6 * dt
+          b.y += Math.sin(b.hull) * b.botSpeed * 0.6 * dt
+        }
+      } else {
+        // ОХОТНИК: курс на врага, держим idealRange (лёгкое вилянье вместо «краба»)
+        const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18
+        const maxTurn = b.botTurn * dt
+        b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
+        let move = 0
+        // порог отступления РАЗНЫЙ: ~1/3 «храбрых» не пятятся, остальные при 22–34% HP
+        const brave = b.id % 3 === 0
+        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025)
+        if (!brave && b.hp < retreatHp) move = -1
+        else if (bestD > ai.idealRange * 1.15) move = 1
+        else if (bestD < ai.idealRange * 0.5) move = -0.5
+        wantMove = move !== 0
+        const mag = move < 0 ? Math.abs(move) * REVERSE_MULT : move
+        b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
+        b.y += Math.sin(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
+      }
 
       const inArc = Math.abs(angleDiff(ang, b.hull)) <= (ai.sectorHalfDeg * Math.PI) / 180
       // СТРЕЛЯЕМ только если: цель в секторе, в радиусе огня (≤ fireRange, не на
@@ -516,6 +540,22 @@ export class BattleSim {
       b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, diff))
       b.x += Math.cos(b.hull) * b.botSpeed * 0.6 * dt
       b.y += Math.sin(b.hull) * b.botSpeed * 0.6 * dt
+    }
+
+    // РАССРЕДОТОЧЕНИЕ (анти-толпа): мягко расталкиваем СЛИШКОМ близких союзников —
+    // в дополнение к жёсткому _collide на касании. Толпа у точки/цели расходится.
+    let sepX = 0, sepY = 0
+    for (const f of this.units) {
+      if (f === b || !f.alive || f.team !== b.team) continue
+      const dx = b.x - f.x, dy = b.y - f.y
+      const d = Math.hypot(dx, dy)
+      if (d > 1 && d < BOT_SEP_RADIUS) { const w = (BOT_SEP_RADIUS - d) / BOT_SEP_RADIUS; sepX += (dx / d) * w; sepY += (dy / d) * w }
+    }
+    const sepM = Math.hypot(sepX, sepY)
+    if (sepM > 0) {
+      const k = (Math.min(1.5, sepM) / sepM) * BOT_SEP_PUSH * dt // клампим суммарную силу
+      b.x += sepX * k
+      b.y += sepY * k
     }
 
     this._collide(b, ENEMY_AI.radius)

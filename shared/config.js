@@ -158,6 +158,10 @@ export const botTierHpMult = (tier) => (60 + 14 * clampTier(tier)) / (60 + 14 * 
 export const botTierDmgMult = (tier) => (14 + 4.5 * clampTier(tier)) / (14 + 4.5 * 5)
 export const BOT_DMG_MULT = 0.45
 export const BOT_SPEED_MULT = 0.85
+// РАССРЕДОТОЧЕНИЕ (анти-толпа): бот мягко отталкивается от союзника ближе SEP_RADIUS
+// (в дополнение к жёсткому _collide на касании) — толпа у одной точки/цели расходится.
+export const BOT_SEP_RADIUS = 130
+export const BOT_SEP_PUSH = 48 // скорость расталкивания (px/с при максимальной тесноте)
 export const BOT_SPOT_VISION = 480 // вклад бота в засвет для команды
 // демаскировка выстрелом: стреляешь → тебя видно врагу N сек, даже из тумана/
 // издалека (muzzle flash выдаёт). Симметрично людям и ботам. Создаёт риск
