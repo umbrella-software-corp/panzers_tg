@@ -12,7 +12,7 @@ import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
 import Onboarding from './components/Onboarding.vue'
 import SecondTankChoice from './components/SecondTankChoice.vue'
-import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, syncProfile, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal } from './store.js'
+import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants } from './store.js'
 import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
@@ -76,7 +76,7 @@ onMounted(async () => {
   const t0 = Date.now()
   const finishBoot = () => (booting.value = false)
   setTimeout(finishBoot, 3000) // предохранитель: не зависаем на сплэше при медленной сети
-  await syncProfile() // офлайн — молча остаёмся на локальном кеше
+  await bootSync() // синк + фоновый ретрай; пока не синканёмся — на сервер НЕ пишем (анти-клоббер)
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)
   // профиль загружен — связываем юзера и шлём срез прогрессии в Amplitude
@@ -288,6 +288,14 @@ function bankBattle(reward) {
     survived: reward.survived,
     victory: reward.victory,
   })
+  // АВТОРИТЕТНАЯ ЭКОНОМИКА: деньги начислил СЕРВЕР на match-end (см. economy.grantBattle) —
+  // выше addRewards/медали/звания были no-op. Тянем серверный грант в баланс. Грант
+  // fire-and-forget с сервера, мог не успеть → повторяем чуть позже (очередь на сервере
+  // идемпотентна, второй applyPendingGrants безопасен).
+  if (econOn()) {
+    applyPendingGrants()
+    setTimeout(() => applyPendingGrants(), 1500)
+  }
 }
 function exitBattle(reward) {
   bankBattle(reward)

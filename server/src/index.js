@@ -18,6 +18,7 @@ import { feedbackConfig, claimFeedbackBonus } from './feedback.js'
 import { claimDaily } from './daily.js'
 import { adminPage } from './admin.js'
 import { trackServer, analyticsEnabled } from './analytics.js'
+import * as econ from './economy.js'
 
 const ADMIN_KEY = process.env.ADMIN_KEY || ''
 
@@ -70,6 +71,51 @@ async function handleAdmin(req, res) {
     const { on } = await readBody(req)
     await setSetting('tournamentsOn', !!on)
     return json(res, 200, { tournaments: !!on })
+  }
+  if (req.url === '/api/admin/econ-authority' && req.method === 'POST') {
+    // включить/выключить серверно-авторитетную экономику (анти-чит). После флипа
+    // клиенты на ближайшем /api/config переключат покупки/награды на сервер.
+    const { on } = await readBody(req)
+    await setSetting('econAuthority', !!on)
+    econ.setEconFlagCache(!!on) // мгновенно, не ждём истечения 5с-кэша
+    return json(res, 200, { econAuthority: !!on })
+  }
+  if (req.url === '/api/admin/econ-normalize' && req.method === 'POST') {
+    // НОРМАЛИЗАЦИЯ «невозможных» профилей: стрипает из owned исследуемые танки, которые
+    // не оправданы серверным числом боёв (премиум-танки и кредиты НЕ трогаем — админ мог
+    // дарить). dry:true — только отчёт, без записи. uid:<digits> — один игрок; иначе все.
+    // adminCredits:<n> — ручная поправка «сколько кредитов подарено» (журнал — кольцо).
+    const { dry, uid, adminCredits } = await readBody(req)
+    const adminC = Math.max(0, Math.round(+adminCredits || 0))
+    const targets = []
+    if (uid) {
+      const key = 'tg_' + String(uid).replace(/[^0-9]/g, '')
+      const p = await loadProfile(key)
+      if (p) targets.push({ key, p })
+    } else {
+      for (const row of await listProfiles()) {
+        const p = await loadProfile(row.uid)
+        if (p) targets.push({ key: row.uid, p })
+      }
+    }
+    const report = []
+    for (const { key, p } of targets) {
+      const d = econ.diagnoseProfile(p, adminC)
+      if (!d.impossible) continue
+      const trimmed = econ.trimResearchByBudget(p.owned || [], d.earnable)
+      const removed = (p.owned || []).filter((x) => !trimmed.includes(x))
+      report.push({ uid: key, srvBattles: d.srvBattles, earnable: d.earnable, spentOnTanks: d.spentOnTanks, before: (p.owned || []).length, after: trimmed.length, removed })
+      if (!dry) {
+        await withProfileLock(key, async () => {
+          const fresh = await loadProfile(key); if (!fresh) return
+          fresh.owned = econ.trimResearchByBudget(fresh.owned || [], econ.diagnoseProfile(fresh, adminC).earnable)
+          if (!fresh.owned.includes(fresh.selectedTank)) fresh.selectedTank = fresh.owned[0] || 't26' // выбранный мог уехать
+          await saveProfile(key, fresh)
+        })
+        logEvent(key, 'econ_normalize', { removed })
+      }
+    }
+    return json(res, 200, { ok: true, dry: !!dry, scanned: targets.length, normalized: report.length, report: report.slice(0, 200) })
   }
   if (req.url === '/api/admin/testpush' && req.method === 'POST') {
     const { uid } = await readBody(req)
@@ -448,7 +494,9 @@ async function handleApi(req, res) {
     return player ? json(res, 200, { player }) : json(res, 404, { error: 'not found' })
   }
   if (req.url === '/api/config' && req.method === 'GET') {
-    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig(), feedback: feedbackConfig() })
+    // econAuthority — флаг серверно-авторитетной экономики; клиент по нему роутит
+    // покупки/награды на сервер (а не считает локально). По умолчанию OFF.
+    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig(), feedback: feedbackConfig(), econAuthority: await econ.econAuthority() })
   }
   if (req.url === '/api/profile' && req.method === 'POST') {
     const body = await readBody(req)
@@ -458,7 +506,7 @@ async function handleApi(req, res) {
     // Весь load prev→merge→save под локом: иначе между чтением prev и записью merged
     // мог влезть grants-apply (слил очередь) — и мы бы воскресили уже выданную выдачу
     // из prev.pendingGrants → двойное начисление. Лок сериализует это с grants-apply.
-    await withProfileLock(user.uid, async () => {
+    const savedAt = await withProfileLock(user.uid, async () => {
     const prev = (await loadProfile(user.uid)) || {}
     const merged = {
       ...body.profile,
@@ -505,9 +553,15 @@ async function handleApi(req, res) {
       // Клиентский сейв НЕ может её трогать — иначе игрок затёр бы свои же невыданные награды.
       pendingGrants: Array.isArray(prev.pendingGrants) ? prev.pendingGrants : [],
     }
-    await saveProfile(user.uid, merged)
+    // СЕРВЕРНО-АВТОРИТЕТНАЯ ЭКОНОМИКА (флаг ВКЛ): деньги/танки/модули/перки ведёт сервер
+    // (начисление за бой + валидируемые эндпоинты покупок), клиентский сейв их НЕ пишет —
+    // это и закрывает чит «правлю localStorage». При OFF — поведение как было.
+    if (await econ.econAuthority()) Object.assign(merged, econ.econPreserve(prev, body.profile))
+    return await saveProfile(user.uid, merged)
     })
-    return json(res, 200, { ok: true })
+    // updatedAt — версия записи (серверные часы); клиент хранит её и на реоткрытии
+    // сверяет: продвинулся ли сервер с тех пор (другое устройство) или нет.
+    return json(res, 200, { ok: true, updatedAt: typeof savedAt === 'number' ? savedAt : 0 })
   }
   if (req.url === '/api/grants-apply' && req.method === 'POST') {
     // АТОМАРНО применить очередь админ-выдач к серверному профилю и очистить её —
@@ -544,6 +598,28 @@ async function handleApi(req, res) {
       return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], pendingGrants: [] }
     })
     return json(res, 200, out)
+  }
+  // ---------- СЕРВЕРНО-АВТОРИТЕТНЫЕ ПОКУПКИ/КЛЕЙМЫ (активны при флаге econAuthority) ----------
+  // Клиент зовёт их только когда serverConfig.econAuthority=true; гард ниже — страховка,
+  // чтобы при ВЫКЛ флаге случайный вызов не списал дважды (клиент тогда считает локально).
+  if (req.url && req.url.startsWith('/api/econ/') && req.method === 'POST') {
+    if (!(await econ.econAuthority())) return json(res, 409, { error: 'econ-off' })
+    const b = await readBody(req)
+    let out
+    switch (req.url) {
+      case '/api/econ/buy-tank': out = await econ.buyTank(user.uid, String(b.tankId || '')); break
+      case '/api/econ/upgrade-module': out = await econ.upgradeModule(user.uid, String(b.tankId || ''), String(b.modId || '')); break
+      case '/api/econ/upgrade-crew': out = await econ.upgradeCrewPerk(user.uid, String(b.memberId || '')); break
+      case '/api/econ/buy-camo': out = await econ.buyCamo(user.uid, String(b.tankId || ''), String(b.camoId || '')); break
+      case '/api/econ/buy-skin': out = await econ.buySkin(user.uid, String(b.skinId || '')); break
+      case '/api/econ/buy-gold-ammo': out = await econ.buyGoldAmmo(user.uid, String(b.packId || '')); break
+      case '/api/econ/spend-gold-ammo': out = await econ.spendGoldAmmo(user.uid, b.n | 0); break
+      case '/api/econ/buy-crate': out = await econ.buyCrate(user.uid, String(b.crateId || '')); break
+      case '/api/econ/claim-task': out = await econ.claimTask(user.uid, String(b.taskId || '')); break
+      case '/api/econ/claim-ref': out = await econ.claimRefMilestone(user.uid, b.idx | 0); break
+      default: return json(res, 404, { error: 'not found' })
+    }
+    return json(res, out && out.ok ? 200 : 400, out || { error: 'failed' })
   }
   if (req.url === '/api/referred' && req.method === 'POST') {
     const { ref } = await readBody(req)
@@ -1071,6 +1147,8 @@ function startRoom(room) {
   room.started = true
   clearTimeout(room.waitTimer)
   if (waitingRooms[room.mode] === room) waitingRooms[room.mode] = null
+  // фиксируем флаг авторитетной экономики на ВЕСЬ бой (горячий путь тика синхронный)
+  room.econAuthority = econ.econAuthorityCached()
 
   // PvP: делим живых на 2 команды (взводы цело, соло — балансом). Каждая команда
   // добирается ботами в sim. Соло против соло = настоящий бой человек-vs-человек.
@@ -1247,7 +1325,15 @@ function roomTick(room) {
           alive: mine ? mine.alive : false,
           tank: h.tankId || null,
         })
+        // СЕРВЕРНО-АВТОРИТЕТНАЯ НАГРАДА (флаг ВКЛ): начисляем кредиты/жетоны из СВОИХ
+        // чисел боя в pendingGrants (клиент заберёт на ближайшем applyPendingGrants).
+        // fire-and-forget: match-end уже ушёл, начисление не блокирует закрытие комнаты.
+        if (room.econAuthority && !room.granted) {
+          const result = room.sim.winner == null ? 'draw' : room.sim.winner === h.team ? 'victory' : 'defeat'
+          econ.grantBattle(h, { result, kills: mine ? mine.kills : 0, damage: mine ? mine.damage : 0, allyScore: room.sim.score[h.team] || 0, survived: mine ? mine.alive : false }, room.id).catch((e) => console.error('[econ] grantBattle:', e && e.message))
+        }
       }
+      room.granted = true // гард от повторного начисления, если matchOver увидят дважды
       console.log(
         `[ws] ${room.id}: конец, счёт ${room.sim.score.join(':')}, winner=${room.sim.winner}, средний тик ${(room.tickAccMs / Math.max(1, room.tickN)).toFixed(3)}мс`,
       )

@@ -87,6 +87,19 @@ export const apiDailyBonus = () => call('/api/daily-bonus', { method: 'POST', bo
 // атомарно применить очередь админ-выдач на сервере и забрать результат (кредиты/жетоны/
 // танки начисляет сервер, очередь чистит). Идемпотентно. Ответ: { ok, applied, credits, tokens, owned, pendingGrants }.
 export const apiGrantsApply = () => call('/api/grants-apply', { method: 'POST', body: '{}' })
+// серверно-авторитетная экономика (при флаге econAuthority): покупки/клеймы валидирует
+// и начисляет СЕРВЕР, клиент принимает авторитетный кошелёк. См. server/src/economy.js.
+const apiEcon = (action, body = {}) => call('/api/econ/' + action, { method: 'POST', body: JSON.stringify(body) })
+export const apiBuyTank = (tankId) => apiEcon('buy-tank', { tankId })
+export const apiUpgradeModule = (tankId, modId) => apiEcon('upgrade-module', { tankId, modId })
+export const apiUpgradeCrew = (memberId) => apiEcon('upgrade-crew', { memberId })
+export const apiBuyCamo = (tankId, camoId) => apiEcon('buy-camo', { tankId, camoId })
+export const apiBuySkin = (skinId) => apiEcon('buy-skin', { skinId })
+export const apiBuyGoldAmmo = (packId) => apiEcon('buy-gold-ammo', { packId })
+export const apiSpendGoldAmmo = (n) => apiEcon('spend-gold-ammo', { n })
+export const apiBuyCrate = (crateId) => apiEcon('buy-crate', { crateId })
+export const apiClaimTask = (taskId) => apiEcon('claim-task', { taskId })
+export const apiClaimRef = (idx) => apiEcon('claim-ref', { idx })
 // кланы: список (+ мой клан), создать, вступить, выйти, карточка по id
 export const apiClans = () => call('/api/clans')
 export const apiCreateClan = (name, tag, emblem) => call('/api/clan/create', { method: 'POST', body: JSON.stringify({ name, tag, emblem }) })

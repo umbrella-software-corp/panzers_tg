@@ -23,7 +23,7 @@ export function tgUserId() {
 
 // ЭКСПЕРИМЕНТ 3D: доступ только этим tg-id (на проде). В деве (localhost) — всем,
 // для проверки. Гейтит и кнопку в ангаре, и сам запуск 3D-боя (Battle).
-const TESTERS_3D = new Set([226201733, 6177596024, 1210592665, 485427336, 786379231])
+const TESTERS_3D = new Set([226201733, 6177596024, 1210592665, 485427336, 786379231, 71802606])
 export function isTester3D() {
   try {
     if (/localhost|127\.0\.0\.1/.test(location.hostname)) return true

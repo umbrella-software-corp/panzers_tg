@@ -134,7 +134,7 @@ function shake() {
   flash.value = true
   setTimeout(() => (flash.value = false), 600)
 }
-function research(t) {
+async function research(t) {
   track('research_clicked', {
     tank_id: t.id,
     tank_tier: t.tier,
@@ -143,7 +143,7 @@ function research(t) {
     credits: profile.credits,
     cost: t.cost || 0,
   })
-  if (buyTank(t)) {
+  if (await buyTank(t)) {
     track('tank_unlocked', {
       tank_id: t.id,
       tank_tier: t.tier,
@@ -155,7 +155,7 @@ function research(t) {
     shake()
   }
 }
-function buyModule(modId) {
+async function buyModule(modId) {
   const before = tankModLevel(sel.value, modId)
   track('module_upgrade_clicked', {
     tank_id: sel.value,
@@ -163,7 +163,7 @@ function buyModule(modId) {
     level_before: before,
     credits: profile.credits,
   })
-  if (upgradeModule(sel.value, modId)) {
+  if (await upgradeModule(sel.value, modId)) {
     track('module_upgraded', {
       tank_id: sel.value,
       module: modId,

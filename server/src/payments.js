@@ -17,14 +17,15 @@ export const PRODUCTS = {
   t3: { title: '150 жетонов', stars: 329, tokens: 150 },
   rename: { title: 'Смена позывного', stars: 50, rename: true },
   prem: { title: 'Премиум-аккаунт · 7 дней', stars: 99, premiumDays: 7 },
-  // премиум-техника (танк за ⭐99) — grantProduct добавляет tank в owned. id сверены
-  // с PREMIUM_TANKS в client/src/game/meta.js (спрайты <tank>.png уже в репо).
-  pt_t28: { title: 'Т-28 · премиум-танк', stars: 99, tank: 't28' },
-  pt_t54: { title: 'Т-54 · премиум-танк', stars: 99, tank: 't54' },
-  pt_pz4h: { title: 'Pz. IV H · премиум-танк', stars: 99, tank: 'pz4h' },
-  pt_maus: { title: 'Maus · премиум-танк', stars: 99, tank: 'maus' },
-  pt_ram: { title: 'Ram II · премиум-танк', stars: 99, tank: 'ram' },
-  pt_sper: { title: 'Super Pershing · премиум-танк', stars: 99, tank: 'sper' },
+  // премиум-техника — цена ПО ТИРУ (низкий тир дешевле): T4 = ⭐79, T8 = ⭐199.
+  // grantProduct добавляет tank в owned. id и stars сверены с PREMIUM_TANKS в
+  // client/src/game/meta.js (спрайты <tank>.png уже в репо). Менять stars В ОБОИХ местах.
+  pt_t28: { title: 'Т-28 · премиум-танк', stars: 79, tank: 't28' },
+  pt_t54: { title: 'Т-54 · премиум-танк', stars: 199, tank: 't54' },
+  pt_pz4h: { title: 'Pz. IV H · премиум-танк', stars: 79, tank: 'pz4h' },
+  pt_maus: { title: 'Maus · премиум-танк', stars: 199, tank: 'maus' },
+  pt_ram: { title: 'Ram II · премиум-танк', stars: 79, tank: 'ram' },
+  pt_sper: { title: 'Super Pershing · премиум-танк', stars: 199, tank: 'sper' },
 }
 
 // позывной с клиента: режем управляющие символы, тримим, 3..16 символов.

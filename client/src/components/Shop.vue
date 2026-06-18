@@ -2,7 +2,7 @@
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
 import { ref, onMounted } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank, grantRandomCamo } from '../store.js'
+import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank, grantRandomCamo, econOn, buyCrateServer } from '../store.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 // `t` алиасим в `tr`: в шаблоне/скрипте уже есть локальные `t` (v-for="t in
@@ -43,38 +43,47 @@ function showToast(text, bad = false) {
 }
 // вскрытие ящика: показываем окно-награду с тем, ЧТО именно выпало
 const reveal = ref(null) // { name, credits, skin, tokens }
-function buyCrate(c) {
+async function buyCrate(c) {
   track('shop_item_clicked', {
     item_id: c.id,
     item_type: 'crate',
     price: c.costTokens,
     currency: 'tokens',
   })
-  if (!spendTokens(c.costTokens)) {
-    showToast(tr('shop.notEnoughTokens'), true)
-    return
-  }
-  addRewards(c.gain, 0)
-  // ящик: кредиты + (по шансу drop) случайный ЗАПЕРТЫЙ камуфляж на одном из твоих
-  // танков. Все камо уже открыты → компенсируем жетонами (как и обещает локаль
-  // rewardTokens «…камуфляжи собраны»). Генеральский (drop:1) даёт камо гарантированно.
   let camo = null
   let tokens = 0
-  if (Math.random() < c.drop) {
-    camo = grantRandomCamo()
-    if (!camo) {
-      tokens = c.bonus || 3
-      addRewards(0, tokens)
+  let credits = c.gain
+  if (econOn()) {
+    // авторитетная экономика: списание/RNG/начисление на СЕРВЕРЕ, принимаем результат
+    if ((profile.tokens || 0) < c.costTokens) { showToast(tr('shop.notEnoughTokens'), true); return }
+    const r = await buyCrateServer(c.id)
+    if (!r) { showToast(tr('shop.serverUnavailable'), true); return }
+    credits = r.credits; camo = r.camo; tokens = r.tokens
+  } else {
+    if (!spendTokens(c.costTokens)) {
+      showToast(tr('shop.notEnoughTokens'), true)
+      return
+    }
+    addRewards(c.gain, 0)
+    // ящик: кредиты + (по шансу drop) случайный ЗАПЕРТЫЙ камуфляж на одном из твоих
+    // танков. Все камо уже открыты → компенсируем жетонами (rewardTokens «…камуфляжи
+    // собраны»). Генеральский (drop:1) даёт камо гарантированно.
+    if (Math.random() < c.drop) {
+      camo = grantRandomCamo()
+      if (!camo) {
+        tokens = c.bonus || 3
+        addRewards(0, tokens)
+      }
     }
   }
   haptic('success') // вскрытие ящика — приятная отдача
   track('crate_opened', {
     crate_id: c.id,
-    credits: c.gain,
+    credits,
     camo: camo ? `${camo.tankId}_${camo.camoId}` : null,
     tokens_bonus: tokens,
   })
-  reveal.value = { name: tr('shop.' + c.nameKey), credits: c.gain, camo, tokens }
+  reveal.value = { name: tr('shop.' + c.nameKey), credits, camo, tokens }
 }
 // паки за Stars: инвойс с сервера → openInvoice → после оплаты тянем профиль.
 // Без BOT_TOKEN сервер начисляет сразу (dev-режим).
@@ -125,8 +134,8 @@ async function buyPremTank(t) {
   await buyPack({ id: 'pt_' + t.id }, tr('shop.premTankLabel', { name: t.name }))
   if (isOwned(t.id)) selectTank(t.id) // dev-grant: сразу выбираем
 }
-function buyGold(p) {
-  if (!buyGoldAmmo(p.id)) {
+async function buyGold(p) {
+  if (!(await buyGoldAmmo(p.id))) {
     showToast(tr('shop.notEnoughTokens'), true)
     return
   }

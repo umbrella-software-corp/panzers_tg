@@ -2,12 +2,30 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch, ref } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
 // серверный конфиг (флаги админки: турниры вкл/выкл; бонус за подписку на канал)
-export const serverConfig = reactive({ tournaments: false, channel: { on: false, url: '', credits: 0, tokens: 0 }, feedback: { on: false, tokens: 0, credits: 0 } })
+export const serverConfig = reactive({ tournaments: false, channel: { on: false, url: '', credits: 0, tokens: 0 }, feedback: { on: false, tokens: 0, credits: 0 }, econAuthority: false })
+
+// серверно-авторитетная экономика включена? Тогда деньги/танки/модули ведёт СЕРВЕР:
+// покупки идут через эндпоинты, награды за бой приходят в pendingGrants, локальные
+// начисления (addRewards) — no-op. Флаг приходит из /api/config (admin-тоггл).
+export const econOn = () => serverConfig.econAuthority
+// принять авторитетный кошелёк/инвентарь из ответа сервера (после покупки/клейма)
+function adoptWallet(r) {
+  if (!r) return
+  if (typeof r.credits === 'number') profile.credits = r.credits
+  if (typeof r.tokens === 'number') profile.tokens = r.tokens
+  if (typeof r.goldAmmo === 'number') profile.goldAmmo = r.goldAmmo
+  if (Array.isArray(r.owned)) profile.owned = r.owned
+  if (r.modules && typeof r.modules === 'object') profile.modules = r.modules
+  if (r.crew && typeof r.crew === 'object') profile.crew = r.crew
+  if (Array.isArray(r.camoOwned)) profile.camoOwned = r.camoOwned
+  if (Array.isArray(r.skins)) profile.skins = r.skins
+  if (r.camos && typeof r.camos === 'object') profile.camos = r.camos
+}
 
 // взвод текущего сеанса (НЕ персистится): token — id командира взвода. Друзья,
 // открывшие твою sq-ссылку, ищут бой с тем же token и попадают в одну комнату.
@@ -38,6 +56,7 @@ export async function loadConfig() {
     serverConfig.tournaments = !!c.tournaments
     if (c.channel) serverConfig.channel = c.channel
     if (c.feedback) serverConfig.feedback = c.feedback
+    serverConfig.econAuthority = !!c.econAuthority
   } catch {
     /* офлайн — оставляем дефолт */
   }
@@ -70,6 +89,7 @@ import {
   CAMO_BY_ID,
   expectedBattle,
   battleScore,
+  EXTRA_TANK_IDS,
 } from './game/meta.js'
 
 // ключ кеша — ПЕР-АККАУНТ (по tg-id): иначе на одном устройстве два Telegram-аккаунта
@@ -182,15 +202,48 @@ if (typeof profile.pushAsked !== 'boolean') profile.pushAsked = false
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()
 
+// КРИТИЧНО против «прогресс пропал»: на сервер НЕ пишем, пока хоть раз НЕ синканулись
+// успешно (serverSynced). Иначе на свежем устройстве / после чистки кэша профиль
+// стартует с ДЕФОЛТОВ (500 кредитов, стартовые танки), и если первый syncProfile()
+// упал (флейки-сеть Telegram, таймаут, заморозка webview) — дебаунс-сейв и flush
+// POST-ят эти дефолты, а сервер (index.js merge) берёт credits/owned/modules ИЗ ТЕЛА
+// → настоящий прогресс затирается дефолтами НАВСЕГДА. localStorage пишем всегда (он
+// пер-аккаунт и безопасен), а пуш на сервер гейтим успешным синком.
+export const serverSynced = ref(false)
+
+// ОФФ-интервал (флаг econAuthority ВЫКЛ): защита от потери прогресса на мобиле, когда
+// сейв не доехал до сервера (Telegram убил webview), а на реоткрытии серверный (старый)
+// профиль затирал локальный. Храним версию серверной записи (_updatedAt) + метку «есть
+// несохранённые правки» (dirty). На реоткрытии (syncProfile): если сервер НЕ продвинулся
+// дальше известной нам версии, а локально были несохранённые правки → приоритет ЛОКАЛЬНОМУ
+// (не затираем). Если сервер продвинулся (другое устройство/админ-выдача) → берём серверный
+// (мульти-девайс безопасен). Под авторитетностью (ON) — выключено: источник правды сервер.
+const DIRTY_KEY = KEY + '.dirty'
+const SRVAT_KEY = KEY + '.srvAt'
+const lcGet = (k) => { try { return localStorage.getItem(k) } catch { return null } }
+const lcSet = (k, v) => { try { localStorage.setItem(k, v) } catch { /* приватный режим */ } }
+const bootDirty = lcGet(DIRTY_KEY) === '1' // были несохранённые правки в прошлой сессии?
+const bootSrvAt = +lcGet(SRVAT_KEY) || 0 // последняя известная версия серверной записи
+let dirtyRev = 0 // ++ на каждое изменение профиля — точное снятие dirty после сейва
+const clearDirtyIf = (rev) => { if (dirtyRev === rev) lcSet(DIRTY_KEY, '0') }
+const rememberSrvAt = (at) => { if (at) lcSet(SRVAT_KEY, String(at)) }
+// поля «локального прогресса» — их при preferLocal возвращаем поверх старого серверного.
+// НЕ включаем серверно-ведомые (referrals/premiumUntil/daily/tasks/pendingGrants/srv*).
+const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'stats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef']
+
 // локальный кеш — мгновенно; на сервер — с дебаунсом (офлайн не мешает игре)
 let pushTimer = null
 watch(
   profile,
   () => {
     localStorage.setItem(KEY, JSON.stringify(profile))
+    dirtyRev++
+    lcSet(DIRTY_KEY, '1') // есть локальные правки, ещё не подтверждённые сервером
+    if (!serverSynced.value) return // ещё не знаем серверный базис — не затираем его дефолтами
     clearTimeout(pushTimer)
     pushTimer = setTimeout(() => {
-      apiSaveProfile(JSON.parse(JSON.stringify(profile))).catch(() => {})
+      const rev = dirtyRev
+      apiSaveProfile(JSON.parse(JSON.stringify(profile))).then((r) => { if (r && r.ok) { clearDirtyIf(rev); rememberSrvAt(r.updatedAt) } }).catch(() => {})
     }, 1500)
   },
   { deep: true },
@@ -205,7 +258,11 @@ export function flushProfile() {
   clearTimeout(pushTimer)
   const snap = JSON.parse(JSON.stringify(profile))
   try { localStorage.setItem(KEY, JSON.stringify(snap)) } catch { /* приватный режим */ }
-  apiSaveProfileFlush(snap)
+  if (!serverSynced.value) return // не синканулись — на сервер не пишем (см. serverSynced выше)
+  const rev = dirtyRev
+  // на success снимаем dirty + помним версию; на выгрузке .then может не успеть —
+  // тогда dirty остаётся, и на реоткрытии локальный прогресс будет предпочтён (безопасно).
+  apiSaveProfileFlush(snap).then((r) => { if (r && r.ok) { clearDirtyIf(rev); rememberSrvAt(r.updatedAt) } })
 }
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
@@ -224,7 +281,7 @@ if (typeof document !== 'undefined') {
 // (App.vue следит за grantReveal). Для веб-юзеров, кому бот не может написать, это
 // единственный способ узнать о подарке.
 export const grantReveal = ref(null)
-async function applyPendingGrants() {
+export async function applyPendingGrants() {
   const pend = Array.isArray(profile.pendingGrants) ? profile.pendingGrants : []
   if (!pend.length) return
   try {
@@ -248,6 +305,12 @@ export async function syncProfile() {
     const res = await apiLoadProfile()
     if (res && res.profile) {
       const { _updatedAt, ...rest } = res.profile
+      const srvAt = +_updatedAt || 0
+      // ОФФ-интервал: локальный прогресс новее серверного? Да — если сервер НЕ продвинулся
+      // дальше известной нам версии (bootSrvAt), а локально были несохранённые правки
+      // (bootDirty). Тогда НЕ даём старому серверному профилю затереть локальный.
+      const preferLocal = !econOn() && bootDirty && bootSrvAt > 0 && srvAt > 0 && srvAt <= bootSrvAt
+      const localEcon = preferLocal ? JSON.parse(JSON.stringify(profile)) : null
       const localDaily = profile.daily // claim мог не успеть уехать на сервер до перезапуска
       const localTasks = profile.tasks // то же про ЗАДАЧИ ДНЯ — клейм мог не доехать
       Object.assign(profile, rest)
@@ -282,18 +345,57 @@ export async function syncProfile() {
       if (!('trainingDone' in rest)) profile.trainingDone = b > 0
       if (!('secondTankChosen' in rest)) profile.secondTankChosen = b > 0
       if (!('firstBattleRewarded' in rest)) profile.firstBattleRewarded = b > 0
+      // ОФФ-интервал: локальный прогресс новее → возвращаем его поверх старого серверного
+      // и СРАЗУ пушим на сервер (ДО applyPendingGrants — иначе grants-apply наложит выдачу
+      // на старый серверный баланс и затрёт восстановленный локальный).
+      if (preferLocal && localEcon) {
+        for (const f of ECON_FIELDS) if (f in localEcon) profile[f] = localEcon[f]
+        try {
+          const r = await apiSaveProfile(JSON.parse(JSON.stringify(profile)))
+          if (r && r.ok) { clearDirtyIf(dirtyRev); rememberSrvAt(r.updatedAt) }
+        } catch { /* офлайн — запушим обычным сейвом позже */ }
+      } else {
+        rememberSrvAt(srvAt) // приняли серверный — помним его версию
+      }
+      // серверный базис получен — теперь пуши на сервер безопасны (см. serverSynced)
+      serverSynced.value = true
       await applyPendingGrants() // забрать админ-выдачи (кредиты/жетоны/танки) из очереди
     } else {
-      await apiSaveProfile(JSON.parse(JSON.stringify(profile)))
+      // сервер ЯВНО вернул «профиля нет» (новый игрок) → мигрируем локальный вверх.
+      // Это легитимный первый пуш, после него сервер авторитетен.
+      const r = await apiSaveProfile(JSON.parse(JSON.stringify(profile)))
+      if (r && r.ok) { clearDirtyIf(dirtyRev); rememberSrvAt(r.updatedAt) }
+      serverSynced.value = true
     }
     return true
   } catch {
-    return false // сервер недоступен — играем на локальном кеше
+    return false // сервер недоступен — играем на локальном кеше, на сервер НЕ пишем
   }
 }
 
+// первый синк при старте + фоновый ретрай: пока он не прошёл, serverSynced=false и
+// клиент НЕ пишет на сервер (чтобы дефолты свежего устройства не затёрли серверный
+// прогресс). Если сеть вернётся — досинкаемся и пуши включатся сами.
+let syncRetryTimer = null
+export async function bootSync() {
+  const ok = await syncProfile()
+  if (!ok && !serverSynced.value) {
+    clearTimeout(syncRetryTimer)
+    const retry = async (attempt) => {
+      if (serverSynced.value) return
+      const done = await syncProfile()
+      if (!done && !serverSynced.value && attempt < 6)
+        syncRetryTimer = setTimeout(() => retry(attempt + 1), Math.min(30000, 2000 * 2 ** attempt))
+    }
+    syncRetryTimer = setTimeout(() => retry(0), 2000)
+  }
+  return ok
+}
+
 // ---------- танки ----------
-export const isOwned = (id) => profile.owned.includes(id)
+// EXTRA_TANKS (ПТ/доп. техника борда) пока «просто доступны» — считаем
+// владельческими без покупки, чтобы их можно было выбрать и водить в ангаре.
+export const isOwned = (id) => profile.owned.includes(id) || EXTRA_TANK_IDS.has(id)
 export const selectedTank = () => TANK_BY_ID[profile.selectedTank] || TANK_BY_ID[STARTERS[0]]
 
 export function setNation(nation) {
@@ -332,7 +434,13 @@ export function unlockReason(tank) {
   return null
 }
 
-export function buyTank(tank) {
+export async function buyTank(tank) {
+  if (econOn()) {
+    const r = await apiBuyTank(tank.id).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
   if (!canUnlock(tank) || profile.credits < (tank.cost || 0)) return false
   profile.credits -= tank.cost || 0
   profile.owned.push(tank.id)
@@ -355,7 +463,13 @@ export function grantFreeTank(id) {
 // ---------- модули ----------
 export const tankModLevel = (tankId, modId) => modLevel(profile.modules, tankId, modId)
 
-export function upgradeModule(tankId, modId) {
+export async function upgradeModule(tankId, modId) {
+  if (econOn()) {
+    const r = await apiUpgradeModule(tankId, modId).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
   const tank = TANK_BY_ID[tankId]
   const lvl = tankModLevel(tankId, modId)
   if (!tank || lvl >= 3) return false
@@ -375,6 +489,9 @@ export const premiumDaysLeft = () => Math.max(0, Math.ceil((profile.premiumUntil
 
 // ---------- валюта ----------
 export function addRewards(credits = 0, tokens = 0) {
+  if (econOn()) return // СЕРВЕР — источник денег: локально не начисляем (придёт через
+  // applyPendingGrants после боя / адопт кошелька после покупки). Этот гейт автоматически
+  // обнуляет ВСЕ локальные начисления (награда за бой, звания, медали, первый бой).
   profile.credits += credits
   profile.tokens += tokens
 }
@@ -447,7 +564,13 @@ export const crewPerkLevel = (id) => (profile.crew.skills || {})[id] || 0
 export const crewPointsSpent = () => CREW_MEMBERS.reduce((s, m) => s + crewPerkLevel(m.id), 0)
 export const crewPointsFree = () => Math.max(0, crewLevel() - 1 - crewPointsSpent())
 
-export function upgradeCrewPerk(id) {
+export async function upgradeCrewPerk(id) {
+  if (econOn()) {
+    const r = await apiUpgradeCrew(id).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
   const lvl = crewPerkLevel(id)
   if (!CREW_MEMBERS.some((m) => m.id === id) || lvl >= CREW_PERK_MAX) return false
   if (crewPointsFree() < 1) return false
@@ -474,9 +597,16 @@ export function bankBattleXp(xp) {
 }
 
 // ---------- камуфляжи и имя ----------
-export function buySkin(skinId) {
+export async function buySkin(skinId) {
   const s = SKIN_BY_ID[skinId]
   if (!s || profile.skins.includes(skinId)) return false
+  if (econOn()) {
+    const r = await apiBuySkin(skinId).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    profile.skin = skinId
+    return true
+  }
   if (!spendTokens(s.costTokens)) return false
   profile.skins.push(skinId)
   profile.skin = skinId
@@ -498,9 +628,16 @@ export function setCamo(tankId, camoId) {
   return true
 }
 // купить камо для танка за жетоны и сразу надеть; false — не хватило/уже есть
-export function buyCamo(tankId, camoId) {
+export async function buyCamo(tankId, camoId) {
   const def = CAMO_BY_ID[camoId]
   if (!def || !camoId) return false
+  if (econOn()) {
+    if (camoUnlocked(tankId, camoId)) { setCamo(tankId, camoId); return true } // уже куплен — просто надеть (локально)
+    const r = await apiBuyCamo(tankId, camoId).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
   if (camoUnlocked(tankId, camoId)) {
     setCamo(tankId, camoId)
     return true
@@ -553,7 +690,13 @@ export function setCustomName(name) {
 }
 
 // ---------- голдовые снаряды ----------
-export function buyGoldAmmo(packId) {
+export async function buyGoldAmmo(packId) {
+  if (econOn()) {
+    const r = await apiBuyGoldAmmo(packId).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
   const p = GOLD_AMMO_PACKS.find((x) => x.id === packId)
   if (!p || !spendTokens(p.costTokens)) return false
   profile.goldAmmo += p.amount
@@ -562,8 +705,27 @@ export function buyGoldAmmo(packId) {
 
 export function spendGoldAmmo(n = 1) {
   if (profile.goldAmmo < n) return false
-  profile.goldAmmo -= n
+  profile.goldAmmo -= n // локально списываем сразу (мгновенный UI в бою)
+  // авторитетный учёт: сервер спишет из owned (клампит, в минус не уйдёт). Fire-and-forget —
+  // не тормозим выстрел; при ВЫКЛ флаге не зовём (поле едет обычным сейвом профиля).
+  if (econOn()) apiSpendGoldAmmo(n).then(adoptWallet).catch(() => {})
   return true
+}
+
+// ящик (лутбокс): при авторитетности RNG/начисление на сервере; иначе локально (в Shop).
+// Возвращает { credits, camo, tokens } для окна-награды, либо null.
+export async function buyCrateServer(crateId) {
+  const r = await apiBuyCrate(crateId).catch(() => null)
+  if (!r || !r.ok) return null
+  adoptWallet(r)
+  const reward = r.reward || {}
+  // сервер отдаёт camo строкой 'tankId_camoId' — разворачиваем в объект для тоста/окна
+  let camo = null
+  if (reward.camo) {
+    const [tid, cid] = String(reward.camo).split('_')
+    camo = { tankId: tid, camoId: cid, name: (CAMO_BY_ID[cid] || {}).name || cid, tankName: (TANK_BY_ID[tid] || {}).name || tid }
+  }
+  return { credits: reward.credits || 0, tokens: reward.tokens || 0, camo }
 }
 
 // ---------- статистика, рейтинг и история боёв ----------
@@ -705,9 +867,16 @@ export function bankTaskProgress(stats) {
   }
 }
 
-export function claimTask(id) {
+export async function claimTask(id) {
   const t = dailyTasksList().find((x) => x.id === id)
   if (!t || !t.done || t.claimed) return false
+  if (econOn()) {
+    const r = await apiClaimTask(id).catch(() => null)
+    if (!r || !r.ok) return false
+    if (!profile.tasks.claimed.includes(id)) profile.tasks.claimed.push(id) // отметка для UI
+    adoptWallet(r)
+    return true
+  }
   profile.tasks.claimed.push(id)
   addRewards(t.credits || 0, t.tokens || 0)
   return true
@@ -719,9 +888,22 @@ export function claimTask(id) {
 
 // забрать награду рубежа рефералов (i — индекс REF_MILESTONES). Возвращает что
 // выпало { credits, tokens, camo } для тоста, либо false если забрать нельзя.
-export function claimRefMilestone(i) {
+export async function claimRefMilestone(i) {
   const m = REF_MILESTONES[i]
   if (!m || profile.claimedRef.includes(i) || profile.referrals.length < m.need) return false
+  if (econOn()) {
+    const r = await apiClaimRef(i).catch(() => null)
+    if (!r || !r.ok) return false
+    if (!profile.claimedRef.includes(i)) profile.claimedRef.push(i)
+    adoptWallet(r)
+    const rw = r.reward || {}
+    let camo = null
+    if (rw.camo) {
+      const [tid, cid] = String(rw.camo).split('_')
+      camo = { tankId: tid, camoId: cid, name: (CAMO_BY_ID[cid] || {}).name || cid, tankName: (TANK_BY_ID[tid] || {}).name || tid }
+    }
+    return { credits: rw.credits || 0, tokens: rw.tokens || 0, camo }
+  }
   profile.claimedRef.push(i)
   let credits = m.credits
   let tokens = m.tokens

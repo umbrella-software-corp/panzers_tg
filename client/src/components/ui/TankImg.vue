@@ -13,6 +13,7 @@ const props = defineProps({
   tint: { type: Number, default: 0xffffff }, // камуфляж-оттенок (фоллбэк)
   skin: { type: String, default: '' }, // id скина — узорный камуфляж поверх (старое)
   camo: { type: String, default: '' }, // per-tank камуфляж — отдельный AI-спрайт
+  hangar: { type: Boolean, default: false }, // детальный hangar-рендер /sprites/hangar/<id>.png (только когда нет камо)
 })
 
 const canvas = ref(null)
@@ -22,9 +23,16 @@ function render() {
   // камуфляж — отдельный перекрашенный спрайт на той же магенте; кеится так же.
   // при ошибке загрузки (камо ещё не сгенерён) откатываемся на базовый спрайт.
   const usingCamo = !!props.camo
-  img.src = usingCamo ? `/sprites/camo/${props.tankId}_${props.camo}.png` : `/sprites/tanks/${props.tankId}.png`
+  // hangar-рендер — детальный спрайт для большого превью в ангаре; только когда нет камо
+  const usingHangar = !usingCamo && props.hangar
+  img.src = usingCamo
+    ? `/sprites/camo/${props.tankId}_${props.camo}.png`
+    : usingHangar
+      ? `/sprites/hangar/${props.tankId}.png`
+      : `/sprites/tanks/${props.tankId}.png`
   img.onerror = () => {
-    if (usingCamo) {
+    // камо ещё не сгенерён ИЛИ нет hangar-рендера → откат на базовый заводской спрайт
+    if (usingCamo || usingHangar) {
       img.onerror = null
       img.src = `/sprites/tanks/${props.tankId}.png`
     }
@@ -40,12 +48,12 @@ function render() {
     ctx.drawImage(img, 0, 0, S, S)
     const d = ctx.getImageData(0, 0, S, S)
     const p = d.data
-    // при per-tank камуфляже спрайт уже перекрашен — старый узор/оттенок не нужны
-    const camo = usingCamo ? null : (SKIN_BY_ID[props.skin] || {}).camo
+    // при per-tank камуфляже / hangar-рендере спрайт уже перекрашен — старый узор/оттенок не нужны
+    const camo = usingCamo || usingHangar ? null : (SKIN_BY_ID[props.skin] || {}).camo
     const tr = (props.tint >> 16) & 0xff
     const tg = (props.tint >> 8) & 0xff
     const tb = props.tint & 0xff
-    const tinted = !usingCamo && !camo && props.tint !== 0xffffff
+    const tinted = !usingCamo && !usingHangar && !camo && props.tint !== 0xffffff
     for (let i = 0; i < p.length; i += 4) {
       if (p[i] > p[i + 1] * 1.5 && p[i + 2] > p[i + 1] * 1.2) {
         p[i + 3] = 0
@@ -61,7 +69,7 @@ function render() {
 }
 
 onMounted(render)
-watch(() => [props.tankId, props.tint, props.skin, props.camo], render)
+watch(() => [props.tankId, props.tint, props.skin, props.camo, props.hangar], render)
 </script>
 
 <template>

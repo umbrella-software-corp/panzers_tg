@@ -116,8 +116,8 @@ function inviteFriend() {
   afterShare(shareResult)
 }
 
-function claim(i) {
-  const r = claimRefMilestone(i)
+async function claim(i) {
+  const r = await claimRefMilestone(i)
   if (!r) return
   track('invite_reward_claimed', {
     milestone: i,

@@ -143,9 +143,11 @@ export async function saveProfile(uid, profile) {
   const job = prev.then(async () => {
     const file = path.join(PROFILES, key + '.json')
     const tmp = `${file}.${process.pid}.${++tmpSeq}.tmp`
-    const data = JSON.stringify({ ...profile, _updatedAt: Date.now() })
+    const stamp = Date.now()
+    const data = JSON.stringify({ ...profile, _updatedAt: stamp })
     await fs.writeFile(tmp, data)
     await fs.rename(tmp, file) // атомарно — не побьём профиль при падении
+    return stamp // версия записи (серверные часы) — клиент сверяет её на реоткрытии
   })
   saveChain.set(key, job.catch(() => {}))
   if (saveChain.size > 5000) {

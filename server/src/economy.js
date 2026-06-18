@@ -1,0 +1,355 @@
+// ============ СЕРВЕРНО-АВТОРИТЕТНАЯ ЭКОНОМИКА (за флагом econAuthority) ============
+// Когда флаг ВЫКЛ (дефолт) — этот модуль не вызывается, поведение игры 1:1 как было.
+// Когда ВКЛ — СЕРВЕР единственный, кто меняет деньги/танки/модули: начисляет награды
+// из СВОИХ боевых чисел (BattleSim) и валидирует покупки. Клиент только просит и
+// принимает авторитетный результат. Это закрывает чит «правлю localStorage → миллионы
+// кредитов / все танки» (см. [[panzer-tg-server-authority]]).
+// Цифры берём из shared/economy.js (зеркало client/src/game/meta.js).
+import { loadProfile, saveProfile, withProfileLock, getSetting, listProfiles } from './db.js'
+import { logEvent } from './eventlog.js'
+import * as E from 'panzer-tg-shared/economy.js'
+
+let grantSeq = 0
+const dayStr = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10)
+const clampInt = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+v || 0)))
+
+// ---------- флаг авторитетности (кэш 5с — не читаем settings.json на каждый сейв/бой) ----------
+let flagCache = { v: false, at: 0 }
+export async function econAuthority() {
+  const now = Date.now()
+  if (now - flagCache.at > 5000) flagCache = { v: !!(await getSetting('econAuthority', false)), at: now }
+  return flagCache.v
+}
+export function setEconFlagCache(v) { flagCache = { v: !!v, at: Date.now() } }
+// синхронный доступ к кэшу для горячего пути боя (роутинг тика синхронный). Кэш греется
+// частыми /api/config от клиентов и мгновенно бастится админ-тогглом.
+export function econAuthorityCached() { return flagCache.v }
+
+// ---------- /api/profile: какие поля ведёт СЕРВЕР (клиентский сейв их НЕ трогает) ----------
+// Возвращает объект для подмешивания в merged (по образцу premiumUntil/daily/pendingGrants).
+// crew.xp/branchXp/stats/medals/camos оставляем клиенту (это не деньги; фейк безвреден при
+// залоченных кредитах) — но crew.skills (перки за кредиты) и инвентарь ведёт сервер.
+export function econPreserve(prev, bodyProfile) {
+  const bodyCrew = (bodyProfile && bodyProfile.crew && typeof bodyProfile.crew === 'object') ? bodyProfile.crew : {}
+  const prevCrew = (prev.crew && typeof prev.crew === 'object') ? prev.crew : {}
+  return {
+    // НОВЫЙ профиль (поля ещё нет в prev) → сеем КАНОНИЧНЫЕ стартовые значения с сервера
+    // (а не 0): иначе новичок под авторитетностью стартовал бы с 0 кредитов/без танков.
+    credits: 'credits' in prev ? prev.credits || 0 : E.START_CREDITS,
+    tokens: 'tokens' in prev ? prev.tokens || 0 : E.START_TOKENS,
+    goldAmmo: typeof prev.goldAmmo === 'number' ? prev.goldAmmo : E.START_GOLD_AMMO,
+    owned: Array.isArray(prev.owned) ? prev.owned : [...E.STARTERS],
+    modules: prev.modules && typeof prev.modules === 'object' ? prev.modules : {},
+    // crew: xp/skills.* приходят с клиента (xp — прогресс), но skills (перки за кредиты) — серверные
+    crew: { ...bodyCrew, skills: (prevCrew.skills && typeof prevCrew.skills === 'object') ? prevCrew.skills : {} },
+    camoOwned: Array.isArray(prev.camoOwned) ? prev.camoOwned : [],
+    skins: Array.isArray(prev.skins) ? prev.skins : ['std'],
+    premTankBattles: prev.premTankBattles | 0,
+    // серверные счётчики экономики (для звания/медалей/задач/рефов под авторитетностью)
+    srvKills: prev.srvKills | 0,
+    rankClaimedSrv: prev.rankClaimedSrv | 0,
+    firstBattleRewardedSrv: !!prev.firstBattleRewardedSrv,
+    medalsAwarded: Array.isArray(prev.medalsAwarded) ? prev.medalsAwarded : [],
+    econTasks: prev.econTasks && typeof prev.econTasks === 'object' ? prev.econTasks : { date: '', claimed: [] },
+    claimedRef: Array.isArray(prev.claimedRef) ? prev.claimedRef : [],
+  }
+}
+
+// снимок кошелька/инвентаря для клиента (после покупки/клейма он принимает это авторитетно)
+function wallet(p) {
+  return {
+    credits: p.credits || 0,
+    tokens: p.tokens || 0,
+    goldAmmo: p.goldAmmo || 0,
+    owned: Array.isArray(p.owned) ? p.owned : [],
+    modules: p.modules || {},
+    crew: p.crew || { xp: 0, skills: {} },
+    camoOwned: Array.isArray(p.camoOwned) ? p.camoOwned : [],
+    skins: Array.isArray(p.skins) ? p.skins : ['std'],
+  }
+}
+
+// ---------- НАЧИСЛЕНИЕ ЗА БОЙ (вызывается из matchOver, когда флаг ВКЛ) ----------
+// h.uid/h.tankId + авторитетные числа боя из sim. Кладёт кредиты/жетоны в pendingGrants
+// (kind 'battle' — применяется без окна «подарок»). XP клиент копит сам по своему reward
+// (xp/опыт ветки/экипажа — не деньги). result: 'victory'|'draw'|'defeat'.
+export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore = 0, survived = false }, roomId = '') {
+  if (!h || !h.uid) return null
+  return withProfileLock(h.uid, async () => {
+    const p = await loadProfile(h.uid)
+    if (!p) return null
+    let credits = 0, tokens = 0
+    const r = E.battleReward({ result, kills, damage, allyScore })
+    let m = 1
+    if ((p.premiumUntil || 0) > Date.now()) m += E.PREMIUM_BONUS
+    const premTank = E.isPremiumTank(h.tankId)
+    if (premTank) m += E.PREM_TANK.creditMult
+    credits += Math.round(r.credits * m)
+    // прем-танк: каждый 10-й бой гарантированно +жетоны (детерминированно)
+    if (premTank) {
+      p.premTankBattles = (p.premTankBattles | 0) + 1
+      if (p.premTankBattles % E.PREM_TANK.gemEvery === 0) tokens += E.PREM_TANK.gems
+    }
+    // бонус за ПЕРВЫЙ завершённый бой (один раз)
+    if (!p.firstBattleRewardedSrv) { p.firstBattleRewardedSrv = true; credits += E.FIRST_BATTLE_BONUS }
+    // звания — по серверному числу боёв (srvBattles уже +1 на входе в бой)
+    const reached = E.rankIndexByBattles(p.srvBattles | 0)
+    let rc = p.rankClaimedSrv | 0
+    while (rc < reached) { rc++; const rk = E.RANKS[rc]; if (rk) { credits += rk.credits || 0; tokens += rk.tokens || 0 } }
+    p.rankClaimedSrv = rc
+    // медали: боевые по итогам + карьерные по серверным агрегатам (награда за первое получение)
+    p.srvKills = (p.srvKills | 0) + (kills || 0)
+    const awarded = new Set(Array.isArray(p.medalsAwarded) ? p.medalsAwarded : [])
+    // blockedDmg/lightKills/rating сервер из sim не знает → эти медали под авторитетностью
+    // не начисляются (мелочь, ~200-300 кр; уточним позже отдельным каналом)
+    const earned = [
+      ...E.battleMedalIds({ kills, damage, blockedDmg: 0, lightKills: 0, survived, victory: result === 'victory' }),
+      ...E.careerMedalIds({ battles: p.srvBattles | 0, kills: p.srvKills | 0, rating: 0 }),
+    ]
+    for (const id of earned) {
+      if (awarded.has(id)) continue
+      awarded.add(id)
+      const md = E.MEDAL_BY_ID[id]
+      if (md && md.reward) { credits += md.reward.credits || 0; tokens += md.reward.tokens || 0 }
+    }
+    p.medalsAwarded = [...awarded]
+    if (credits || tokens) {
+      if (!Array.isArray(p.pendingGrants)) p.pendingGrants = []
+      p.pendingGrants.push({ id: 'battle.' + roomId + '.' + h.uid + '.' + Date.now() + '.' + ++grantSeq, kind: 'battle', credits, tokens, tanks: [], at: Date.now() })
+    }
+    await saveProfile(h.uid, p)
+    return { credits, tokens }
+  })
+}
+
+// ---------- ПОКУПКИ/КЛЕЙМЫ (валидируются на сервере; флаг проверяет вызывающий) ----------
+const ok = (p, extra = {}) => ({ ok: true, ...wallet(p), ...extra })
+const err = (e) => ({ ok: false, error: e })
+
+export function buyTank(uid, tankId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    if (!E.RESEARCH_TANKS[tankId]) return err('bad-tank') // премиум — только за ⭐, не тут
+    if (!Array.isArray(p.owned)) p.owned = [...E.STARTERS]
+    if (p.owned.includes(tankId)) return ok(p, { already: true })
+    if (!E.canUnlockTank(p.owned, p.modules || {}, tankId)) return err('locked')
+    const cost = E.tankCost(E.tankTier(tankId))
+    if ((p.credits || 0) < cost) return err('funds')
+    p.credits -= cost
+    p.owned.push(tankId)
+    await saveProfile(uid, p)
+    logEvent(uid, 'buy_tank', { tank: tankId, cost })
+    return ok(p, { bought: tankId })
+  })
+}
+
+export function upgradeModule(uid, tankId, modId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    if (!E.tankExists(tankId) || !E.MODULE_SLOTS.includes(modId)) return err('bad-arg')
+    if (!Array.isArray(p.owned)) p.owned = [...E.STARTERS]
+    if (!p.owned.includes(tankId)) return err('not-owned')
+    const lvl = E.modLevel(p.modules, tankId, modId)
+    if (lvl >= E.MODULE_MAX) return err('maxed')
+    const cost = E.moduleCost(E.tankTier(tankId), lvl + 1)
+    if ((p.credits || 0) < cost) return err('funds')
+    p.credits -= cost
+    if (!p.modules || typeof p.modules !== 'object') p.modules = {}
+    if (!p.modules[tankId]) p.modules[tankId] = {}
+    p.modules[tankId][modId] = lvl + 1
+    await saveProfile(uid, p)
+    return ok(p)
+  })
+}
+
+export function upgradeCrewPerk(uid, memberId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    if (!E.CREW_MEMBER_IDS.includes(memberId)) return err('bad-arg')
+    if (!p.crew || typeof p.crew !== 'object') p.crew = { xp: 0, skills: {} }
+    if (!p.crew.skills || typeof p.crew.skills !== 'object') p.crew.skills = {}
+    const lvl = p.crew.skills[memberId] || 0
+    if (lvl >= E.CREW_PERK_MAX) return err('maxed')
+    if (E.crewPointsFree(p.crew) < 1) return err('no-points')
+    const cost = E.crewPerkCost(lvl)
+    if ((p.credits || 0) < cost) return err('funds')
+    p.credits -= cost
+    p.crew.skills[memberId] = lvl + 1
+    await saveProfile(uid, p)
+    return ok(p)
+  })
+}
+
+export function buyCamo(uid, tankId, camoId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    if (!E.tankExists(tankId) || !(camoId in E.CAMO_COST) || !camoId) return err('bad-arg')
+    if (!Array.isArray(p.camoOwned)) p.camoOwned = []
+    const key = `${tankId}_${camoId}`
+    if (!p.camoOwned.includes(key)) {
+      const cost = E.CAMO_COST[camoId] || 0
+      if ((p.tokens || 0) < cost) return err('funds')
+      p.tokens -= cost
+      p.camoOwned.push(key)
+    }
+    if (!p.camos || typeof p.camos !== 'object') p.camos = {}
+    p.camos[tankId] = camoId // надеваем
+    await saveProfile(uid, p)
+    return ok(p, { camos: p.camos })
+  })
+}
+
+export function buySkin(uid, skinId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    if (!(skinId in E.SKIN_COST)) return err('bad-arg')
+    if (!Array.isArray(p.skins)) p.skins = ['std']
+    if (!p.skins.includes(skinId)) {
+      const cost = E.SKIN_COST[skinId] || 0
+      if ((p.tokens || 0) < cost) return err('funds')
+      p.tokens -= cost
+      p.skins.push(skinId)
+    }
+    p.skin = skinId
+    await saveProfile(uid, p)
+    return ok(p)
+  })
+}
+
+export function buyGoldAmmo(uid, packId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    const pack = E.GOLD_AMMO_PACKS[packId]; if (!pack) return err('bad-arg')
+    if ((p.tokens || 0) < pack.costTokens) return err('funds')
+    p.tokens -= pack.costTokens
+    p.goldAmmo = (p.goldAmmo || 0) + pack.amount
+    await saveProfile(uid, p)
+    return ok(p)
+  })
+}
+
+// расход голд-снарядов за бой (клиент шлёт число использованных; сервер клампит к owned,
+// в минус не уходит). Голд-ammo — мелкий расходник, не валюта — доверие к счётчику ок.
+export function spendGoldAmmo(uid, n) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    const use = Math.max(0, Math.min(p.goldAmmo || 0, Math.round(+n || 0)))
+    p.goldAmmo = (p.goldAmmo || 0) - use
+    await saveProfile(uid, p)
+    return ok(p, { used: use })
+  })
+}
+
+// ящик (лутбокс): тратит жетоны → кредиты + шанс камуфляжа. RNG на СЕРВЕРЕ. ЗЕРКАЛО
+// CRATES из client/src/components/Shop.vue.
+const CRATES = { c1: { costTokens: 5, gain: 600, drop: 0.1, bonus: 3 }, c2: { costTokens: 12, gain: 1800, drop: 0.35, bonus: 5 }, c3: { costTokens: 25, gain: 4500, drop: 1, bonus: 8 } }
+export function buyCrate(uid, crateId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    const c = CRATES[crateId]; if (!c) return err('bad-arg')
+    if ((p.tokens || 0) < c.costTokens) return err('funds')
+    p.tokens -= c.costTokens
+    p.credits = (p.credits || 0) + c.gain
+    let camo = null, tokens = 0
+    if (Math.random() < c.drop) { camo = dropRandomCamo(p); if (!camo) { tokens = c.bonus || 3; p.tokens += tokens } }
+    await saveProfile(uid, p)
+    return ok(p, { reward: { credits: c.gain, camo, tokens } })
+  })
+}
+
+// клейм задачи дня. Завершённость гейтит клиентский UI (он знает lightKills/blocked,
+// которых сервер из sim не видит); сервер обеспечивает ИДЕМПОТЕНТНОСТЬ (раз в сутки на
+// задачу) и владеет начислением. Задачи дают копейки (~1400/день максимум на все 3) —
+// на чит «миллионы» не влияет, поэтому завершённость серверно не перепроверяем.
+export function claimTask(uid, taskId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    const day = dayStr()
+    if (!p.econTasks || p.econTasks.date !== day) p.econTasks = { date: day, claimed: [] }
+    if (!Array.isArray(p.econTasks.claimed)) p.econTasks.claimed = []
+    const task = E.tasksOfDay(day).find((t) => t.id === taskId)
+    if (!task) return err('not-today')
+    if (p.econTasks.claimed.includes(taskId)) return ok(p, { already: true })
+    p.econTasks.claimed.push(taskId)
+    p.credits = (p.credits || 0) + (task.credits || 0)
+    p.tokens = (p.tokens || 0) + (task.tokens || 0)
+    await saveProfile(uid, p)
+    return ok(p, { reward: { credits: task.credits || 0, tokens: task.tokens || 0 } })
+  })
+}
+
+// клейм рубежа рефералов — число рекрутов ведёт сервер (prev.referrals)
+export function claimRefMilestone(uid, idx) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    const m = E.REF_MILESTONES[idx]; if (!m) return err('bad-arg')
+    if (!Array.isArray(p.claimedRef)) p.claimedRef = []
+    if (p.claimedRef.includes(idx)) return ok(p, { already: true })
+    const refs = Array.isArray(p.referrals) ? p.referrals.length : 0
+    if (refs < m.need) return err('not-enough')
+    p.claimedRef.push(idx)
+    let credits = m.credits || 0
+    let tokens = m.tokens || 0
+    let camo = null
+    if (m.crate) { camo = dropRandomCamo(p); if (!camo) tokens += 15 } // всё открыто → компенсируем жетонами
+    p.credits = (p.credits || 0) + credits
+    p.tokens = (p.tokens || 0) + tokens
+    await saveProfile(uid, p)
+    return ok(p, { reward: { credits, tokens, camo } })
+  })
+}
+
+// дроп случайного ЗАПЕРТОГО камуфляжа на одном из купленных танков (для оф-ящика рефов)
+function dropRandomCamo(p) {
+  if (!Array.isArray(p.camoOwned)) p.camoOwned = []
+  const pool = []
+  for (const tid of p.owned || []) for (const cid of Object.keys(E.CAMO_COST)) {
+    if (cid && !p.camoOwned.includes(`${tid}_${cid}`)) pool.push(`${tid}_${cid}`)
+  }
+  if (!pool.length) return null
+  const pick = pool[Math.floor(Math.random() * pool.length)] // сервер (Node) — Math.random ок
+  p.camoOwned.push(pick)
+  return pick
+}
+
+// ---------- НОРМАЛИЗАЦИЯ «невозможных» профилей (для админ-эндпоинта, dry-run) ----------
+// Стрипает из owned ИССЛЕДУЕМЫЕ танки, которые НЕ может оправдать серверное число боёв:
+// потолок заработка ≈ srvBattles × per-battle + админ-кредиты (передаются вызывающим, т.к.
+// журнал выдач — кольцо). По умолчанию НЕ трогает кредиты (админ может дарить их тестерам).
+// Премиум-танки не трогаем никогда (они только за ⭐, не чит).
+// ЩЕДРЫЙ потолок честного заработка за бой (премиум + отличный бой + медали + дейлики
+// амортизированно). Намеренно завышен: нормализация должна ловить ТОЛЬКО вопиющее
+// (миллионы кредитов / топ-тир за 15 боёв) и НИКОГДА не резать честного игрока —
+// ложное срабатывание хуже, чем пропущенный пограничный чит. Тонкая настройка — через
+// dry-run админ-эндпоинта (+ adminCredits на тестеров с подарками).
+const MAX_CREDITS_PER_BATTLE = 3000
+export function diagnoseProfile(p, adminCredits = 0) {
+  const srvBattles = p.srvBattles | 0
+  const owned = Array.isArray(p.owned) ? p.owned : []
+  const earnable = E.START_CREDITS + srvBattles * MAX_CREDITS_PER_BATTLE + (adminCredits || 0)
+  // суммарная стоимость исследуемых купленных танков (старшие тиры — дорогие)
+  const researchOwned = owned.filter((id) => E.RESEARCH_TANKS[id] && !E.STARTERS.includes(id))
+  const spentOnTanks = researchOwned.reduce((s, id) => s + E.tankCost(E.tankTier(id)), 0)
+  const impossible = spentOnTanks > earnable * 1.05 // 5% запас
+  return { srvBattles, earnable, spentOnTanks, researchOwned, impossible }
+}
+
+// оставить из owned столько ИССЛЕДУЕМЫХ танков, сколько влезает в бюджет (от младших
+// тиров к старшим, по веткам — чтобы не разорвать цепочку). Стартеры/премиум — всегда.
+export function trimResearchByBudget(owned, budget) {
+  const list = Array.isArray(owned) ? owned : []
+  const keep = []
+  const research = []
+  for (const id of list) {
+    if (E.RESEARCH_TANKS[id] && !E.STARTERS.includes(id)) research.push(id)
+    else keep.push(id) // стартеры, премиум, прочее — не трогаем
+  }
+  research.sort((a, b) => E.tankTier(a) - E.tankTier(b)) // младшие первыми
+  let spent = 0
+  for (const id of research) {
+    const c = E.tankCost(E.tankTier(id))
+    if (spent + c <= budget) { spent += c; keep.push(id) }
+    // не влез — дропаем (и всё старше тоже не пройдёт по бюджету)
+  }
+  return keep
+}

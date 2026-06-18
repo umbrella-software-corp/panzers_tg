@@ -4,7 +4,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, setNation, selectTank, isOwned, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
 import { squad } from '../game/squad.js'
-import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, extraOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
 import { haptic, isTester3D } from '../tg.js'
 import { preload3D, TANK3D } from '../game/NetGame3D.js'
 import Tank3DView from './ui/Tank3DView.vue'
@@ -171,7 +171,7 @@ const firstSession = computed(() => (profile.stats?.battles || 0) === 0)
 const nationLabel = computed(() => (NATIONS.find((n) => n.id === profile.nation) || {}).label)
 // карусель: ветка нации + купленные прем-танки этой нации (выбираемы); не купленные
 // премы — только в «Развитии» (там покупка за ⭐)
-const tanks = computed(() => [...tanksOfNation(profile.nation), ...premiumOfNation(profile.nation).filter((t) => isOwned(t.id))])
+const tanks = computed(() => [...tanksOfNation(profile.nation), ...extraOfNation(profile.nation), ...premiumOfNation(profile.nation).filter((t) => isOwned(t.id))])
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
 const inParty = computed(() => squad.active || !!party.token) // в лобби взвода или уже в бою с ним
@@ -196,9 +196,9 @@ function pickCamo(id) {
     haptic('select')
   }
 }
-function buyPreview() {
+async function buyPreview() {
   const tid = tank.value.id
-  if (previewCamo.value && buyCamo(tid, previewCamo.value)) {
+  if (previewCamo.value && (await buyCamo(tid, previewCamo.value))) {
     previewCamo.value = null // куплен и надет
     haptic('success')
   } else {
@@ -250,7 +250,7 @@ onMounted(() => {
         <Tank3DView v-if="threeD" :index="td3Index" class="tank3d-host" />
         <template v-else>
           <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
-            <TankImg :tank-id="tank.id" :size="300" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
+            <TankImg :tank-id="tank.id" :size="300" :hangar="true" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
           </div>
           <div v-if="locked" class="pz-chip" style="position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: var(--amber)">
             <PzIcon name="lock" :size="12" /> {{ fmt(tank.cost || 0) }}

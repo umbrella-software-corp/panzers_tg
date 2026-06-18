@@ -11,8 +11,8 @@ const emit = defineEmits(['close'])
 const bump = ref(0)
 const tasks = computed(() => (bump.value, dailyTasksList()))
 
-function claim(t) {
-  if (claimTask(t.id)) {
+async function claim(t) {
+  if (await claimTask(t.id)) {
     track('task_reward_claimed', {
       task_id: t.id,
       goal: t.goal,

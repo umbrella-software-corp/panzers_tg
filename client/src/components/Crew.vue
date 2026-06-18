@@ -49,8 +49,8 @@ function showToast(text, bad = false) {
   toastTimer = setTimeout(() => (toast.value = null), 2200)
 }
 
-function buy(m) {
-  if (upgradeCrewPerk(m.id)) {
+async function buy(m) {
+  if (await upgradeCrewPerk(m.id)) {
     showToast(t('crew.rankToast', { role: m.role, perk: m.perk, rank: crewPerkLevel(m.id) }))
     return
   }
