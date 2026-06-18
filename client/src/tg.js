@@ -21,16 +21,17 @@ export function tgUserId() {
   return u ? u.id : null
 }
 
-// ЭКСПЕРИМЕНТ 3D: доступ только этим tg-id (на проде). В деве (localhost) — всем,
-// для проверки. Гейтит и кнопку в ангаре, и сам запуск 3D-боя (Battle).
+// ЭКСПЕРИМЕНТ 3D: ОТКРЫТ ДЛЯ ВСЕХ (шоукейс, 2026-06-18). Тоггл «3D» в ангаре опт-ин
+// (по умолчанию 2D). ⚠️ 3D-режим = 3 фикс-танка (Т-90/Leo/Abrams) без гейта владения —
+// решение продакта (бесплатный топ-танк в обход экономики принят как цена за вау-эффект).
+// Чтобы ВЕРНУТЬ гейт по тестерам — раскомментить тело ниже.
 const TESTERS_3D = new Set([226201733, 6177596024, 1210592665, 485427336, 786379231, 71802606])
 export function isTester3D() {
-  try {
-    if (/localhost|127\.0\.0\.1/.test(location.hostname)) return true
-    return TESTERS_3D.has(Number(tgUserId()))
-  } catch {
-    return false
-  }
+  return true
+  // try {
+  //   if (/localhost|127\.0\.0\.1/.test(location.hostname)) return true
+  //   return TESTERS_3D.has(Number(tgUserId()))
+  // } catch { return false }
 }
 
 // start_param из deep-link (?startapp=...): реферал «ref_<id>» или взвод «sq_<id>».
