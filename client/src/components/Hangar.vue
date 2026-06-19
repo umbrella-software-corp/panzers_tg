@@ -2,9 +2,9 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, setNation, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
+import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
 import { squad } from '../game/squad.js'
-import { tanksOfNation, premiumOfNation, TANK_BY_ID, NATIONS, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
 import { haptic, isTester3D } from '../tg.js'
 import { apiUsed3D } from '../api.js'
 import { preload3D, TANK3D } from '../game/NetGame3D.js'
@@ -13,7 +13,6 @@ import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 import TankImg from './ui/TankImg.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
-import NationSwitch from './ui/NationSwitch.vue'
 import BottomNav from './ui/BottomNav.vue'
 import StatRow from './ui/StatRow.vue'
 import PzIcon from './ui/PzIcon.vue'
@@ -50,17 +49,14 @@ watch([threeD, () => profile.selectedTank], () => {
   if (threeD.value) {
     if (!TANK3D.some((t) => t.key === profile.selectedTank)) pick3D(td3Sel.value)
   } else {
-    // ВНЕ 3D: разрешаем ПРЕДПРОСМОТР залоченных танков ветки (и купленных премов)
-    // — серый рендер + ТТХ + кнопка «Открыть». В бой залоченный не попадёт: кнопка
-    // «В БОЙ» для locked сама становится «Открыть танк». Сбрасываем на стартовый
-    // ТОЛЬКО если выбран невалидный/чужой танк (3D-ключ, скрытая доп-техника).
-    const previewable =
-      tanksOfNation(profile.nation).some((t) => t.id === profile.selectedTank) ||
-      (isOwned(profile.selectedTank) && premiumOfNation(profile.nation).some((t) => t.id === profile.selectedTank))
-    if (!previewable) {
-      const s = tanksOfNation(profile.nation)[0]
-      if (s) selectTank(s.id)
+    // ВНЕ 3D: ангар = ТОЛЬКО твои танки (гараж). Если выбран не свой (стейл-профиль,
+    // 3D-ключ, превью из дерева) — ставим лучший по тиру из гаража. Нацию ангара держим
+    // равной нации выбранного танка (для подписи и дефолта вкладки «Развитие»).
+    if (!isOwned(profile.selectedTank)) {
+      const best = profile.owned.map((id) => TANK_BY_ID[id]).filter(Boolean).sort((a, b) => b.tier - a.tier)[0]
+      if (best) selectTank(best.id)
     }
+    if (profile.selectedTank) profile.nation = nationOf(profile.selectedTank)
   }
 }, { immediate: true })
 function toggle3D() {
@@ -196,10 +192,16 @@ const locked = computed(() => !threeD.value && !isOwned(tank.value.id)) // в 3D
 // первая сессия (ещё ни одного боя): на ангаре оставляем ОДИН CTA «В БОЙ» —
 // ЗАДАЧИ и ВЗВОД прячем, чтобы не размывать вход. После первого боя возвращаются.
 const firstSession = computed(() => (profile.stats?.battles || 0) === 0)
-const nationLabel = computed(() => (NATIONS.find((n) => n.id === profile.nation) || {}).label)
-// карусель: ветка нации + купленные прем-танки этой нации (выбираемы); не купленные
-// премы — только в «Развитии» (там покупка за ⭐)
-const tanks = computed(() => [...tanksOfNation(profile.nation), ...premiumOfNation(profile.nation).filter((t) => isOwned(t.id))])
+const nationLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(tank.value.id)) || {}).label)
+// КАРУСЕЛЬ = ТОЛЬКО твои танки (гараж): сортировка по тиру ↓, все нации вперемешку.
+// Весь модельный ряд и исследование живут во вкладке «Развитие» (ангар — это ангар).
+const NATION_ORDER = { ussr: 0, ger: 1, usa: 2 }
+const tanks = computed(() =>
+  profile.owned
+    .map((id) => TANK_BY_ID[id])
+    .filter(Boolean)
+    .sort((a, b) => b.tier - a.tier || (NATION_ORDER[nationOf(a.id)] ?? 9) - (NATION_ORDER[nationOf(b.id)] ?? 9) || a.name.localeCompare(b.name)),
+)
 const ttx = ref(false)
 const fmt = (n) => n.toLocaleString('ru-RU')
 const inParty = computed(() => squad.active || !!party.token) // в лобби взвода или уже в бою с ним
@@ -311,8 +313,6 @@ onMounted(() => {
 
     <!-- ЭКСПЕРИМЕНТ: тестерский тоггл 3D — плавающий, чтобы не перекрывался шапкой/балансом -->
     <button v-if="isTester" class="td-toggle pz-display" :class="{ on: threeD }" title="3D-рендер боя (тест)" @click="toggle3D">3D{{ threeD ? ' ✓' : '' }}</button>
-
-    <NationSwitch :nation="profile.nation" style="padding: 2px 14px" @pick="setNation" />
 
     <!-- ID-плашка танка -->
     <div style="margin-top: auto; padding: 0 14px 6px; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px">
