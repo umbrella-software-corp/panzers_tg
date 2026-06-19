@@ -5,11 +5,9 @@
 import { ref, watch, onMounted } from 'vue'
 import { SKIN_BY_ID } from '../../game/meta.js'
 import { applyCamo } from '../../game/camo.js'
-
-// Версия спрайтов — cache-bust: спрайты лежат под теми же именами, поэтому при
-// обновлении арта браузер (и память сессии) может отдавать старые. Бампать при
-// каждой замене пачки спрайтов, чтобы URL стал новым и арт перезагрузился.
-const SPRITE_VER = '?v=20260618'
+// Версия спрайтов (cache-bust) вынесена в sprites.js — её же берёт прогрев (preload.js),
+// чтобы URL совпадали 1:1 и HTTP-кэш реально попадал. Бампать SPRITE_VER там при замене арта.
+import { SPRITE_VER } from '../../game/sprites.js'
 
 const props = defineProps({
   tankId: { type: String, required: true },

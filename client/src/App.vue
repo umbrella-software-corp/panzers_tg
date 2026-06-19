@@ -15,6 +15,7 @@ import SecondTankChoice from './components/SecondTankChoice.vue'
 import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus } from './store.js'
 import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
+import { preloadCritical, preloadRest } from './game/preload.js'
 import { squad, connectSquad, closeSquad } from './game/squad.js'
 import { track, trackScreen, setAnalyticsUserId, identifyUser, identifyAcquisition } from './analytics.js'
 import { t } from './i18n.js'
@@ -38,6 +39,7 @@ const training = ref(false)
 // старт: подтянуть профиль с сервера, потом ежедневный вход
 const daily = ref(false)
 const booting = ref(true) // стартовый сплэш-лоадер (БЕТА) — держим, пока тянем профиль
+const bootProgress = ref(0) // прогресс прогрева критичных ассетов 0..1 (бар на сплэше)
 
 // Дейлик показываем максимум один раз за сессию и НЕ на первом входе новичка:
 // при 0 боёв вход не перехватываем — попап всплывёт при возврате в ангар после
@@ -75,7 +77,11 @@ function maybeShowDaily() {
 onMounted(async () => {
   const t0 = Date.now()
   const finishBoot = () => (booting.value = false)
-  setTimeout(finishBoot, 3000) // предохранитель: не зависаем на сплэше при медленной сети
+  setTimeout(finishBoot, 6000) // предохранитель: не зависаем на сплэше при медленной сети
+  // ПРОГРЕВ АССЕТОВ: сплэш больше не крутится вхолостую — параллельно с синком тянем
+  // критичные спрайты (ангар) в кэш и показываем прогресс баром. Остальное (бой/карты/
+  // фоны) догреваем фоном после сплэша — к «В БОЙ» уже готово (см. game/preload.js).
+  const crit = preloadCritical(profile, (p) => (bootProgress.value = p))
   await bootSync() // синк + фоновый ретрай; пока не синканёмся — на сервер НЕ пишем (анти-клоббер)
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)
@@ -108,6 +114,10 @@ onMounted(async () => {
   maybeShowDaily() // первую сессию (0 боёв) НЕ перехватываем — дейлик всплывёт после первого боя
   maybeStartTraining() // самый первый запуск → сразу тренировочный бой (мимо ангара)
   offerPushBonus() // вовлечённому (battles>0) — разрешение боту на пуши; новичка спросим после первого боя
+  // дождаться прогрев критичных ассетов, но не дольше soft-cap (чтобы сплэш не висел на
+  // медленной сети — предохранитель 6с тоже страхует), затем догреть остальное фоном
+  await Promise.race([crit, new Promise((r) => setTimeout(r, 2500))]).catch(() => {})
+  preloadRest(profile) // бой/карты/прочие фоны — в фоне, не блокирует уход со сплэша
   // сплэш держим минимум ~750мс, чтобы не моргал на быстром старте
   setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - t0)))
 })
@@ -395,6 +405,7 @@ function rematch(reward) {
       <div class="boot-mid">
         <div class="boot-logo pz-display">PANZER <b>TG</b><span class="boot-beta pz-display">{{ t('common.beta') }}</span></div>
         <div class="boot-spin"></div>
+        <div class="boot-bar"><b :style="{ width: Math.round(bootProgress * 100) + '%' }"></b></div>
         <div class="boot-sub">{{ t('common.bootSub') }}</div>
       </div>
       <div class="boot-foot">{{ t('common.bootFoot') }}</div>
@@ -489,8 +500,23 @@ function rematch(reward) {
   border-top-color: var(--amber);
   animation: boot-rot 0.8s linear infinite;
 }
+.boot-bar {
+  margin-top: 18px;
+  width: 168px;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(242, 165, 12, 0.16);
+  overflow: hidden;
+}
+.boot-bar b {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--amber);
+  transition: width 0.2s ease;
+}
 .boot-sub {
-  margin-top: 16px;
+  margin-top: 14px;
   font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--ink-dim);
