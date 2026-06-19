@@ -245,24 +245,11 @@ watch(selected, (t) => {
 
     <NationSwitch :nation="profile.nation" style="padding: 2px 14px 4px" @pick="pickNation" />
 
-    <!-- опыт ветки (копится в боях на технике нации) + свободный опыт (общий пул, 10% с
-         каждого боя) — обе валюты исследования. Свободный можно влить в эту ветку кнопкой. -->
-    <div class="xp-panel">
-      <div class="xp-cell">
-        <span class="xp-ic">🔬</span>
-        <div class="xp-meta">
-          <span class="xp-lbl">{{ tr('tree.branchXp') }}</span>
-          <b class="pz-display xp-val" style="color: var(--amber)">{{ nationXp.toLocaleString('ru-RU') }}</b>
-        </div>
-      </div>
-      <div class="xp-sep"></div>
-      <div class="xp-cell">
-        <span class="xp-ic">✦</span>
-        <div class="xp-meta">
-          <span class="xp-lbl">{{ tr('tree.freeXp') }}</span>
-          <b class="pz-display xp-val" style="color: #7cc0ff">{{ freeXp.toLocaleString('ru-RU') }}</b>
-        </div>
-      </div>
+    <!-- опыт ветки + свободный опыт (обе валюты исследования) — просто строкой, без баров.
+         Свободный льётся в эту ветку кнопкой (доливает столько, сколько нужно след. танку). -->
+    <div class="xp-line">
+      <span>🔬 {{ tr('tree.branchXp') }}: <b class="pz-display" style="color: var(--amber)">{{ nationXp.toLocaleString('ru-RU') }}</b></span>
+      <span>✦ {{ tr('tree.freeXp') }}: <b class="pz-display" style="color: #7cc0ff">{{ freeXp.toLocaleString('ru-RU') }}</b></span>
       <button v-if="canPourFree" class="pour-btn" @click="pourFreeXp">{{ tr('tree.pourFree', { n: pourAmount.toLocaleString('ru-RU') }) }}</button>
       <span v-else-if="freeXp > 0" class="xp-hint">{{ tr('tree.freeXpHint') }}</span>
     </div>
@@ -467,44 +454,18 @@ watch(selected, (t) => {
 </template>
 
 <style scoped>
-.xp-panel {
+.xp-line {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 14px 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.28);
   flex-wrap: wrap;
-}
-.xp-cell {
-  display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px 18px;
+  padding: 2px 14px 9px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
 }
-.xp-ic {
-  font-size: 15px;
-  opacity: 0.9;
-}
-.xp-meta {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
-.xp-lbl {
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-}
-.xp-val {
-  font-size: 15px;
-}
-.xp-sep {
-  width: 1px;
-  align-self: stretch;
-  background: var(--line);
+.xp-line b {
+  font-size: 14px;
+  margin-left: 3px;
 }
 .pour-btn {
   margin-left: auto;
@@ -512,9 +473,9 @@ watch(selected, (t) => {
   color: #9fd0ff;
   background: rgba(60, 120, 180, 0.16);
   font-family: var(--font-body);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
-  padding: 7px 12px;
+  padding: 6px 12px;
   border-radius: 7px;
   cursor: pointer;
 }
@@ -523,11 +484,8 @@ watch(selected, (t) => {
 }
 .xp-hint {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-faint);
-  max-width: 150px;
-  text-align: right;
-  line-height: 1.25;
 }
 .spine {
   position: absolute;
