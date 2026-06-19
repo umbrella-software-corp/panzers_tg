@@ -19,6 +19,7 @@ import {
   ENEMY_AI,
   SOFT_START,
   VET,
+  ENEMY_EDGE,
   ARMOR,
   BOT_CLASS_MIX,
   BOT_TANK_IDS,
@@ -48,6 +49,9 @@ export class BattleSim {
    */
   constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null, vet = 0, botNames = [], anchorTier = null } = {}) {
     this.teamSize = teamSize
+    // команды, где есть ЖИВЫЕ. Боты на команде БЕЗ людей = чистые враги соло-игрока (PvE) →
+    // получают ENEMY_EDGE (челлендж). В PvP (люди в обеих) эджа нет — честная симметрия.
+    this.humanTeams = new Set((humans || []).map((h) => h.team))
     // ТИР боя (макс. среди живых, с сервера): боты по нему берут HP/урон и спрайт
     // в пределах ±1. null → старое поведение (плоские классовые боты).
     this.anchorTier = anchorTier && anchorTier >= 1 && anchorTier <= 10 ? Math.round(anchorTier) : null
@@ -396,6 +400,9 @@ export class BattleSim {
 
   _stepBot(b, dt) {
     const ai = this.ai // softStart-тюнинг (грейс/шанс) или базовый ENEMY_AI
+    // PvE-эдж: бот на команде БЕЗ людей = враг соло-игрока → чуть точнее/злее (см. ENEMY_EDGE).
+    // В PvP (люди в обеих командах) эджа нет. Мягкий старт его подавляет (новичка не давим).
+    const enemyBot = !this.softStart && !this.humanTeams.has(b.team)
     if (b.fireCd > 0) b.fireCd -= dt
     const px = b.x
     const py = b.y
@@ -440,11 +447,13 @@ export class BattleSim {
     if (target) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
       if (capGoal) {
-        // держим точку: курс на свою позицию у круга, в круге — стоп (захват идёт)
-        let a = Math.atan2(capGoal.y - b.y, capGoal.x - b.x)
+        // ЗАЩИТА ТОЧКИ: едем к своей позиции у круга; НА точке — держим место, но
+        // разворачиваемся НА ВРАГА и стреляем (а не пялимся в центр круга, пока нас
+        // расстреливают). Раньше каппер игнорил стрелка сбоку — главная «тупость».
+        const onCap = Math.hypot(b.x - capGoal.cx, b.y - capGoal.cy) <= capGoal.r
+        let a = onCap ? ang : Math.atan2(capGoal.y - b.y, capGoal.x - b.x)
         if (b.avoidT > 0) a += b.avoidDir * 1.5
         b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, angleDiff(a, b.hull)))
-        const onCap = Math.hypot(b.x - capGoal.cx, b.y - capGoal.cy) <= capGoal.r
         wantMove = !onCap
         if (!onCap) {
           b.x += Math.cos(b.hull) * b.botSpeed * 0.6 * dt
@@ -457,9 +466,9 @@ export class BattleSim {
         b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
         let move = 0
         // порог отступления РАЗНЫЙ: ~1/3 «храбрых» не пятятся, остальные при 22–34% HP.
-        // Ветераны злее: храбрых больше и порог отступления ниже (дольше давят).
-        const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1)
-        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet)
+        // Ветераны злее; PvE-враги соло-игрока (enemyBot) ещё злее — давят дольше.
+        const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
+        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
         if (!brave && b.hp < retreatHp) move = -1
         else if (bestD > ai.idealRange * 1.15) move = 1
         else if (bestD < ai.idealRange * 0.5) move = -0.5
@@ -493,7 +502,9 @@ export class BattleSim {
         if (this.obstacles.some((o) => o.kind === 'bush' && Math.hypot(target.x - o.x, target.y - o.y) <= o.r)) {
           chance *= ai.bushCover
         }
-        const hit = Math.random() < chance
+        if (enemyBot) chance *= ENEMY_EDGE.hitMult // PvE: враги соло-игрока чуть точнее
+        const hit = Math.random() < Math.min(0.85, chance) // потолок — не 100% даже в упор
+
         let killed = false
         let dealt = 0
         let outcome = null
