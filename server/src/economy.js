@@ -98,7 +98,13 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     const freeShare = Math.round(xpTotal * E.FREE_XP_SHARE)
     const rest = Math.max(0, xpTotal - freeShare)
     const branchShare = rest - Math.round(rest / 2)
-    if (freeShare > 0) p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + freeShare
+    // экипаж на МАКСЕ — крю-доля (её излишек до капа) не пропадает, а идёт в свободный опыт
+    // (зеркало client bankBattleXp). crew.xp ведёт клиент; берём его последнее значение.
+    const crewShare = rest - branchShare
+    const crewRoom = Math.max(0, (E.CREW_MAX_LEVEL - 1) * E.CREW_LEVEL_XP - ((p.crew && p.crew.xp) || 0))
+    const crewOverflow = Math.max(0, crewShare - crewRoom)
+    const freeTotal = freeShare + crewOverflow
+    if (freeTotal > 0) p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + freeTotal
     if (branchShare > 0) {
       if (!p.branchXp || typeof p.branchXp !== 'object') p.branchXp = {}
       const nat = E.tankNation(h.tankId)

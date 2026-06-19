@@ -162,7 +162,9 @@ export const crewPerkCost = (curLevel) => CREW_PERK_COSTS[curLevel] ?? Infinity
 export const CREW_PERK_MAX = 3
 export const CREW_MEMBER_IDS = ['cmd', 'gnr', 'lod', 'drv', 'rad']
 export const CREW_LEVEL_XP = 600
-export const CREW_MAX_LEVEL = 10
+// макс 16 → 15 очков навыка (level−1) = полная прокачка 5 спецов × 3 ранга. ЗЕРКАЛО
+// client/src/store.js CREW_MAX_LEVEL — менять синхронно. Сверх макса крю-опыт → свободный.
+export const CREW_MAX_LEVEL = 16
 export const crewLevel = (xp) => Math.min(CREW_MAX_LEVEL, 1 + Math.floor((xp || 0) / CREW_LEVEL_XP))
 // очки навыка: +1 за каждый уровень экипажа после первого, минус уже потраченные
 export function crewPointsFree(crew) {

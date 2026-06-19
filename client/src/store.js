@@ -582,7 +582,10 @@ export function loadoutStats(tankId) {
 
 // ---------- экипаж: один на все танки, опыт из боёв, бафф к статам ----------
 export const CREW_LEVEL_XP = 600 // опыта на уровень
-export const CREW_MAX_LEVEL = 10
+// макс уровень = 16 → даёт 15 очков навыка (level−1), ровно на 5 спецов × 3 ранга (полная
+// прокачка экипажа). Сверх макса крю-доля опыта боя льётся в свободный (см. bankBattleXp).
+// ЗЕРКАЛО shared/economy.js CREW_MAX_LEVEL — менять В ОБОИХ местах.
+export const CREW_MAX_LEVEL = 16
 
 export const crewLevel = () =>
   Math.min(CREW_MAX_LEVEL, 1 + Math.floor(profile.crew.xp / CREW_LEVEL_XP))
@@ -632,13 +635,17 @@ export function addFreeXp(xp) {
   profile.freeXp = (profile.freeXp || 0) + Math.max(0, Math.round(xp || 0))
 }
 
-// сплит опыта боя: 10% в свободный опыт, остаток пополам — ветка текущего танка / экипаж
+// сплит опыта боя: 10% в свободный опыт, остаток пополам — ветка текущего танка / экипаж.
+// Экипаж на МАКСЕ (level >= CREW_MAX_LEVEL) — крю-доля (или её излишек до капа) не пропадает,
+// а льётся в свободный опыт. Так после прокачки экипажа опыт боя не уходит в никуда.
 export function bankBattleXp(xp) {
   const total = Math.max(0, xp || 0)
-  const free = Math.round(total * FREE_XP_SHARE)
+  let free = Math.round(total * FREE_XP_SHARE)
   const rest = Math.max(0, total - free)
-  const crew = Math.round(rest / 2)
+  let crew = Math.round(rest / 2)
   const branch = Math.max(0, rest - crew)
+  const crewRoom = Math.max(0, (CREW_MAX_LEVEL - 1) * CREW_LEVEL_XP - (profile.crew.xp || 0))
+  if (crew > crewRoom) { free += crew - crewRoom; crew = crewRoom } // излишек экипажа → свободный
   addCrewXp(crew)
   addBranchXp(nationOf(profile.selectedTank), branch)
   addFreeXp(free)
