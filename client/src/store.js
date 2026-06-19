@@ -2,7 +2,7 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch, ref } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef, apiPushBonus } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiSpendFreeXp, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef, apiPushBonus } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
@@ -23,6 +23,7 @@ function adoptWallet(r) {
   if (r.modules && typeof r.modules === 'object') profile.modules = r.modules
   if (r.crew && typeof r.crew === 'object') profile.crew = r.crew
   if (r.branchXp && typeof r.branchXp === 'object') profile.branchXp = r.branchXp // опыт ветки — серверный
+  if (typeof r.freeXp === 'number') profile.freeXp = r.freeXp // свободный опыт — серверный
   if (Array.isArray(r.camoOwned)) profile.camoOwned = r.camoOwned
   if (Array.isArray(r.skins)) profile.skins = r.skins
   if (r.camos && typeof r.camos === 'object') profile.camos = r.camos
@@ -66,6 +67,8 @@ export async function loadConfig() {
 import {
   TANK_BY_ID,
   STARTERS,
+  NATIONS,
+  FREE_XP_SHARE,
   nationOf,
   MODULE_DEFS,
   MODULE_COMBAT,
@@ -170,6 +173,7 @@ if (!Array.isArray(profile.history)) profile.history = [] // последние 
 if (!profile.crew || typeof profile.crew !== 'object') profile.crew = { xp: 0 } // экипаж один на все танки
 if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {} // перки специалистов { memberId: 0..3 }
 if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {} // опыт по веткам наций
+if (typeof profile.freeXp !== 'number') profile.freeXp = 0 // свободный опыт (вкладывается в любую нацию)
 if (!profile.medals || typeof profile.medals !== 'object') profile.medals = {} // { medalId: счётчик получений }
 if (!profile.camos || typeof profile.camos !== 'object') profile.camos = {} // { tankId: camoId } — надетый камуфляж
 if (!Array.isArray(profile.camoOwned)) {
@@ -233,7 +237,7 @@ const clearDirtyIf = (rev) => { if (dirtyRev === rev) lcSet(DIRTY_KEY, '0') }
 const rememberSrvAt = (at) => { if (at) lcSet(SRVAT_KEY, String(at)) }
 // поля «локального прогресса» — их при preferLocal возвращаем поверх старого серверного.
 // НЕ включаем серверно-ведомые (referrals/premiumUntil/daily/tasks/pendingGrants/srv*).
-const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'stats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef']
+const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'freeXp', 'stats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef']
 
 // локальный кеш — мгновенно; на сервер — с дебаунсом (офлайн не мешает игре)
 let pushTimer = null
@@ -300,6 +304,7 @@ export async function applyPendingGrants() {
       if (typeof r.goldAmmo === 'number') profile.goldAmmo = r.goldAmmo // золотые снаряды (награда дня)
       if (Array.isArray(r.owned)) profile.owned = r.owned
       if (econOn() && r.branchXp && typeof r.branchXp === 'object') profile.branchXp = r.branchXp // опыт ветки — серверный (под ON)
+      if (econOn() && typeof r.freeXp === 'number') profile.freeXp = r.freeXp // свободный опыт — серверный (под ON)
       profile.pendingGrants = Array.isArray(r.pendingGrants) ? r.pendingGrants : []
       const g = r.got
       if (r.applied && g && (g.credits || g.tokens || (g.tanks && g.tanks.length))) grantReveal.value = g
@@ -620,13 +625,43 @@ export function addBranchXp(nation, xp) {
   profile.branchXp[nation] = (profile.branchXp[nation] || 0) + Math.max(0, Math.round(xp || 0))
 }
 
-// сплит опыта боя: половина в ветку текущего танка, половина экипажу
+// свободный опыт: исследовательская валюта, вкладывается в ЛЮБУЮ нацию (см. spendFreeXp).
+// Под авторитетностью начисляет СЕРВЕР (grantBattle) → клиент подтянет; локально не копим.
+export function addFreeXp(xp) {
+  if (econOn()) return
+  profile.freeXp = (profile.freeXp || 0) + Math.max(0, Math.round(xp || 0))
+}
+
+// сплит опыта боя: 10% в свободный опыт, остаток пополам — ветка текущего танка / экипаж
 export function bankBattleXp(xp) {
-  const crew = Math.round((xp || 0) / 2)
-  const branch = Math.max(0, (xp || 0) - crew)
+  const total = Math.max(0, xp || 0)
+  const free = Math.round(total * FREE_XP_SHARE)
+  const rest = Math.max(0, total - free)
+  const crew = Math.round(rest / 2)
+  const branch = Math.max(0, rest - crew)
   addCrewXp(crew)
   addBranchXp(nationOf(profile.selectedTank), branch)
-  return { crew, branch }
+  addFreeXp(free)
+  return { crew, branch, free }
+}
+
+// вложить свободный опыт в ветку выбранной нации (для исследования любой ветки/нации).
+// Под авторитетностью списывает/начисляет СЕРВЕР; иначе — локально. false при нехватке.
+export async function spendFreeXp(nation, amount) {
+  const nat = String(nation || '')
+  if (!NATIONS.some((n) => n.id === nat)) return false
+  const amt = Math.max(0, Math.round(amount || 0))
+  if (amt <= 0 || (profile.freeXp || 0) < amt) return false
+  if (econOn()) {
+    const r = await apiSpendFreeXp(nat, amt).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
+  profile.freeXp -= amt
+  if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {}
+  profile.branchXp[nat] = (profile.branchXp[nat] || 0) + amt
+  return true
 }
 
 // ---------- камуфляжи и имя ----------
@@ -689,19 +724,26 @@ export function grantRandomSkin() {
   return s
 }
 
-// дроп случайного ЗАПЕРТОГО камуфляжа на одном из купленных танков (оф-ящик).
-// Всё открыто — возвращаем null (вызывающий компенсирует жетонами).
+// дроп случайного ЗАПЕРТОГО камуфляжа — ТОЛЬКО на АКТИВНУЮ технику: выбранный танк,
+// затем недавние из истории, и лишь запасом — прочие купленные. Иначе камо падало на
+// стартеры чужих наций, которыми не играешь («камо на танк которого у меня нет»).
+// Если у активных всё открыто — возвращаем null (вызывающий компенсирует жетонами).
 export function grantRandomCamo() {
-  const pool = []
-  for (const tid of profile.owned) {
-    for (const c of CAMOS) {
-      if (c.id && !camoUnlocked(tid, c.id)) pool.push({ tankId: tid, camoId: c.id })
+  const recent = Array.isArray(profile.history) ? profile.history.map((h) => h && h.tank).filter(Boolean) : []
+  const order = []
+  const seen = new Set()
+  for (const tid of [profile.selectedTank, ...recent, ...profile.owned]) {
+    if (tid && profile.owned.includes(tid) && !seen.has(tid)) { seen.add(tid); order.push(tid) }
+  }
+  for (const tid of order) {
+    const pool = CAMOS.filter((c) => c.id && !camoUnlocked(tid, c.id))
+    if (pool.length) {
+      const c = pool[Math.floor(Math.random() * pool.length)]
+      profile.camoOwned.push(`${tid}_${c.id}`)
+      return { tankId: tid, camoId: c.id, name: (CAMO_BY_ID[c.id] || {}).name || c.id, tankName: (TANK_BY_ID[tid] || {}).name || tid }
     }
   }
-  if (!pool.length) return null
-  const pick = pool[Math.floor(Math.random() * pool.length)]
-  profile.camoOwned.push(`${pick.tankId}_${pick.camoId}`)
-  return { ...pick, name: (CAMO_BY_ID[pick.camoId] || {}).name || pick.camoId, tankName: (TANK_BY_ID[pick.tankId] || {}).name || pick.tankId }
+  return null
 }
 
 // имя из Telegram: подставляем ник профиля, пока игрок не сменил позывной

@@ -18,6 +18,7 @@ import {
   CRIT_SLOTS,
   ENEMY_AI,
   SOFT_START,
+  VET,
   ARMOR,
   BOT_CLASS_MIX,
   BOT_TANK_IDS,
@@ -45,7 +46,7 @@ export class BattleSim {
    * humans: [{ id, team: 0|1, name, stats? }] — stats в deg-форме (лоадаут
    * клиента) или null → DEFAULT_CLASS. Обе команды добираются ботами до teamSize.
    */
-  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null, botNames = [], anchorTier = null } = {}) {
+  constructor({ teamSize = 7, humans = [], mapId = null, mode = 'capture', softStart = false, softFactor = null, vet = 0, botNames = [], anchorTier = null } = {}) {
     this.teamSize = teamSize
     // ТИР боя (макс. среди живых, с сервера): боты по нему берут HP/урон и спрайт
     // в пределах ±1. null → старое поведение (плоские классовые боты).
@@ -65,9 +66,19 @@ export class BattleSim {
     this.softFactor = sf
     this.softStart = sf > 0
     const lerpMul = (mult) => 1 - sf * (1 - mult) // ×mult при sf=1, ×1 при sf=0
+    // ВЕТЕРАНСКИЙ СКЕЙЛ: боты умнее/злее по прогрессу игрока. Действует ТОЛЬКО когда
+    // мягкий старт уже снят (иначе новичка бы дёргало) — поэтому гейтим vet=0 при softStart.
+    this.vet = this.softStart ? 0 : Math.max(0, Math.min(1, +vet || 0))
     this.ai = this.softStart
       ? { ...ENEMY_AI, graceSec: ENEMY_AI.graceSec + SOFT_START.extraGraceSec * sf, hitChance: ENEMY_AI.hitChance * lerpMul(SOFT_START.hitMult) }
-      : ENEMY_AI
+      : this.vet > 0
+        ? {
+            ...ENEMY_AI,
+            hitChance: ENEMY_AI.hitChance * (1 + (VET.hitMult - 1) * this.vet), // точнее
+            dodgeFactor: ENEMY_AI.dodgeFactor * (1 - VET.dodgeRelief * this.vet), // движение спасает меньше
+            graceSec: Math.max(2, ENEMY_AI.graceSec - VET.graceCut * this.vet), // меньше форы на старте
+          }
+        : ENEMY_AI
     this.botDmgMult = BOT_DMG_MULT * lerpMul(SOFT_START.dmgMult)
     this.aimTolMult = lerpMul(SOFT_START.aimToleranceMult) // ассист прицеливания игроку, тоже плавный
     this.t = 0
@@ -390,13 +401,22 @@ export class BattleSim {
     const py = b.y
     let wantMove = true
 
+    // УМНЫЙ ВЫБОР ЦЕЛИ (раньше был тупо ближайший): раненую цель добиваем (она «ближе»
+    // по скору), а живого ИГРОКА фокусим тем сильнее, чем выше ветеранство. bestD —
+    // настоящая дистанция до выбранной цели (нужна для радиуса/шанса огня ниже).
     let target = null
+    let bestScore = Infinity
     let bestD = Infinity
     for (const f of this.units) {
       if (!f.alive || f.team === b.team) continue
       const d = Math.hypot(f.x - b.x, f.y - b.y)
       // бот видит и стреляет только в радиусе своего зрения — не через всю карту
-      if (d < bestD && d <= ai.vision && !this._lineBlocked(b.x, b.y, f.x, f.y)) {
+      if (d > ai.vision || this._lineBlocked(b.x, b.y, f.x, f.y)) continue
+      const hpFrac = f.maxHp ? Math.max(0, Math.min(1, f.hp / f.maxHp)) : 1
+      let score = d * (0.7 + 0.3 * hpFrac) // раненый = меньший «эффективный» радиус
+      if (f.human) score *= 1 - 0.25 * this.vet // ветераны фокусят живого игрока
+      if (score < bestScore) {
+        bestScore = score
         bestD = d
         target = f
       }
@@ -436,9 +456,10 @@ export class BattleSim {
         const maxTurn = b.botTurn * dt
         b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
         let move = 0
-        // порог отступления РАЗНЫЙ: ~1/3 «храбрых» не пятятся, остальные при 22–34% HP
-        const brave = b.id % 3 === 0
-        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025)
+        // порог отступления РАЗНЫЙ: ~1/3 «храбрых» не пятятся, остальные при 22–34% HP.
+        // Ветераны злее: храбрых больше и порог отступления ниже (дольше давят).
+        const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1)
+        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet)
         if (!brave && b.hp < retreatHp) move = -1
         else if (bestD > ai.idealRange * 1.15) move = 1
         else if (bestD < ai.idealRange * 0.5) move = -0.5

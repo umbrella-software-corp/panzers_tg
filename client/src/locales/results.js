@@ -29,7 +29,7 @@ export default {
     // награды
     credits: 'CREDITS',
     battleXp: 'BATTLE XP',
-    branchLine: ({ branch, branchXp, crewXp }) => `branch ${branch} +${branchXp} XP · crew +${crewXp} XP`,
+    branchLine: ({ branch, branchXp, crewXp, freeXp }) => `branch ${branch} +${branchXp} · crew +${crewXp} · free +${freeXp} XP`,
     crystals: 'CRYSTALS 💎',
     crystalsIn: ({ n }) => `💎 premium crystals in ${n} ${n === 1 ? 'battle' : 'battles'}`,
     firstBattleBonus: ({ n }) => `FIRST BATTLE BONUS +${n}`,
@@ -66,7 +66,7 @@ export default {
     statAccuracy: 'Точность',
     credits: 'КРЕДИТЫ',
     battleXp: 'ОПЫТ БОЯ',
-    branchLine: ({ branch, branchXp, crewXp }) => `ветка ${branch} +${branchXp} ОП · экипаж +${crewXp} ОП`,
+    branchLine: ({ branch, branchXp, crewXp, freeXp }) => `ветка ${branch} +${branchXp} · экипаж +${crewXp} · свободный +${freeXp} ОП`,
     crystals: 'КРИСТАЛЛЫ 💎',
     crystalsIn: ({ n }) => `💎 кристаллы премиума через ${n} ${n === 1 ? 'бой' : n >= 2 && n <= 4 ? 'боя' : 'боёв'}`,
     firstBattleBonus: ({ n }) => `БОНУС ЗА ПЕРВЫЙ БОЙ +${n}`,

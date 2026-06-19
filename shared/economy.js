@@ -15,6 +15,13 @@ export const tankCost = (tier) => TIER_COST[tier] || 0
 export const TIER_XP = { 1: 0, 2: 800, 3: 2500, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
 export const tankResearchXp = (tier) => TIER_XP[tier] || 0
 
+// ---------- СВОБОДНЫЙ ОПЫТ (free XP) ----------
+// Доля боевого опыта, уходящая в СВОБОДНЫЙ пул (а не в ветку/экипаж). Свободный опыт
+// можно вложить в ЛЮБУЮ нацию для исследования (см. spendFreeXp). ЗЕРКАЛО meta.js.
+export const FREE_XP_SHARE = 0.1
+// id наций (для валидации вложения свободного опыта). ЗЕРКАЛО meta.js NATIONS.
+export const NATION_IDS = ['ussr', 'ger', 'usa']
+
 // ---------- модули: 5 слотов × 3 уровня ----------
 export const MODULE_SLOTS = ['gun', 'tur', 'eng', 'trk', 'rad']
 export const MODULE_MAX = 3

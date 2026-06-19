@@ -44,6 +44,8 @@ export function econPreserve(prev, bodyProfile) {
     crew: { ...bodyCrew, skills: (prevCrew.skills && typeof prevCrew.skills === 'object') ? prevCrew.skills : {} },
     // опыт ветки — теперь исследовательская ВАЛЮТА (тратится на открытие танков) → серверный
     branchXp: prev.branchXp && typeof prev.branchXp === 'object' ? prev.branchXp : {},
+    // свободный опыт — исследовательская валюта (вкладывается в любую нацию) → серверный
+    freeXp: typeof prev.freeXp === 'number' ? prev.freeXp : 0,
     camoOwned: Array.isArray(prev.camoOwned) ? prev.camoOwned : [],
     skins: Array.isArray(prev.skins) ? prev.skins : ['std'],
     premTankBattles: prev.premTankBattles | 0,
@@ -67,6 +69,7 @@ function wallet(p) {
     modules: p.modules || {},
     crew: p.crew || { xp: 0, skills: {} },
     branchXp: p.branchXp && typeof p.branchXp === 'object' ? p.branchXp : {}, // опыт ветки — исследовательская валюта
+    freeXp: typeof p.freeXp === 'number' ? p.freeXp : 0, // свободный опыт — в любую нацию
     camoOwned: Array.isArray(p.camoOwned) ? p.camoOwned : [],
     skins: Array.isArray(p.skins) ? p.skins : ['std'],
   }
@@ -88,10 +91,14 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     const premTank = E.isPremiumTank(h.tankId)
     if (premTank) m += E.PREM_TANK.creditMult
     credits += Math.round(r.credits * m)
-    // ОПЫТ ВЕТКИ за бой (как клиент: половина боевого опыта в ветку текущей нации) с
-    // премиум-множителем. Опыт — серверная исследовательская валюта (тратится на открытие).
+    // ОПЫТ БОЯ за бой (с премиум-множителем). Делёж как у клиента: 10% в СВОБОДНЫЙ опыт
+    // (в любую нацию), остаток — пополам ветка текущей нации / экипаж (экипаж клиентский).
+    // Опыт ветки и свободный — серверные исследовательские валюты (тратятся на открытие).
     const xpTotal = Math.round(r.xp * m)
-    const branchShare = xpTotal - Math.round(xpTotal / 2)
+    const freeShare = Math.round(xpTotal * E.FREE_XP_SHARE)
+    const rest = Math.max(0, xpTotal - freeShare)
+    const branchShare = rest - Math.round(rest / 2)
+    if (freeShare > 0) p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + freeShare
     if (branchShare > 0) {
       if (!p.branchXp || typeof p.branchXp !== 'object') p.branchXp = {}
       const nat = E.tankNation(h.tankId)
@@ -158,6 +165,25 @@ export function buyTank(uid, tankId) {
     await saveProfile(uid, p)
     logEvent(uid, 'buy_tank', { tank: tankId, cost, xp: xpCost })
     return ok(p, { bought: tankId })
+  })
+}
+
+// вложить свободный опыт в ветку ЛЮБОЙ нации (исследовательская валюта). Клиент шлёт
+// nation + amount; сервер клампит к доступному и переносит freeXp → branchXp[nation].
+export function spendFreeXp(uid, nation, amount) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    const nat = String(nation || '')
+    if (!E.NATION_IDS.includes(nat)) return err('bad-arg')
+    const have = typeof p.freeXp === 'number' ? p.freeXp : 0
+    const amt = clampInt(amount, 0, have)
+    if (amt <= 0) return err('funds')
+    p.freeXp = have - amt
+    if (!p.branchXp || typeof p.branchXp !== 'object') p.branchXp = {}
+    p.branchXp[nat] = (p.branchXp[nat] || 0) + amt
+    await saveProfile(uid, p)
+    logEvent(uid, 'spend_free_xp', { nation: nat, amount: amt })
+    return ok(p)
   })
 }
 
@@ -317,17 +343,29 @@ export function claimRefMilestone(uid, idx) {
   })
 }
 
-// дроп случайного ЗАПЕРТОГО камуфляжа на одном из купленных танков (для оф-ящика рефов)
+// дроп случайного ЗАПЕРТОГО камуфляжа — ТОЛЬКО на АКТИВНУЮ технику игрока: выбранный
+// танк, затем недавние из истории, и лишь как запас — прочие купленные. Иначе дроп
+// уходил на стартеры чужих наций (которыми не играешь) и ощущался как «на чужой танк».
 function dropRandomCamo(p) {
   if (!Array.isArray(p.camoOwned)) p.camoOwned = []
-  const pool = []
-  for (const tid of p.owned || []) for (const cid of Object.keys(E.CAMO_COST)) {
-    if (cid && !p.camoOwned.includes(`${tid}_${cid}`)) pool.push(`${tid}_${cid}`)
+  const owned = Array.isArray(p.owned) ? p.owned : []
+  const recent = Array.isArray(p.history) ? p.history.map((h) => h && h.tank).filter(Boolean) : []
+  const order = []
+  const seen = new Set()
+  for (const tid of [p.selectedTank, ...recent, ...owned]) {
+    if (tid && owned.includes(tid) && !seen.has(tid)) { seen.add(tid); order.push(tid) }
   }
-  if (!pool.length) return null
-  const pick = pool[Math.floor(Math.random() * pool.length)] // сервер (Node) — Math.random ок
-  p.camoOwned.push(pick)
-  return pick
+  const cids = Object.keys(E.CAMO_COST).filter(Boolean)
+  for (const tid of order) {
+    const pool = cids.filter((cid) => !p.camoOwned.includes(`${tid}_${cid}`))
+    if (pool.length) {
+      const cid = pool[Math.floor(Math.random() * pool.length)] // сервер (Node) — Math.random ок
+      const pick = `${tid}_${cid}`
+      p.camoOwned.push(pick)
+      return pick
+    }
+  }
+  return null
 }
 
 // ---------- НОРМАЛИЗАЦИЯ «невозможных» профилей (для админ-эндпоинта, dry-run) ----------

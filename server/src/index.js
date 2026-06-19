@@ -3,7 +3,7 @@
 // подпись Telegram initData (без BOT_TOKEN — dev-гости и мгновенные «оплаты»).
 import http from 'http'
 import { WebSocketServer } from 'ws'
-import { BattleSim, MAP_SIZE, randomMap, softFactor } from 'panzer-tg-shared'
+import { BattleSim, MAP_SIZE, randomMap, softFactor, vetFactor } from 'panzer-tg-shared'
 import { authRequest, hasBot } from './auth.js'
 import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, withProfileLock, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
@@ -600,7 +600,7 @@ async function handleApi(req, res) {
     const out = await withProfileLock(user.uid, async () => {
       const p = await loadProfile(user.uid)
       if (!p || !Array.isArray(p.pendingGrants) || !p.pendingGrants.length) {
-        return { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, goldAmmo: (p && p.goldAmmo) || 0, owned: (p && p.owned) || [], branchXp: (p && p.branchXp) || {}, pendingGrants: [] }
+        return { ok: true, applied: 0, credits: (p && p.credits) || 0, tokens: (p && p.tokens) || 0, goldAmmo: (p && p.goldAmmo) || 0, owned: (p && p.owned) || [], branchXp: (p && p.branchXp) || {}, freeXp: (p && p.freeXp) || 0, pendingGrants: [] }
       }
       let n = 0
       // got = что показать в in-app окне «🎁 Подарок от администрации». Только админ-выдачи
@@ -621,7 +621,7 @@ async function handleApi(req, res) {
       }
       p.pendingGrants = []
       await saveProfile(user.uid, p)
-      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], branchXp: p.branchXp || {}, pendingGrants: [] }
+      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], branchXp: p.branchXp || {}, freeXp: p.freeXp || 0, pendingGrants: [] }
     })
     return json(res, 200, out)
   }
@@ -634,6 +634,7 @@ async function handleApi(req, res) {
     let out
     switch (req.url) {
       case '/api/econ/buy-tank': out = await econ.buyTank(user.uid, String(b.tankId || '')); break
+      case '/api/econ/spend-free-xp': out = await econ.spendFreeXp(user.uid, String(b.nation || ''), b.amount | 0); break
       case '/api/econ/upgrade-module': out = await econ.upgradeModule(user.uid, String(b.tankId || ''), String(b.modId || '')); break
       case '/api/econ/upgrade-crew': out = await econ.upgradeCrewPerk(user.uid, String(b.memberId || '')); break
       case '/api/econ/buy-camo': out = await econ.buyCamo(user.uid, String(b.tankId || ''), String(b.camoId || '')); break
@@ -1206,11 +1207,16 @@ function startRoom(room) {
   // тир боя = макс. среди живых (соло-PvE = тир игрока). По нему боты весят ±1 тира.
   const humanTiers = room.humans.map((h) => h.tier).filter((t) => t >= 1 && t <= 10)
   const anchorTier = humanTiers.length ? Math.max(...humanTiers) : null
+  // ВЕТЕРАНСКИЙ СКЕЙЛ: боты умнее по прогрессу САМОГО опытного человека в комнате (число
+  // боёв + тир). Тренировка/мягкий старт его подавляют (sim гейтит vet=0 при softStart).
+  const maxBattles = Math.max(0, ...room.humans.map((h) => h.battles | 0))
+  const vet = room.training ? 0 : vetFactor(maxBattles, anchorTier)
   room.sim = new BattleSim({
     teamSize: TEAM_SIZE,
     mapId: map.id,
     mode: room.mode,
     softFactor: softF,
+    vet,
     humans: room.humans.map((h) => ({ id: h.id, team: h.team, name: h.name, stats: h.stats, tankId: h.tankId, tint: h.tint, skin: h.skin })),
     botNames: realBotNames, // маскировка: боты берут имена реальных аккаунтов + BOT_NICKS
     anchorTier,

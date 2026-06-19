@@ -4,7 +4,7 @@
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref, onMounted } from 'vue'
 import { profile, battleEarnedMedals, grantFirstBattleReward } from '../store.js'
-import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID } from '../game/meta.js'
+import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID, FREE_XP_SHARE } from '../game/meta.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
@@ -28,9 +28,10 @@ const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name ||
 const log = computed(() => props.state.damageLog || [])
 const totalDmg = computed(() => log.value.reduce((a, x) => a + x.dmg, 0))
 const tankOf = (id) => (TANK_BY_ID[id] || {}).name || ''
-// сплит опыта: как в bankBattleXp (половина экипажу, половина ветке)
-const crewXp = computed(() => Math.round(props.reward.xp / 2))
-const branchXp = computed(() => props.reward.xp - crewXp.value)
+// сплит опыта: как в bankBattleXp (10% свободный, остаток пополам экипаж/ветка)
+const freeXp = computed(() => Math.round((props.reward.xp || 0) * FREE_XP_SHARE))
+const crewXp = computed(() => Math.round(((props.reward.xp || 0) - freeXp.value) / 2))
+const branchXp = computed(() => (props.reward.xp || 0) - freeXp.value - crewXp.value)
 const branchLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(profile.selectedTank)) || {}).label || '')
 const won = computed(() => props.state.result === 'victory')
 // изменение боевого рейтинга за этот бой (wn8 уже пересчитан в store)
@@ -164,7 +165,7 @@ function setPage(i) {
         </div>
         <!-- куда ушёл опыт -->
         <div style="font-size: 11.5px; font-weight: 600; opacity: 0.75; text-align: center; margin-top: 8px">
-          {{ t('results.branchLine', { branch: branchLabel, branchXp, crewXp }) }}
+          {{ t('results.branchLine', { branch: branchLabel, branchXp, crewXp, freeXp }) }}
         </div>
         <!-- прем-танк: кристаллы (💎) — выдача этого боя или счётчик до следующей -->
         <div v-if="reward.gems" class="prem-gems">

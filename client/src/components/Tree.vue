@@ -16,6 +16,7 @@ import {
   prevTank,
   branchXpOf,
   researchXpNeed,
+  spendFreeXp,
   syncProfile,
 } from '../store.js'
 import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
@@ -35,6 +36,27 @@ const tanks = computed(() => tanksOfNation(profile.nation))
 const premiums = computed(() => premiumOfNation(profile.nation)) // прем-техника нации (за ⭐)
 // накопленный опыт ВЫБРАННОЙ ветки (нации) — исследовательская валюта; копится за бои
 const nationXp = computed(() => Math.floor((profile.branchXp || {})[profile.nation] || 0))
+// СВОБОДНЫЙ опыт — общий пул (10% с каждого боя), вкладывается в ЛЮБУЮ нацию
+const freeXp = computed(() => Math.floor(profile.freeXp || 0))
+// следующий незакрытый танк выбранной ветки (список tanks упорядочен по тиру)
+const nextLocked = computed(() => tanks.value.find((t) => !isOwned(t.id)))
+// сколько опыта ветки НЕ хватает на исследование следующего танка
+const xpShort = computed(() => {
+  const tk = nextLocked.value
+  return tk ? Math.max(0, researchXpNeed(tk) - branchXpOf(tk)) : 0
+})
+// сколько свободного опыта можно влить прямо сейчас (= нехватка, но не больше пула)
+const pourAmount = computed(() => Math.min(freeXp.value, xpShort.value))
+const canPourFree = computed(() => pourAmount.value > 0)
+async function pourFreeXp() {
+  if (!canPourFree.value) return shake()
+  track('free_xp_pour_clicked', { nation: profile.nation, amount: pourAmount.value, free_xp: freeXp.value, target_tank: nextLocked.value?.id || null })
+  if (await spendFreeXp(profile.nation, pourAmount.value)) {
+    track('free_xp_poured', { nation: profile.nation, amount: pourAmount.value })
+  } else {
+    shake()
+  }
+}
 const premSel = ref(null) // развёрнутый ТТХ прем-танка (тап по строке)
 // ТТХ прем-танка (базовые статы 0..10 для оценки ДО покупки)
 const premStats = (t) => {
@@ -223,10 +245,26 @@ watch(selected, (t) => {
 
     <NationSwitch :nation="profile.nation" style="padding: 2px 14px 4px" @pick="pickNation" />
 
-    <!-- накопленный опыт ветки (исследовательская валюта): копится в боях, тратится на открытие -->
-    <div style="padding: 0 14px 8px; display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 12px; color: var(--ink-dim)">
-      <span>🔬 {{ tr('tree.branchXp') }}:</span>
-      <b class="pz-display" style="color: var(--amber); font-size: 14px">{{ nationXp.toLocaleString('ru-RU') }}</b>
+    <!-- опыт ветки (копится в боях на технике нации) + свободный опыт (общий пул, 10% с
+         каждого боя) — обе валюты исследования. Свободный можно влить в эту ветку кнопкой. -->
+    <div class="xp-panel">
+      <div class="xp-cell">
+        <span class="xp-ic">🔬</span>
+        <div class="xp-meta">
+          <span class="xp-lbl">{{ tr('tree.branchXp') }}</span>
+          <b class="pz-display xp-val" style="color: var(--amber)">{{ nationXp.toLocaleString('ru-RU') }}</b>
+        </div>
+      </div>
+      <div class="xp-sep"></div>
+      <div class="xp-cell">
+        <span class="xp-ic">✦</span>
+        <div class="xp-meta">
+          <span class="xp-lbl">{{ tr('tree.freeXp') }}</span>
+          <b class="pz-display xp-val" style="color: #7cc0ff">{{ freeXp.toLocaleString('ru-RU') }}</b>
+        </div>
+      </div>
+      <button v-if="canPourFree" class="pour-btn" @click="pourFreeXp">{{ tr('tree.pourFree', { n: pourAmount.toLocaleString('ru-RU') }) }}</button>
+      <span v-else-if="freeXp > 0" class="xp-hint">{{ tr('tree.freeXpHint') }}</span>
     </div>
 
     <!-- ===== ветка ===== -->
@@ -429,6 +467,68 @@ watch(selected, (t) => {
 </template>
 
 <style scoped>
+.xp-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 14px 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.28);
+  flex-wrap: wrap;
+}
+.xp-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.xp-ic {
+  font-size: 15px;
+  opacity: 0.9;
+}
+.xp-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.xp-lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+.xp-val {
+  font-size: 15px;
+}
+.xp-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+}
+.pour-btn {
+  margin-left: auto;
+  border: 1px solid #4a7fb0;
+  color: #9fd0ff;
+  background: rgba(60, 120, 180, 0.16);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.pour-btn:active {
+  background: rgba(60, 120, 180, 0.3);
+}
+.xp-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  max-width: 150px;
+  text-align: right;
+  line-height: 1.25;
+}
 .spine {
   position: absolute;
   left: 29px;

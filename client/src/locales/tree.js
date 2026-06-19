@@ -13,6 +13,10 @@ export default {
     checkTopModules: ({ name }) => `Top modules ${name}`,
     checkXp: 'Branch XP',
     branchXp: 'Branch XP',
+    // свободный опыт: общий пул, вкладывается в любую нацию
+    freeXp: 'Free XP',
+    pourFree: ({ n }) => `Invest ${n} →`,
+    freeXpHint: 'This branch has enough — switch nation to invest',
     checkCredits: 'Credits',
     // переход к недостающему шагу
     stepUnlock: ({ name }) => `Unlock ${name}`,
@@ -42,6 +46,9 @@ export default {
     checkTopModules: ({ name }) => `Топ-модули ${name}`,
     checkXp: 'Опыт ветки',
     branchXp: 'Опыт ветки',
+    freeXp: 'Свободный опыт',
+    pourFree: ({ n }) => `Вложить ${n} →`,
+    freeXpHint: 'Этой ветке хватает — переключи нацию и вложи',
     checkCredits: 'Кредиты',
     stepUnlock: ({ name }) => `Открыть ${name}`,
     stepModules: ({ name }) => `К модулям ${name}`,
