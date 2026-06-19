@@ -9,8 +9,55 @@
     <title>Panzer TG</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
-  <body>
+  <body style="margin: 0; background: #090b08">
     <div id="app"></div>
+    <!-- СТАТИЧЕСКИЙ СПЛЭШ: рисуется мгновенно (до загрузки/исполнения JS и до Vue),
+         перекрывает пустой/«полусобранный» экран. main.js снимает его, как только Vue
+         показал свой идентичный сплэш (тот держится, пока прогреваются ассеты ангара). -->
+    <div id="boot0">
+      <div class="b0-logo">PANZER <b>TG</b></div>
+      <div class="b0-spin"></div>
+    </div>
+    <style>
+      #boot0 {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #090b08;
+        background-image: radial-gradient(120% 75% at 50% 30%, rgba(48, 60, 36, 0.5), transparent 68%);
+        font-family: 'Russo One', 'Arial Narrow', system-ui, sans-serif;
+      }
+      #boot0 .b0-logo {
+        font-size: 38px;
+        letter-spacing: 0.06em;
+        color: #e8e6da;
+      }
+      #boot0 .b0-logo b {
+        color: #f2a50c;
+      }
+      #boot0 .b0-spin {
+        margin-top: 30px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 3px solid rgba(242, 165, 12, 0.18);
+        border-top-color: #f2a50c;
+        animation: b0rot 0.8s linear infinite;
+      }
+      @keyframes b0rot {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+    <!-- страховка: если JS-модуль вообще не исполнился — не зависаем на сплэше навсегда -->
+    <script>
+      setTimeout(function () { var b = document.getElementById('boot0'); if (b) b.remove() }, 12000)
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
