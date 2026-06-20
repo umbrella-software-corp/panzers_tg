@@ -13,7 +13,7 @@ export default {
     soon: 'soon',
     soonStamp: 'COMING SOON',
     soonClans: 'Build a clan, gather your roster and climb the clan rating. Coming soon — get your squad ready.',
-    soonTournaments: '2×2, 3×3 and 5×5 tournaments by vehicle class. Coming very soon — tune your machine.',
+    soonTournaments: 'Tournaments for real TON 💎 — coming very soon! 2×2, 3×3 and 5×5 by vehicle class. Tune your machine and get ready.',
 
     // смена позывного
     renamePrompt: ({ cost }) => `New callsign (3–16 characters) — ${cost} ⭐:`,
@@ -93,7 +93,7 @@ export default {
     soon: 'скоро',
     soonStamp: 'СКОРО',
     soonClans: 'Создавай клан, собирай состав и поднимай клановый рейтинг. Уже на подходе — готовь отряд.',
-    soonTournaments: 'Турниры 2×2, 3×3 и 5×5 по классам техники. Совсем скоро — точи машину.',
+    soonTournaments: 'Турниры за настоящий TON 💎 — совсем скоро! Форматы 2×2, 3×3 и 5×5 по классам техники. Точи машину и готовься.',
 
     renamePrompt: ({ cost }) => `Новый позывной (3–16 символов) — ${cost} ⭐:`,
     renameTooShort: 'Слишком короткий позывной (минимум 3 символа)',
