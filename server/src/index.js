@@ -832,8 +832,9 @@ const waitingRooms = { capture: null, annihilation: null }
 // (готовая группировка assignTeams сводит их в одну команду).
 const squads = new Map() // squadId -> { id, members: Map(memberId -> {id, name, ready, ws, tank}) }
 const SQUAD_MAX = 3 // командир + 2
-const MAX_TIER_SPREAD = 9 // ВРЕМЕННО: взвод на любых уровнях техники (1-10) — чтобы
-// люди играли вместе под наплыв; баланс правим позже. Вернуть в 1 для ±1-ограничения.
+const MAX_TIER_SPREAD = 1 // взвод только в пределах ±1 уровня техники: иначе тир боя
+// якорится по СТАРШЕМУ (anchorTier=max), боты весят 9-10 тира, и младший напарник —
+// единственная картонка на поле. ЗЕРКАЛО: client/src/game/squad.js. (было 9 «под наплыв».)
 
 // техника участника от клиента: { id, tier, name } — чистим перед хранением
 function sanitizeTank(t) {

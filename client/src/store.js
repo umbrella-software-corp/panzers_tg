@@ -328,6 +328,8 @@ export async function syncProfile() {
       const localEcon = preferLocal ? JSON.parse(JSON.stringify(profile)) : null
       const localDaily = profile.daily // claim мог не успеть уехать на сервер до перезапуска
       const localTasks = profile.tasks // то же про ЗАДАЧИ ДНЯ — клейм мог не доехать
+      const localSel = profile.selectedTank // выбранный танк — защищаем от отката (см. ниже)
+      const localSelDirty = lcGet(DIRTY_KEY) === '1' // были несохранённые локальные правки?
       Object.assign(profile, rest)
       // НЕ даём СТАРОМУ серверному daily.last затереть свежий локальный: иначе после
       // claim'а (POST debounced) перезапуск мини-аппа воскрешал дейлик и давал пере-клейм
@@ -348,6 +350,14 @@ export async function syncProfile() {
           for (const [k, v] of Object.entries(localTasks.progress || {})) progress[k] = Math.max(progress[k] || 0, v || 0)
           profile.tasks = { date: localTasks.date, progress, claimed }
         }
+      }
+      // ЗАЩИТА ВЫБРАННОГО ТАНКА: свежий локальный выбор (есть несохранённые правки) НЕ
+      // откатываем к старому серверному selectedTank. Иначе «выбрал Т26 — а в бой едет КВ1»:
+      // сейв профиля дебаунсится 1.5с, и sync между пиком и сейвом затирал выбор сервером.
+      // Берём локальный, если он валиден и СВОЙ; иначе серверный (свежее устройство → его танк).
+      if (localSelDirty && localSel && TANK_BY_ID[localSel] && profile.owned.includes(localSel)) {
+        profile.selectedTank = localSel
+        profile.nation = nationOf(localSel)
       }
       // старые серверные профили без перков — дорастить форму
       if (!profile.crew.skills || typeof profile.crew.skills !== 'object') profile.crew.skills = {}

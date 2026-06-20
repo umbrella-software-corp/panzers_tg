@@ -5,8 +5,8 @@ import { reactive, watch } from 'vue'
 import { tgUserId } from '../tg.js'
 import { profile, selectedTank, clearParty } from '../store.js'
 
-export const MAX_TIER_SPREAD = 9 // ВРЕМЕННО: взвод на любых уровнях техники (1-10) —
-// чтобы люди играли вместе под наплыв; баланс правим позже. Вернуть в 1 для ±1.
+export const MAX_TIER_SPREAD = 1 // взвод только в пределах ±1 уровня техники (UI метит
+// танки ✓/✗ и гейтит готовность/старт). ЗЕРКАЛО: server/src/index.js. (было 9 «под наплыв».)
 // моя текущая техника для взвода: { id, tier, name }
 function tankInfo() {
   const t = selectedTank()
