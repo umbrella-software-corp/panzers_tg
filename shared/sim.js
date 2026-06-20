@@ -421,7 +421,8 @@ export class BattleSim {
       if (d > ai.vision || this._lineBlocked(b.x, b.y, f.x, f.y)) continue
       const hpFrac = f.maxHp ? Math.max(0, Math.min(1, f.hp / f.maxHp)) : 1
       let score = d * (0.7 + 0.3 * hpFrac) // раненый = меньший «эффективный» радиус
-      if (f.human) score *= 1 - 0.25 * this.vet // ветераны фокусят живого игрока
+      // фокус на живом игроке: растёт с ветеранством + PvE-враги давят на него сильнее
+      if (f.human) score *= Math.max(0.3, 1 - 0.25 * this.vet - (enemyBot ? ENEMY_EDGE.humanFocus : 0))
       if (score < bestScore) {
         bestScore = score
         bestD = d
