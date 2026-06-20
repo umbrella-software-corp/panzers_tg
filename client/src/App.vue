@@ -10,6 +10,7 @@ import Rating from './components/Rating.vue'
 import Matchmaking from './components/Matchmaking.vue'
 import Battle from './components/Battle.vue'
 import DailyReward from './components/DailyReward.vue'
+import ChannelSheet from './components/ChannelSheet.vue'
 import Onboarding from './components/Onboarding.vue'
 import SecondTankChoice from './components/SecondTankChoice.vue'
 import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus } from './store.js'
@@ -38,6 +39,7 @@ const training = ref(false)
 
 // старт: подтянуть профиль с сервера, потом ежедневный вход
 const daily = ref(false)
+const channelPopup = ref(false) // окно «подпишись на канал → собирай взвод → бонус» после 2-3 боя
 const booting = ref(true) // стартовый сплэш-лоадер (БЕТА) — держим, пока тянем профиль
 const bootProgress = ref(0) // прогресс прогрева критичных ассетов 0..1 (бар на сплэше)
 
@@ -249,6 +251,19 @@ async function offerFeedback() {
   if (yes) { track('feedback_nudge_accepted', {}); openSupport() }
 }
 
+// ПОДПИШИСЬ НА КАНАЛ → СОБИРАЙ ВЗВОД → бонус: окно после 2-го и (если не забрал) 3-го
+// боя — момент, когда игрок уже втянулся. Переехало из постоянного баннера ангара в
+// разовый попап. Фича гейтится сервером (CHANNEL_ID) и снимается при заборе бонуса.
+// Не поверх ежедневной награды (другой оверлей) — ей уступаем, словим на след. бою.
+function offerChannel() {
+  const n = profile.stats?.battles || 0
+  if (!serverConfig.channel.on || profile.channelBonusClaimed) return
+  if (n !== 2 && n !== 3) return
+  if (daily.value) return
+  track('channel_popup_shown', { battles: n })
+  channelPopup.value = true
+}
+
 // кнопка «Назад» Telegram: на корне (ангар) и в бою — спрятана (там свои
 // выходы), на остальных экранах ведёт в ангар вместо сворачивания мини-аппа
 watch(
@@ -324,6 +339,8 @@ function bankBattle(reward) {
     kills: reward.kills,
     lightKills: reward.lightKills,
     blocked: reward.blocked,
+    blockedDmg: reward.blockedDmg, // спасённый бронёй урон (задача armor2000)
+    survived: reward.survived ? 1 : 0, // дожил до конца боя (задача survive2)
     wins: reward.victory ? 1 : 0,
     battles: 1,
   })
@@ -358,6 +375,7 @@ function exitBattle(reward) {
   cameFromBattle.value = true // вернулся из боя → показать баннер фидбека (на эмоциях)
   screen.value = 'hangar'
   maybeShowDaily() // после первого боя (battles>0) дейлик всплывает здесь, а не на входе
+  offerChannel() // после 2-3 боя → «подпишись на канал, собирай взвод» (если фича вкл, бонус не забран)
   offerPushBonus() // после боя/тренировки первый бой → просим разрешение на пуши (один раз)
   offerFeedback() // изредка (раз в 3 дня, вовлечённым) — «напиши нам мнение» → саппорт
 }
@@ -386,6 +404,9 @@ function rematch(reward) {
   <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :training="!!netMatch && !!netMatch.training" @exit="exitBattle" @rematch="rematch" />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" @claimed="onDailyClaimed" />
+
+  <!-- «Подпишись на канал → собирай взвод → бонус» — попап после 2-3 боя (см. offerChannel) -->
+  <ChannelSheet v-if="channelPopup && screen !== 'battle'" @close="channelPopup = false" />
 
   <!-- «Подарок от администрации» — когда применилась админ-выдача (pendingGrants).
        Для веб-юзеров, кому бот не может написать, это единственный способ узнать. -->

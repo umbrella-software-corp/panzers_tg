@@ -18,7 +18,6 @@ import StatRow from './ui/StatRow.vue'
 import PzIcon from './ui/PzIcon.vue'
 import SquadSheet from './SquadSheet.vue'
 import TasksSheet from './TasksSheet.vue'
-import ChannelSheet from './ChannelSheet.vue'
 import FeedbackSheet from './FeedbackSheet.vue'
 import SettingsSheet from './SettingsSheet.vue'
 
@@ -71,24 +70,12 @@ function toggle3D() {
 }
 const squadOpen = ref(false)
 const tasksOpen = ref(false)
-const channelOpen = ref(false)
 const feedbackOpen = ref(false)
 const settingsOpen = ref(false)
 function openSettings() {
   haptic('light')
   track('settings_opened', { from_screen: 'hangar' })
   settingsOpen.value = true
-}
-
-// промо «подпишись на канал → бонус» показываем, только если фича включена на сервере
-// (задан CHANNEL_ID) и бонус ещё не забран; новичкам до первого боя не мешаем.
-const channelOffer = computed(
-  () => serverConfig.channel.on && !profile.channelBonusClaimed && !firstSession.value,
-)
-function openChannelSheet() {
-  track('channel_offer_opened', { from_screen: 'hangar' })
-  haptic('light')
-  channelOpen.value = true
 }
 
 // промо «нам важно ваше мнение → напиши в саппорт → +жетоны»: пока бонус не забран,
@@ -439,19 +426,6 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- бонус за подписку на канал (набор тестеров) -->
-    <button v-if="channelOffer" class="chbanner" @click="openChannelSheet">
-      <span class="chb-icon">📣</span>
-      <span class="chb-text">
-        <span class="chb-title">{{ t('channel.banner') }}</span>
-        <span class="chb-reward">
-          <PzIcon name="coin" :size="12" /> +{{ serverConfig.channel.credits }}
-          <PzIcon name="token" :size="12" /> +{{ serverConfig.channel.tokens }}
-        </span>
-      </span>
-      <span class="chb-cta">{{ t('channel.bannerCta') }}</span>
-    </button>
-
     <!-- «нам важно ваше мнение» → написать в саппорт → бонус жетонов -->
     <button v-if="feedbackOffer" class="chbanner" @click="openFeedbackSheet">
       <span class="chb-icon">💬</span>
@@ -504,7 +478,6 @@ onMounted(() => {
 
     <SquadSheet v-if="squadOpen" @close="squadOpen = false" />
     <TasksSheet v-if="tasksOpen" @close="tasksOpen = false" />
-    <ChannelSheet v-if="channelOpen" @close="channelOpen = false" />
     <FeedbackSheet v-if="feedbackOpen" @close="feedbackOpen = false" />
     <SettingsSheet v-if="settingsOpen" @close="settingsOpen = false" />
   </div>

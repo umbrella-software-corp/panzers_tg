@@ -468,22 +468,26 @@ watch(selected, (t) => {
   margin-left: 3px;
 }
 .pour-btn {
-  margin-left: auto;
+  flex: 1 1 100%;
+  margin-top: 3px;
   border: 1px solid #4a7fb0;
   color: #9fd0ff;
   background: rgba(60, 120, 180, 0.16);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 7px;
+  padding: 9px 12px;
+  border-radius: 8px;
   cursor: pointer;
+  text-align: center;
 }
 .pour-btn:active {
   background: rgba(60, 120, 180, 0.3);
 }
 .xp-hint {
-  margin-left: auto;
+  flex: 1 1 100%;
+  margin-top: 2px;
+  text-align: center;
   font-size: 11px;
   color: var(--ink-faint);
 }

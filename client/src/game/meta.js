@@ -251,11 +251,13 @@ export const GOLD_AMMO_PACKS = [
   { id: 'g2', amount: 30, costTokens: 30 },
 ]
 
-// ---------- ежедневные задачи (3 в день, ротация по дате) ----------
+// ---------- ежедневные задачи (TASKS_PER_DAY в день, ротация по дате) ----------
 // key — счётчик из итогов боя (см. bankTaskProgress): damage/kills/lightKills/
-// blocked/wins/battles. `blocked` = ЧИСЛО снарядов, отражённых твоей бронёй за бой
-// (NetGame.blockedShells, ++ на каждый ricochet/nopen по мне). Урон, спасённый бронёй,
-// идёт отдельным `blockedDmg` (медаль «wall», need:2000) — не путать единицы.
+// blocked/wins/battles/survived/blockedDmg. `blocked` = ЧИСЛО снарядов, отражённых
+// твоей бронёй за бой (NetGame.blockedShells, ++ на каждый ricochet/nopen по мне);
+// `blockedDmg` = спасённый бронёй УРОН (медаль «wall» — другая единица, не путать);
+// `survived` = 1 если дожил до конца боя. Пул-ЗЕРКАЛО в shared/economy.js — порядок
+// и id держать идентичными (выбор дня шьётся по индексам).
 export const DAILY_TASKS = [
   { id: 'dmg600', goal: 4500, key: 'damage', credits: 400 },
   { id: 'kills3', goal: 3, key: 'kills', credits: 500 },
@@ -263,14 +265,30 @@ export const DAILY_TASKS = [
   { id: 'block3', goal: 3, key: 'blocked', credits: 350 },
   { id: 'win1', goal: 1, key: 'wins', credits: 600 },
   { id: 'battles3', goal: 3, key: 'battles', credits: 300 },
+  { id: 'dmg9000', goal: 9000, key: 'damage', credits: 800 },
+  { id: 'kills5', goal: 5, key: 'kills', credits: 800 },
+  { id: 'win3', goal: 3, key: 'wins', tokens: 10 },
+  { id: 'battles5', goal: 5, key: 'battles', credits: 500 },
+  { id: 'survive2', goal: 2, key: 'survived', credits: 450 },
+  { id: 'armor2000', goal: 2000, key: 'blockedDmg', credits: 450 },
+  { id: 'light3', goal: 3, key: 'lightKills', tokens: 7 },
 ].map((d) => defLoc(d, { label: (o) => `game.tasks.${o.id}` }))
-export const TASKS_PER_DAY = 3
+export const TASKS_PER_DAY = 4
 
-// детерминированный выбор трёх задач дня (у всех игроков одинаковые)
+// детерминированный выбор задач дня (у всех игроков одинаковые): стабильно
+// перетасовываем пул по дате и берём первые TASKS_PER_DAY — без повторов при любом
+// размере пула. ЗЕРКАЛО в shared/economy.js — менять синхронно (тот же алгоритм+порядок).
 export function tasksOfDay(dayString) {
-  const seed = [...String(dayString)].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) >>> 0, 7)
-  const start = seed % DAILY_TASKS.length
-  return [0, 1, 2].map((i) => DAILY_TASKS[(start + i * 2) % DAILY_TASKS.length])
+  let s = [...String(dayString)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7)
+  const idx = DAILY_TASKS.map((_, i) => i)
+  for (let i = idx.length - 1; i > 0; i--) {
+    s = (s * 1103515245 + 12345) >>> 0
+    const j = s % (i + 1)
+    const tmp = idx[i]
+    idx[i] = idx[j]
+    idx[j] = tmp
+  }
+  return idx.slice(0, TASKS_PER_DAY).map((i) => DAILY_TASKS[i])
 }
 
 // ---------- ежедневный вход (цикл 7 дней) ----------
