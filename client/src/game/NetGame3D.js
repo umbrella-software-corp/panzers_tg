@@ -1,11 +1,14 @@
 // 3D-рендер боя на Three.js. НАСЛЕДУЕТ всю сеть/ввод/предикт/события/HUD-state
-// от NetGame (Battle.vue и серверный протокол не меняются) — переопределяет
-// только визуальный слой: mount/_draw/_spawnFx/_wantTex/destroy.
+// от NetGameCore (рендер-независимое ядро; Battle.vue и серверный протокол не
+// меняются) — реализует визуальный слой: mount/_draw/_spawnFx/_wantTex/destroy.
 //
 // Координаты: мир сервера (x,y) в пикселях карты → THREE (x, высота, y).
 // Камера player-relative сверху (свой танк всегда едет «от тебя» → честность
 // засвета как в 2D). Все живые тюнеры — window.__CAM_*/__YAW3 в консоли превью.
+// База — наш продовый NetGame (2D-движок): снапшот-протокол и API базы байт-совместимы
+// с NetGameCore форка, поэтому 3D-рендер садится прямо на него (NetGameCore не портируем).
 import { NetGame } from './NetGame.js'
+import { tankModelUrl, tankSizeScale, PROP_MODELS } from './meta.js'
 
 // three.js грузится ДИНАМИЧЕСКИ (только когда тестер реально входит в 3D-бой) —
 // иначе ~150КБ gzip висели бы в главном бандле у всех 2D-игроков (96% трафика).
@@ -42,8 +45,36 @@ export function loadModelScenes() {
   }))))
   return modelScenesPromise
 }
-// прогрев three.js + моделей заранее (ангар зовёт при включённом 3D-тоггле)
-export function preload3D() { try { loadModelScenes() } catch { /* ничего */ } }
+// прогрев three.js + моделей заранее (ангар зовёт при входе)
+export function preload3D() { try { loadModelScenes(); loadPropScenes() } catch { /* ничего */ } }
+
+// === ОКРУЖЕНИЕ: модели пропов ===
+// Загрузка всех GLB-пропов один раз на сессию → { kind: scene|null }.
+let propScenesPromise = null
+export function loadPropScenes() {
+  if (propScenesPromise) return propScenesPromise
+  const entries = Object.entries(PROP_MODELS)
+  propScenesPromise = ensureThree()
+    .then(() => Promise.all(entries.map(([k, url]) => loadModelScene(url).then((sc) => [k, sc]))))
+    .then((arr) => Object.fromEntries(arr))
+  return propScenesPromise
+}
+
+// Декор-укрытия теперь генерятся в shared/decor.js (детерминированно, с коллизией) и
+// приходят как obstacles с полем prop — рендер см. в _load3DProps.
+
+// загрузка ОДНОЙ модели по URL с кэшем (раз на сессию). Для превью в ангаре —
+// грузим ровно модель выбранного танка (см. meta.tankModelUrl), а не весь набор.
+const sceneByUrl = new Map() // url -> Promise<scene|null>
+export function loadModelScene(url) {
+  if (sceneByUrl.has(url)) return sceneByUrl.get(url)
+  const p = ensureThree().then(() => new Promise((res) => {
+    const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder)
+    loader.load(url, (g) => res(g.scene), undefined, (e) => { console.warn('[3d] модель не загрузилась', url, e); res(null) })
+  }))
+  sceneByUrl.set(url, p)
+  return p
+}
 
 export class NetGame3D extends NetGame {
   // PNG-спрайты/хромакей в 3D не нужны — танки это GLB-модели
@@ -56,8 +87,7 @@ export class NetGame3D extends NetGame {
     this.container = container
     this.fxSprites = [] // super._update трогает этот массив — держим пустым
     this.tex = {}
-    this.tankGroups = new Map() // unitId -> { group, holder, ring }
-    this.models = [] // шаблоны GLB (клонируем на каждый танк)
+    this.tankGroups = new Map() // unitId -> { group, holder, ring, blob }
 
     const W = container.clientWidth || 360
     const H = container.clientHeight || 640
@@ -106,21 +136,36 @@ export class NetGame3D extends NetGame {
 
     this._buildGround()
     this._buildStatic()
+    // GLB-окружение (камни/кусты/ящики → модели + декор) — асинхронно, без фриза входа.
+    // Кэш мог быть прогрет preload3D; пока грузится — стоят примитивы-фоллбэки.
+    loadPropScenes().then((scenes) => { if (this.scene) this._load3DProps(scenes) }).catch((e) => console.warn('[3d] пропы не загрузились', e))
 
     // эффекты: пулы трассеров-стриков + вспышек/взрывов (объёмные меши, видны)
     this.fxGroup = new THREE.Group(); scene.add(this.fxGroup)
-    this.tracerGroup = new THREE.Group(); scene.add(this.tracerGroup)
+    this.tracerGroup = new THREE.Group(); scene.add(this.tracerGroup) // светящиеся трейлы снарядов
+    this.shellGroup = new THREE.Group(); scene.add(this.shellGroup)   // «головы» снарядов (ядра)
+    this.sparkGroup = new THREE.Group(); scene.add(this.sparkGroup)   // искры удара/рикошета
+    // импульс света от дульной вспышки — ОДИН переиспользуемый источник (intensity 0 в покое,
+    // чтобы не пересобирать шейдеры добавлением/удалением света на каждый выстрел)
+    this.muzzleLight = new THREE.PointLight(0xffce7a, 0, 360, 2)
+    this.muzzleLight.castShadow = false; scene.add(this.muzzleLight)
 
-    // СЛЕДЫ ГУСЕНИЦ (ring-buffer плоских меток на земле) + ПЫЛЬ из-под танка
-    // (ring-buffer пуфов). Оба пула ограничены → перф предсказуем. Эмиссия по
-    // пройденному расстоянию (см. _dustTracks); на LOW пыль не эмитим.
-    this.trackGroup = new THREE.Group(); scene.add(this.trackGroup)
+    // ПЫЛЬ из-под едущего танка (ring-buffer пуфов; на LOW не эмитим). Следы гусениц
+    // на земле убраны по просьбе — оставляем только пыль.
     this.dustGroup = new THREE.Group(); scene.add(this.dustGroup)
-    const trackGeo = new THREE.BoxGeometry(30, 1, 24)
-    for (let i = 0; i < 140; i++) { const m = new THREE.Mesh(trackGeo, new THREE.MeshBasicMaterial({ color: 0x2a2417, transparent: true, opacity: 0, depthWrite: false })); m.visible = false; this.trackGroup.add(m) }
     const dustGeo = new THREE.SphereGeometry(1, 8, 6)
     for (let i = 0; i < 48; i++) { const m = new THREE.Mesh(dustGeo, new THREE.MeshBasicMaterial({ color: 0xb8a87e, transparent: true, opacity: 0, depthWrite: false })); m.visible = false; m._vy = 0; this.dustGroup.add(m) }
-    this._trackI = 0; this._dustI = 0; this._tankMove = new Map()
+    this._dustI = 0; this._tankMove = new Map()
+    this._shake = 0; this._wasBump = false; this._bumpDustT = 0 // отдача камеры + пыль при упоре в препятствие
+
+    // ПОДБИТЫЙ ТАНК: чёрный дым (нормальный blend, тёмные сферы поднимаются/растут/тают)
+    // + огонь у основания (additive, оранжевые сферы мерцают). Оба ring-buffer (см. _wreckFx).
+    this.smokeGroup = new THREE.Group(); scene.add(this.smokeGroup)
+    this.fireGroup = new THREE.Group(); scene.add(this.fireGroup)
+    const wreckGeo = new THREE.SphereGeometry(1, 10, 8)
+    for (let i = 0; i < 90; i++) { const m = new THREE.Mesh(wreckGeo, new THREE.MeshBasicMaterial({ color: 0x161616, transparent: true, opacity: 0, depthWrite: false })); m.visible = false; m._vy = 0; this.smokeGroup.add(m) }
+    for (let i = 0; i < 44; i++) { const m = new THREE.Mesh(wreckGeo, new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); m.visible = false; m._vy = 0; this.fireGroup.add(m) }
+    this._smokeI = 0; this._fireI = 0; this._wreckEmit = new Map()
 
     // ТУМАН ВОЙНЫ: тёмный аннулюс — всё дальше обзора затемнено (граница видимости)
     const vis0 = this.cls.vision || 600
@@ -143,11 +188,9 @@ export class NetGame3D extends NetGame {
     hud.style.cssText = 'position:absolute;left:8px;bottom:8px;z-index:6;font:11px/1.3 monospace;color:#8ee06a;background:rgba(0,0,0,.45);padding:2px 6px;border-radius:5px;pointer-events:none'
     container.appendChild(hud); this._hud = hud; this._updateHud()
 
-    // модели танков — из общего кэша (мог быть прогрет preload3D во время матчмейкинга);
-    // клонируем перед нормализацией (кэш хранит исходные сцены, нормализация мутирует)
-    loadModelScenes().then((scenes) => {
-      scenes.forEach((sc, i) => { if (sc && this.scene) { this.models[i] = this._normalizeModel(sc.clone(true)); this._reskinTanks(i) } })
-    }).catch((e) => console.warn('[3d] модели не загрузились', e))
+    // модели танков грузятся ПЕР-ТАНК в _tankGroup по реестру (meta.tankModelUrl):
+    // каждый юнит получает СВОЮ модель + размер по классу. Кэш по URL (loadModelScene)
+    // грузит каждый файл раз; до загрузки показываем плейсхолдер-бокс.
 
     this._bindKeyboard()
     this._inputTimer = setInterval(() => this._sendInput(), 50)
@@ -246,11 +289,15 @@ export class NetGame3D extends NetGame {
     const hillMat = new THREE.MeshStandardMaterial({ color: 0x47502a, roughness: 1 })
     const waterMat = new THREE.MeshStandardMaterial({ color: 0x236a86, roughness: 0.3, metalness: 0.1, transparent: true, opacity: 0.9 })
     this.bushMeshes = []
+    this._obstSwap = [] // примитивы препятствий, которые заменим на GLB когда догрузятся
     for (const o of this.obstacles) {
       let m
-      if (o.kind === 'rock') { m = new THREE.Mesh(new THREE.IcosahedronGeometry(o.r, 0), rockMat); m.scale.y = 0.7; m.position.set(o.x, o.r * 0.4, o.y) }
-      else if (o.kind === 'bush') { m = new THREE.Mesh(new THREE.SphereGeometry(o.r, 10, 8), bushMat.clone()); m.material.transparent = true; m.scale.y = 0.7; m.position.set(o.x, o.r * 0.5, o.y); this.bushMeshes.push({ m, x: o.x, y: o.y, r: o.r }) }
-      else if (o.kind === 'box') { m = new THREE.Mesh(new THREE.BoxGeometry(o.r * 1.6, o.r * 1.4, o.r * 1.6), boxMat); m.position.set(o.x, o.r * 0.7, o.y) }
+      // декор-укрытие (kind:'block' + prop): рисуется GLB-моделью в _load3DProps, примитива нет
+      if (o.prop) { this._obstSwap.push({ o, prim: null }); continue }
+      // ВНИМАНИЕ: в картах камень — kind:'block' (не 'rock'); раньше он не рисовался в 3D
+      if (o.kind === 'rock' || o.kind === 'block') { m = new THREE.Mesh(new THREE.IcosahedronGeometry(o.r, 0), rockMat); m.scale.y = 0.7; m.position.set(o.x, o.r * 0.4, o.y); this._obstSwap.push({ o, prim: m }) }
+      else if (o.kind === 'bush') { m = new THREE.Mesh(new THREE.SphereGeometry(o.r, 10, 8), bushMat.clone()); m.material.transparent = true; m.scale.y = 0.7; m.position.set(o.x, o.r * 0.5, o.y); this.bushMeshes.push({ prim: m, fadeMats: [m.material], x: o.x, y: o.y, r: o.r }); this._obstSwap.push({ o, prim: m }) }
+      else if (o.kind === 'box') { m = new THREE.Mesh(new THREE.BoxGeometry(o.r * 1.6, o.r * 1.4, o.r * 1.6), boxMat); m.position.set(o.x, o.r * 0.7, o.y); this._obstSwap.push({ o, prim: m }) }
       else if (o.kind === 'hill') { m = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 1.05, o.r * 0.35, 24), hillMat); m.position.set(o.x, o.r * 0.17, o.y) }
       else if (o.kind === 'water') { m = new THREE.Mesh(new THREE.CircleGeometry(o.r, 28), waterMat); m.rotation.x = -Math.PI / 2; m.position.set(o.x, 1, o.y) }
       if (m) { if (o.kind !== 'water') { m.castShadow = true; m.receiveShadow = true } this.scene.add(m) }
@@ -271,6 +318,44 @@ export class NetGame3D extends NetGame {
     // ТОЧКИ ЗАХВАТА — заметные: тусклый диск + жирное кольцо + столб + диск прогресса
     this.capRings = {}
     for (const id in this.capPos) this.capRings[id] = this._mkCap(this.capPos[id])
+  }
+
+  // нормализация пропа: центр по X/Z, основание на земле (y=0), масштаб по
+  // посадочному «следу» (spec.fit) или по высоте (spec.h). Возвращает Group-обёртку.
+  _normalizeProp(scene, spec) {
+    const m = scene.clone(true)
+    // модели Hunyuan-3D уже Y-up — НЕ доворачиваем (доворот ронял их на бок)
+    m.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(m)
+    const size = new THREE.Vector3(); box.getSize(size)
+    const center = new THREE.Vector3(); box.getCenter(center)
+    const s = spec.h ? spec.h / (size.y || 1) : spec.fit / (Math.max(size.x, size.z) || 1)
+    m.scale.setScalar(s)
+    // центр по X/Z и основание на земле — в МАСШТАБИРОВАННОМ кадре (box снят при scale=1)
+    m.position.set(-center.x * s, -box.min.y * s, -center.z * s)
+    m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
+    const wrap = new THREE.Group(); wrap.add(m)
+    return wrap
+  }
+
+  // вызывается когда GLB-пропы догрузились: меняем примитивы препятствий на модели
+  // и раскидываем тематический декор. Если модель не пришла — остаётся примитив.
+  _load3DProps(scenes) {
+    if (!this.scene || !scenes) return
+    // GLB вместо примитивов: КАМНИ→rock, ЯЩИКИ→crate (хорошо читаются сверху; кусты
+    // оставляем примитивами). Декор-укрытия (o.prop) — рисуем свою GLB-модель, масштаб
+    // под радиус коллизии (≈2×r), чтобы вид совпадал с тем, обо что упираешься.
+    for (const { o, prim } of this._obstSwap) {
+      const key = o.prop ? o.prop : (o.kind === 'rock' || o.kind === 'block') ? 'rock' : o.kind === 'box' ? 'crate' : null
+      const sc = key && scenes[key]
+      if (!sc) continue
+      const fitR = o.prop ? 2.2 : key === 'crate' ? 1.8 : 2.0
+      const wrap = this._normalizeProp(sc, { fit: o.r * fitR })
+      wrap.position.set(o.x, 0, o.y)
+      wrap.rotation.y = (hashId(`${o.x}:${o.y}`) % 360) * Math.PI / 180
+      if (prim) prim.visible = false
+      this.scene.add(wrap)
+    }
   }
 
   // плоское кольцо на земле (видимое, в отличие от 1px-линии)
@@ -297,33 +382,19 @@ export class NetGame3D extends NetGame {
     return { g, disc, fill, ring, beam, r: p.r }
   }
 
-  // нормализация GLB: центр по XZ, основание на y=0, масштаб по длине, тени
-  _normalizeModel(model) {
+  // нормализация GLB: центр по XZ, основание на y=0, масштаб = TANK_LEN×размер_класса,
+  // ось «вперёд» к Z (часть моделей смоделирована длиной по X — довернуть на 90°), тени
+  _normalizeModel(model, sizeScale = 1) {
     const box = new THREE.Box3().setFromObject(model)
     const size = new THREE.Vector3(); box.getSize(size)
     const center = new THREE.Vector3(); box.getCenter(center)
     model.position.x -= center.x; model.position.z -= center.z; model.position.y -= box.min.y
     const longest = Math.max(size.x, size.z) || 1
-    model.scale.setScalar(TANK_LEN / longest)
+    model.scale.setScalar((TANK_LEN * sizeScale) / longest)
     model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
     const wrap = new THREE.Group(); wrap.add(model)
+    if (size.x > size.z) wrap.rotation.y = -Math.PI / 2 // длина по X → довернуть «вперёд» к Z
     return wrap
-  }
-
-  _modelIndexFor(u, isSelf) {
-    if (TANK_MODEL[u.tankId] != null) return TANK_MODEL[u.tankId] // T-90/Leopard/Abrams — своя модель
-    return isSelf ? 0 : (hashId(u.tankId || u.id) % 3)
-  }
-
-  // подменить плейсхолдеры реальной моделью i у уже созданных танков
-  _reskinTanks(i) {
-    for (const [id, t] of this.tankGroups) {
-      if (t.mi === i && this.models[i]) {
-        t.holder.clear()
-        t.holder.add(this.models[i].clone(true))
-        t.placeholder = false
-      }
-    }
   }
 
   _tankGroup(u, isSelf) {
@@ -331,12 +402,9 @@ export class NetGame3D extends NetGame {
     if (t) return t
     const group = new THREE.Group()
     const holder = new THREE.Group(); group.add(holder)
-    const mi = this._modelIndexFor(u, isSelf)
-    if (this.models[mi]) { holder.add(this.models[mi].clone(true)) }
-    else { // плейсхолдер-бокс пока модель грузится
-      const m = new THREE.Mesh(new THREE.BoxGeometry(TANK_LEN * 0.55, 26, TANK_LEN), new THREE.MeshStandardMaterial({ color: isSelf ? 0xe0a52a : 0x7a7d72 }))
-      m.position.y = 16; m.castShadow = true; holder.add(m)
-    }
+    // плейсхолдер-бокс, пока грузится реальная модель танка
+    const ph = new THREE.Mesh(new THREE.BoxGeometry(TANK_LEN * 0.55, 26, TANK_LEN), new THREE.MeshStandardMaterial({ color: isSelf ? 0xe0a52a : 0x7a7d72 }))
+    ph.position.y = 16; ph.castShadow = true; holder.add(ph)
     // командное кольцо под танком
     const ringCol = isSelf ? 0xf2d24a : (u.team === this.side ? this.colors.ally : this.colors.enemy).hp
     const ring = this._mkGroundRing(37, 42, ringCol, 0.82); ring.position.y = 2; group.add(ring)
@@ -344,8 +412,14 @@ export class NetGame3D extends NetGame {
     const blob = new THREE.Mesh(new THREE.CircleGeometry(36, 24), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false }))
     blob.rotation.x = -Math.PI / 2; blob.position.y = 1; blob.visible = !!this._blobOn; group.add(blob)
     this.scene.add(group)
-    t = { group, holder, ring, blob, mi, placeholder: !this.models[mi] }
+    t = { group, holder, ring, blob }
     this.tankGroups.set(u.id, t)
+    // РЕАЛЬНАЯ модель танка по реестру (своя → фоллбэк по нации) + размер по классу
+    loadModelScene(tankModelUrl(u.tankId, u.nation)).then((sc) => {
+      if (!sc || this.tankGroups.get(u.id) !== t || !this.scene) return // юнит исчез / destroy
+      holder.clear()
+      holder.add(this._normalizeModel(sc.clone(true), tankSizeScale(u.tankId)))
+    }).catch(() => {})
     return t
   }
 
@@ -402,7 +476,7 @@ export class NetGame3D extends NetGame {
           if (Math.hypot(u.x - b.x, u.y - b.y) < b.r * 0.95) { occupied = true; break }
         }
         const tgt = occupied ? 0.26 : 1
-        b.m.material.opacity += (tgt - b.m.material.opacity) * 0.2
+        for (const mat of b.fadeMats) mat.opacity += (tgt - mat.opacity) * 0.2
       }
     }
 
@@ -423,13 +497,30 @@ export class NetGame3D extends NetGame {
     const nowD = performance.now()
     const ddt = Math.min(0.05, (nowD - (this._lastDrawT || nowD)) / 1000); this._lastDrawT = nowD
     this._dustTracks(units, ddt)
+    this._wreckFx(units, ddt)
 
     // КАМЕРА: player-relative сверху (свой едет «от тебя»)
     const dist = (typeof window !== 'undefined' && window.__CAM_DIST) || 300
     const height = (typeof window !== 'undefined' && window.__CAM_H) || 560
     const ahead = (typeof window !== 'undefined' && window.__CAM_AHEAD) || 170
     const fx = Math.cos(oh), fz = Math.sin(oh)
-    this.camera.position.set(ox - fx * dist, height, oy - fz * dist)
+    // ОТДАЧА выстрела (лёгкая) и тряска от попадания по мне (заметнее) — флаги ставит NetGameCore
+    if (this._fxSelfShot) { this._fxSelfShot = false; this._shake = Math.min(1, this._shake + 0.32) }
+    if (this._fxSelfHit) { this._fxSelfHit = false; this._shake = Math.min(1.2, this._shake + 0.75) }
+    // ОТДАЧА ОТ УПОРА: свой танк уперся в препятствие/стену → пыль из-под носа + кратко тряхнём камеру
+    const bump = this._bumpPush || 0
+    if (bump > 2.5) {
+      this._emitBumpDust(ox + fx * 32, oy + fz * 32)
+      if (!this._wasBump) this._shake = Math.min(1, this._shake + 0.7) // кик только на ВХОДЕ в упор, не постоянно
+      this._wasBump = true
+    } else { this._wasBump = false }
+    let shx = 0, shz = 0
+    if (this._shake > 0.02) {
+      const s = this._shake * 13
+      shx = (Math.random() * 2 - 1) * s; shz = (Math.random() * 2 - 1) * s
+      this._shake *= 0.8
+    } else this._shake = 0
+    this.camera.position.set(ox - fx * dist + shx, height, oy - fz * dist + shz)
     this.camera.lookAt(ox + fx * ahead, 0, oy + fz * ahead)
     this.sunTarget.position.set(ox, 0, oy)
     this.sun.position.set(ox + 350, 600, oy + 200)
@@ -492,26 +583,37 @@ export class NetGame3D extends NetGame {
 
   // трассеры + вспышки + взрывы (данные ведёт super._update в this.shells/muzzles/booms)
   _drawFx() {
-    // ТРАССЕРЫ — яркие объёмные стрики (бокс вдоль траектории), хорошо видны
-    const tg = this.tracerGroup
+    // СНАРЯД: светящаяся голова летит ПО ДУГЕ + затухающий трейл за ней (аддитивное свечение)
+    const tg = this.tracerGroup, sg = this.shellGroup
     while (tg.children.length < this.shells.length) {
-      tg.add(new THREE.Mesh(new THREE.BoxGeometry(4, 4, 1), new THREE.MeshBasicMaterial({ color: TRACER_COLOR, transparent: true })))
+      tg.add(new THREE.Mesh(new THREE.BoxGeometry(3, 3, 1), new THREE.MeshBasicMaterial({ color: TRACER_COLOR, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })))
+    }
+    while (sg.children.length < this.shells.length) {
+      sg.add(new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffe9b0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })))
     }
     let ti = 0
     const BARREL = 46 // вынос дула вперёд от центра танка → выстрел «из ствола», не из центра
     for (const s of this.shells) {
       const a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1)
       const bx1 = s.x1 + Math.cos(a) * BARREL, by1 = s.y1 + Math.sin(a) * BARREL // точка дула
-      const k = s.t / s.dur
+      const k = Math.min(1, s.t / s.dur)
       const sx = bx1 + (s.x2 - bx1) * k, sy = by1 + (s.y2 - by1) * k
-      const L = 40
-      const m = tg.children[ti++]; m.visible = true
-      m.position.set(sx - Math.cos(a) * L / 2, 20, sy - Math.sin(a) * L / 2)
-      m.rotation.y = Math.PI / 2 - a
-      m.scale.z = L
-      m.material.opacity = 0.95 // цвет единый (TRACER_COLOR), задан в материале
+      const dist = Math.hypot(s.x2 - bx1, s.y2 - by1)
+      const hy = 20 + Math.min(38, dist * 0.05) * Math.sin(Math.PI * k) // параболическая дуга (вверх→вниз)
+      const col = s.color || TRACER_COLOR
+      // голова-ядро
+      const head = sg.children[ti]; head.visible = true
+      head.position.set(sx, hy, sy); head.scale.setScalar(6.5); head.material.opacity = 1
+      // трейл назад по направлению, на высоте головы
+      const L = 46
+      const tr = tg.children[ti]; tr.visible = true
+      tr.position.set(sx - Math.cos(a) * L / 2, hy, sy - Math.sin(a) * L / 2)
+      tr.rotation.y = Math.PI / 2 - a; tr.scale.set(1, 1, L)
+      tr.material.color.setHex(col); tr.material.opacity = 0.8
+      ti++
     }
     for (let i = ti; i < tg.children.length; i++) tg.children[i].visible = false
+    for (let i = ti; i < sg.children.length; i++) sg.children[i].visible = false
 
     // вспышки/взрывы — пул сфер в fxGroup
     const need = this.muzzles.length + this.booms.length
@@ -520,11 +622,18 @@ export class NetGame3D extends NetGame {
       this.fxGroup.add(m)
     }
     let idx = 0
+    // дульная вспышка + импульс света от САМОЙ свежей вспышки (один общий PointLight)
+    let lit = null, litK = 0
     for (const m of this.muzzles) {
       const sp = this.fxGroup.children[idx++]; sp.visible = true
       const k = Math.max(0, 1 - m.age / 0.09)
-      sp.position.set(m.x, 18, m.y); sp.scale.setScalar(10 + 14 * k)
-      sp.material.color.setHex(0xffe6a0); sp.material.opacity = 0.85 * k
+      sp.position.set(m.x, 18, m.y); sp.scale.setScalar(11 + 17 * k)
+      sp.material.color.setHex(0xffe6a0); sp.material.opacity = 0.9 * k
+      if (k > litK) { litK = k; lit = m }
+    }
+    if (this.muzzleLight) {
+      if (lit) { this.muzzleLight.position.set(lit.x, 28, lit.y); this.muzzleLight.intensity = 9 * litK }
+      else this.muzzleLight.intensity = 0
     }
     for (const bm of this.booms) {
       const sp = this.fxGroup.children[idx++]; sp.visible = true
@@ -536,14 +645,34 @@ export class NetGame3D extends NetGame {
       sp.material.opacity = 0.7 * k
     }
     for (let i = idx; i < this.fxGroup.children.length; i++) this.fxGroup.children[i].visible = false
+
+    // ИСКРА удара — яркое бело-горячее ядро поверх взрыва (кроме пыли-промаха), гаснет быстро
+    const sk = this.sparkGroup
+    const hits = this.booms.filter((b) => !b.dust)
+    while (sk.children.length < hits.length) {
+      sk.add(new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })))
+    }
+    let si = 0
+    for (const bm of hits) {
+      const fast = Math.max(0, 1 - bm.age / 0.12)
+      const sp = sk.children[si++]; sp.visible = true
+      sp.position.set(bm.x, 18, bm.y); sp.scale.setScalar((bm.big ? 28 : 17) * (0.4 + 0.6 * fast))
+      sp.material.opacity = 0.95 * fast
+    }
+    for (let i = si; i < sk.children.length; i++) sk.children[i].visible = false
+  }
+
+  // пыль при упоре в препятствие (берём пуф из общего пула — его анимирует _dustTracks)
+  _emitBumpDust(x, y) {
+    if (!this.dustGroup || this._quality < 1) return // на LOW пыль не льём
+    if ((this._bumpDustT = (this._bumpDustT + 1) % 3) !== 0) return // дроссель: не каждый кадр
+    const dm = this.dustGroup.children[this._dustI]; this._dustI = (this._dustI + 1) % this.dustGroup.children.length
+    dm.position.set(x + (Math.random() * 2 - 1) * 16, 6, y + (Math.random() * 2 - 1) * 16)
+    dm.scale.setScalar(8 + Math.random() * 6); dm._vy = 20; dm.material.opacity = 0.5; dm.visible = true
   }
 
   // следы гусениц + пыль из-под едущих танков (эмиссия по пройденному пути)
   _dustTracks(units, dt) {
-    // затухание следов
-    for (const m of this.trackGroup.children) {
-      if (m.material.opacity > 0) { m.material.opacity -= dt * 0.13; if (m.material.opacity <= 0.002) { m.material.opacity = 0; m.visible = false } }
-    }
     // апдейт пыли (поднимается, растёт, тает)
     for (const m of this.dustGroup.children) {
       if (!m.visible) continue
@@ -559,15 +688,8 @@ export class NetGame3D extends NetGame {
       const moved = Math.hypot(u.x - mv.lx, u.y - mv.ly)
       mv.lx = u.x; mv.ly = u.y
       if (moved < 0.4) continue // стоит — ни следа, ни пыли
-      mv.acc += moved; mv.accD += moved
+      mv.accD += moved
       const dir = u.hull
-      if (mv.acc >= 22) { // метка следа под кормой
-        mv.acc = 0
-        const tm = this.trackGroup.children[this._trackI]; this._trackI = (this._trackI + 1) % this.trackGroup.children.length
-        tm.position.set(u.x - Math.cos(dir) * 22, 1.2, u.y - Math.sin(dir) * 22)
-        tm.rotation.y = Math.PI / 2 - dir
-        tm.material.opacity = 0.5; tm.visible = true
-      }
       if (emitDust && mv.accD >= 32) { // пуф пыли за кормой
         mv.accD = 0
         const dm = this.dustGroup.children[this._dustI]; this._dustI = (this._dustI + 1) % this.dustGroup.children.length
@@ -576,6 +698,59 @@ export class NetGame3D extends NetGame {
         dm._vy = 16 + (this._dustI % 4) * 4
         dm.material.opacity = 0.45; dm.visible = true
       }
+    }
+  }
+
+  // подбитый танк ГОРИТ и ДЫМИТ: чёрный дым столбом вверх + мерцающий огонь у основания
+  _wreckFx(units, dt) {
+    // дым: поднимается, растёт, тает
+    for (const m of this.smokeGroup.children) {
+      if (!m.visible) continue
+      m.position.y += m._vy * dt
+      m.scale.multiplyScalar(1 + dt * 0.7)
+      m.material.opacity -= dt * 0.32
+      if (m.material.opacity <= 0.02) m.visible = false
+    }
+    // огонь: чуть подрастает и быстро гаснет (мерцание)
+    for (const m of this.fireGroup.children) {
+      if (!m.visible) continue
+      m.position.y += m._vy * dt
+      m.scale.multiplyScalar(1 + dt * 0.4)
+      m.material.opacity -= dt * 2.4
+      if (m.material.opacity <= 0.02) m.visible = false
+    }
+    // эмиссия с подбитых ВИДИМЫХ танков (скрытого туманом врага не дымим)
+    for (const u of units) {
+      if (u.alive) continue
+      if (u.id !== this.youUnit && u.team !== this.side && this._hiddenEnemy && this._hiddenEnemy.has(u.id)) continue
+      let w = this._wreckEmit.get(u.id)
+      if (!w) { w = { acc: 0 }; this._wreckEmit.set(u.id, w) }
+      w.acc += dt
+      if (w.acc < 0.08) continue
+      w.acc = 0
+      const k = this._smokeI
+      // чёрный дым — столбом вверх, лёгкий снос вбок
+      const sm = this.smokeGroup.children[this._smokeI]; this._smokeI = (this._smokeI + 1) % this.smokeGroup.children.length
+      sm.position.set(u.x + ((k % 3) - 1) * 5, 24, u.y + ((k % 2) - 0.5) * 6)
+      sm.scale.setScalar(11 + (k % 4) * 3)
+      sm._vy = 34 + (k % 5) * 3
+      sm.material.color.setHex((k % 4) ? 0x171717 : 0x2c2c2c)
+      sm.material.opacity = 0.72; sm.visible = true
+      // огонь — у основания, мерцает (реже дыма)
+      if (k % 2 === 0) {
+        const fi = this._fireI
+        const fr = this.fireGroup.children[this._fireI]; this._fireI = (this._fireI + 1) % this.fireGroup.children.length
+        fr.position.set(u.x + ((fi % 3) - 1) * 4, 11, u.y + ((fi % 3) - 1) * 4)
+        fr.scale.setScalar(9 + (fi % 3) * 3)
+        fr._vy = 16
+        fr.material.color.setHex((fi % 2) ? 0xff5a14 : 0xffb030)
+        fr.material.opacity = 0.9; fr.visible = true
+      }
+    }
+    // подчистка карты эмиттеров от исчезнувших юнитов
+    if (this._wreckEmit.size > 24) {
+      const live = new Set(units.map((u) => u.id))
+      for (const id of [...this._wreckEmit.keys()]) if (!live.has(id)) this._wreckEmit.delete(id)
     }
   }
 

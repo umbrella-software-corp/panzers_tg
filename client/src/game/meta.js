@@ -461,3 +461,49 @@ export const CLAN_EMBLEMS = [
   { id: 'e8', sym: '◆', col: '#ff6a8a' },
 ]
 export const CLAN_EMBLEM_BY_ID = Object.fromEntries(CLAN_EMBLEMS.map((e) => [e.id, e]))
+
+// ---------- 3D-модели танков (бой за флагом «3D», NetGame3D) ----------
+// tankId → файл модели (meshopt+webp 256, client/public/models). ВАЖНО: имена файлов
+// исторические — реальное содержимое GLB: tank2 = Abrams, tank3 = Leopard 2.
+// Танки БЕЗ своей модели рендерятся фоллбэком по нации. Порт из tanks_mini_3d.
+export const TANK_MODELS = {
+  t90: '/models/t90_opt.glb', abr: '/models/tank2_opt.glb', leo2: '/models/tank3_opt.glb',
+  t34: '/models/t34_opt.glb', t3485: '/models/t3485_opt.glb', t80u: '/models/t80u_opt.glb',
+  t14: '/models/t14_opt.glb', tgr: '/models/tgr_opt.glb', tgr2: '/models/tgr2_opt.glb',
+  is2: '/models/is2_opt.glb', kv1: '/models/kv1_opt.glb', t26: '/models/t26_opt.glb',
+  bt7: '/models/bt7_opt.glb', t54: '/models/t54_opt.glb', t28: '/models/t28_opt.glb',
+  t72: '/models/t72_opt.glb', pz2: '/models/pz2_opt.glb', pz3: '/models/pz3_opt.glb',
+  pnt: '/models/pnt_opt.glb', maus: '/models/maus_opt.glb', pz4: '/models/pz4_opt.glb',
+  leo1: '/models/leo1_opt.glb', leo2a7: '/models/leo2a7_opt.glb', kf51: '/models/kf51_opt.glb',
+  pz4h: '/models/pz4h_opt.glb',
+}
+// фоллбэк по нации: СССР → Т-90, США → Abrams, Германия → Leopard 2
+export const NATION_MODEL_URL = { ussr: '/models/t90_opt.glb', usa: '/models/tank2_opt.glb', ger: '/models/tank3_opt.glb' }
+// 3D-модели ОКРУЖЕНИЯ (бой): rock/bush/crate заменяют примитивы препятствий, остальное — декор-скаттер
+export const PROP_MODELS = {
+  rock: '/models/prop_rock.glb', bush: '/models/prop_bush.glb', crate: '/models/prop_crate.glb',
+  barrel: '/models/prop_barrel.glb', sandbags: '/models/prop_sandbags.glb', hedgehog: '/models/prop_hedgehog.glb',
+  wreck: '/models/prop_wreck.glb', deadtree: '/models/prop_deadtree.glb', tower: '/models/prop_tower.glb',
+  bunker: '/models/prop_bunker.glb', tent: '/models/prop_tent.glb', tires: '/models/prop_tires.glb',
+  ruin: '/models/prop_ruin.glb', barrier: '/models/prop_barrier.glb',
+}
+export const hasTankModel = (id) => !!TANK_MODELS[id]
+// URL модели для танка: своя → фоллбэк по нации → Т-90
+export function tankModelUrl(id, nation) {
+  return TANK_MODELS[id] || NATION_MODEL_URL[nation] || '/models/t90_opt.glb'
+}
+// «музейные» размеры: реальная длина КОРПУСА (м) → масштаб = len / SIZE_REF_M
+const SIZE_REF_M = 7.3
+const TANK_LENGTH_M = {
+  t26: 4.62, bt7: 5.66, t34: 5.92, t3485: 6.0, kv1: 6.75, is2: 6.77,
+  t72: 6.67, t90: 6.86, t80u: 7.0, t14: 8.7, t28: 7.44, t54: 6.04,
+  pz2: 4.81, pz3: 5.52, pz4: 5.89, pnt: 6.87, tgr: 6.32, tgr2: 7.38,
+  leo1: 7.09, leo2: 7.72, leo2a7: 7.7, kf51: 7.2, maus: 10.2, abr: 7.93,
+}
+const SIZE_BY_CLASS = { light: 0.8, medium: 1, heavy: 1.22 }
+export function tankSizeScale(id) {
+  const len = TANK_LENGTH_M[id]
+  if (len) return len / SIZE_REF_M
+  const t = TANK_BY_ID[id]
+  return (t && SIZE_BY_CLASS[t.classId]) || 1
+}
