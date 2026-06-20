@@ -420,7 +420,7 @@ export class BattleSim {
       // бот видит и стреляет только в радиусе своего зрения — не через всю карту
       if (d > ai.vision || this._lineBlocked(b.x, b.y, f.x, f.y)) continue
       const hpFrac = f.maxHp ? Math.max(0, Math.min(1, f.hp / f.maxHp)) : 1
-      let score = d * (0.7 + 0.3 * hpFrac) // раненый = меньший «эффективный» радиус
+      let score = d * (0.55 + 0.45 * hpFrac) // ФОКУС-ОГОНЬ: подранок «ближе» по скору → команда добивает вместе
       // фокус на живом игроке: растёт с ветеранством + PvE-враги давят на него сильнее
       if (f.human) score *= Math.max(0.3, 1 - 0.25 * this.vet - (enemyBot ? ENEMY_EDGE.humanFocus : 0))
       if (score < bestScore) {
@@ -461,18 +461,29 @@ export class BattleSim {
           b.y += Math.sin(b.hull) * b.botSpeed * 0.6 * dt
         }
       } else {
-        // ОХОТНИК: курс на врага, держим idealRange (лёгкое вилянье вместо «краба»)
-        const steerA = b.avoidT > 0 ? ang + b.avoidDir * 1.5 : ang + Math.sin(this.t * 0.9 + b.id) * 0.18
+        // ОХОТНИК (умный, тактика вместо «прёт в лоб»):
+        //  • пока пушка перезаряжается — ныряем в ближний куст (концелмент срезает чужой
+        //    шанс ×bushCover), готов выстрел — выходим и бьём → «пик-трейд» как у живых;
+        //  • без укрытия заходим с ФЛАНГА (увод вбок к борту/корме, где броня слабее),
+        //    вблизи сводим ствол на цель. Лобовой суицид-разгон убран.
+        const flank = b.id % 2 ? 1 : -1
+        const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
+        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
+        // укрытие ищем, только пока ствол не готов и мы НЕ в отступлении (раненый просто уходит)
+        const cover = b.fireCd > 0 && b.hp >= retreatHp ? this._nearestBush(b.x, b.y, 220) : null
+        const inCover = cover && Math.hypot(b.x - cover.x, b.y - cover.y) <= cover.r
+        let steerA
+        if (cover) steerA = Math.atan2(cover.y - b.y, cover.x - b.x) // на перезарядке — ныряем в куст
+        else steerA = ang + (bestD > ai.idealRange ? 0.5 : 0.14) * flank // фланговый заход; у дистанции боя — ствол на цель
+        if (b.avoidT > 0) steerA += b.avoidDir * 1.5
         const maxTurn = b.botTurn * dt
         b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
         let move = 0
-        // порог отступления РАЗНЫЙ: ~1/3 «храбрых» не пятятся, остальные при 22–34% HP.
-        // Ветераны злее; PvE-враги соло-игрока (enemyBot) ещё злее — давят дольше.
-        const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
-        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
-        if (!brave && b.hp < retreatHp) move = -1
-        else if (bestD > ai.idealRange * 1.15) move = 1
-        else if (bestD < ai.idealRange * 0.5) move = -0.5
+        if (!brave && b.hp < retreatHp) move = -1 // ранен — отходим
+        else if (inCover) move = 0 // в кусте — пережидаем перезарядку (выйдем стрелять, когда ствол готов)
+        else if (cover) move = 1 // едем в укрытие
+        else if (bestD > ai.idealRange * 1.1) move = 1 // далеко — сближаемся (с флангом)
+        else if (bestD < ai.idealRange * 0.55) move = -0.5 // слишком близко — чуть назад
         wantMove = move !== 0
         const mag = move < 0 ? Math.abs(move) * REVERSE_MULT : move
         b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
@@ -781,6 +792,19 @@ export class BattleSim {
     const tri = p < 0.5 ? 4 * p - 1 : 3 - 4 * p
     u.sweep = this._sectorHalfEff(u) * tri
     return u.sweep
+  }
+
+  // ближайший куст в радиусе maxD (для «пик-трейда» ботов: спрятаться на перезарядке).
+  // Кусты дают концелмент (чужой шанс попадания ×bushCover) — умный бот их использует.
+  _nearestBush(x, y, maxD) {
+    let best = null
+    let bd = maxD
+    for (const o of this.obstacles) {
+      if (o.kind !== 'bush') continue
+      const d = Math.hypot(o.x - x, o.y - y)
+      if (d < bd) { bd = d; best = o }
+    }
+    return best
   }
 
   _lineBlocked(x1, y1, x2, y2) {
