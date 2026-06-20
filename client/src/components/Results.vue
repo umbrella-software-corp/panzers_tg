@@ -3,7 +3,7 @@
 // как в макете — «Сводка» и «По целям» (по-целевой лог урона из движка).
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref, onMounted } from 'vue'
-import { profile, battleEarnedMedals, grantFirstBattleReward } from '../store.js'
+import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID, FREE_XP_SHARE } from '../game/meta.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -34,6 +34,8 @@ const crewXp = computed(() => Math.round(((props.reward.xp || 0) - freeXp.value)
 const branchXp = computed(() => (props.reward.xp || 0) - freeXp.value - crewXp.value)
 const branchLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(profile.selectedTank)) || {}).label || '')
 const won = computed(() => props.state.result === 'victory')
+// «следующая цель» — нудж к следующему бою (хук удержания, та же логика что в ангаре)
+const goalText = computed(() => nextGoalText(nextGoal()))
 // изменение боевого рейтинга за этот бой (wn8 уже пересчитан в store)
 const ratingDelta = computed(() => profile.stats.lastWn8Delta || 0)
 const ratingNow = computed(() => profile.stats.wn8 || 0)
@@ -224,6 +226,7 @@ function setPage(i) {
 
     <!-- действия -->
     <div style="width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 10px; margin-top: 18px">
+      <div v-if="goalText" class="next-goal">▸ {{ goalText }}</div>
       <button class="pz-cta pz-cta--hazard" @click="emit('rematch')">{{ t('results.rematch') }}</button>
       <button class="pz-btn2" @click="track('results_hangar_clicked', { result: state.result, end_reason: state.endReason || null }); emit('hangar')">{{ t('common.toHangar') }}</button>
     </div>
@@ -328,6 +331,17 @@ function setPage(i) {
   align-items: center;
   justify-content: center;
   padding: 18px;
+}
+/* «следующая цель» — нудж над кнопкой «ЕЩЁ БОЙ» */
+.next-goal {
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--amber);
+  background: rgba(242, 165, 12, 0.08);
+  border: 1px solid rgba(242, 165, 12, 0.3);
+  border-radius: 8px;
+  padding: 7px 10px;
 }
 .card {
   width: 100%;

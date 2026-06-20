@@ -70,6 +70,7 @@ import {
   NATIONS,
   FREE_XP_SHARE,
   nationOf,
+  tanksOfNation,
   MODULE_DEFS,
   MODULE_COMBAT,
   moduleCost,
@@ -466,6 +467,29 @@ export function unlockReason(tank) {
     return t('game.unlock.modules', { name: prev.name, n: modsMaxedCount(profile.modules, prev.id) })
   if (!hasResearchXp(tank)) return t('game.unlock.xp', { have: Math.floor(branchXpOf(tank)).toLocaleString('ru-RU'), need: researchXpNeed(tank).toLocaleString('ru-RU') })
   return null
+}
+
+// «СЛЕДУЮЩАЯ ЦЕЛЬ» — краткосрочный хук удержания (чип в ангаре + строка в итогах боя):
+// явный следующий шаг, который тянет «ещё бой». Приоритет: забрать задачи дня → открыть
+// готовый к исследованию танк → копить опыт на след. танк → вложить свободный опыт.
+// Возвращает {kind, ...} или null; текст собирает nextGoalText (локализованно).
+export function nextGoal() {
+  if (tasksClaimable() > 0) return { kind: 'tasks', n: tasksClaimable() }
+  const next = tanksOfNation(nationOf(profile.selectedTank)).find((tk) => !isOwned(tk.id))
+  if (next) {
+    if (canUnlock(next)) return { kind: 'unlock', name: next.name }
+    return { kind: 'research', name: next.name, left: Math.max(0, researchXpNeed(next) - Math.floor(branchXpOf(next))) }
+  }
+  if ((profile.freeXp || 0) >= 1) return { kind: 'freexp', n: Math.floor(profile.freeXp) }
+  return null
+}
+export function nextGoalText(g) {
+  if (!g) return ''
+  if (g.kind === 'tasks') return t('hangar.goalTasks', { n: g.n })
+  if (g.kind === 'unlock') return t('hangar.goalUnlock', { name: g.name })
+  if (g.kind === 'research') return t('hangar.goalResearch', { name: g.name, n: g.left.toLocaleString('ru-RU') })
+  if (g.kind === 'freexp') return t('hangar.goalFreeXp', { n: g.n.toLocaleString('ru-RU') })
+  return ''
 }
 
 export async function buyTank(tank) {

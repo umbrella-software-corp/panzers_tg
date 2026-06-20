@@ -20,6 +20,12 @@ export default {
     openTank: 'IN TECH TREE',
     openTankSub: 'in Tech Tree',
     battlePlatoon: ' · PLATOON',
+    // «следующая цель» — хук удержания (чип в ангаре / строка в итогах)
+    goalLabel: 'NEXT',
+    goalTasks: ({ n }) => `claim ${n} daily ${n === 1 ? 'task' : 'tasks'}`,
+    goalUnlock: ({ name }) => `${name} ready to research!`,
+    goalResearch: ({ name, n }) => `${name}: ${n} more branch XP`,
+    goalFreeXp: ({ n }) => `invest ${n} free XP`,
   },
   ru: {
     bay: 'Б-01',
@@ -39,5 +45,11 @@ export default {
     openTank: 'В «РАЗВИТИИ»',
     openTankSub: 'в «Развитии»',
     battlePlatoon: ' · ВЗВОД',
+    // «следующая цель» — хук удержания (чип в ангаре / строка в итогах)
+    goalLabel: 'ЦЕЛЬ',
+    goalTasks: ({ n }) => `забери ${n} ${n === 1 ? 'задачу' : n >= 2 && n <= 4 ? 'задачи' : 'задач'} дня`,
+    goalUnlock: ({ name }) => `${name} — можно открыть!`,
+    goalResearch: ({ name, n }) => `${name}: ещё ${n} опыта ветки`,
+    goalFreeXp: ({ n }) => `вложи ${n} свободного опыта`,
   },
 }

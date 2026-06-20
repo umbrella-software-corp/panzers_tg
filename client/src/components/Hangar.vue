@@ -2,7 +2,7 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig } from '../store.js'
+import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
 import { haptic, isTester3D } from '../tg.js'
@@ -192,6 +192,16 @@ const locked = computed(() => !threeD.value && !isOwned(tank.value.id)) // в 3D
 // первая сессия (ещё ни одного боя): на ангаре оставляем ОДИН CTA «В БОЙ» —
 // ЗАДАЧИ и ВЗВОД прячем, чтобы не размывать вход. После первого боя возвращаются.
 const firstSession = computed(() => (profile.stats?.battles || 0) === 0)
+// «следующая цель» — хук удержания: явный следующий шаг (забрать задачи / открыть танк /
+// копить опыт / вложить свободный). Тап ведёт к действию. Новичку (0 боёв) не показываем.
+const goal = computed(() => (firstSession.value ? null : nextGoal()))
+function goGoal(g) {
+  if (!g) return
+  track('next_goal_clicked', { kind: g.kind })
+  haptic('light')
+  if (g.kind === 'tasks') openTasksSheet()
+  else emit('go', 'tree') // unlock / research / freexp — всё в «Развитии»
+}
 const nationLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(tank.value.id)) || {}).label)
 // КАРУСЕЛЬ = ТОЛЬКО твои танки (гараж): сортировка по тиру ↓, все нации вперемешку.
 // Весь модельный ряд и исследование живут во вкладке «Развитие» (ангар — это ангар).
@@ -452,6 +462,13 @@ onMounted(() => {
         </span>
       </span>
       <span class="chb-cta">▸</span>
+    </button>
+
+    <!-- «следующая цель» — хук удержания: явный следующий шаг, тянет «ещё бой» -->
+    <button v-if="goal" class="goal-chip" @click="goGoal(goal)">
+      <span class="goal-lbl pz-pixel">{{ t('hangar.goalLabel') }}</span>
+      <span class="goal-text">{{ nextGoalText(goal) }}</span>
+      <span class="goal-arr">→</span>
     </button>
 
     <!-- CTA -->
@@ -747,6 +764,45 @@ onMounted(() => {
   padding: 8px 12px;
   font-size: 11px;
   flex-shrink: 0; /* ЗАДАЧИ/ВЗВОД фиксированы, не жмутся под длинное имя танка */
+}
+/* «следующая цель» — слим-чип над кнопкой «В БОЙ» */
+.goal-chip {
+  margin: 4px 14px 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: rgba(242, 165, 12, 0.07);
+  color: var(--ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.goal-chip:active {
+  background: rgba(242, 165, 12, 0.14);
+}
+.goal-lbl {
+  font-size: 7px;
+  letter-spacing: 0.14em;
+  color: var(--amber);
+  flex-shrink: 0;
+}
+.goal-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.goal-arr {
+  flex-shrink: 0;
+  color: var(--amber);
+  font-weight: 800;
 }
 /* кнопка В БОЙ: «В БОЙ» крупно + имя танка отдельной строкой (длинные имена
    вроде «Т-34-85»/«Leopard 2A7» не распирают и не переносятся как попало) */

@@ -8,7 +8,7 @@ import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'claimed'])
 
 // какой день серии предлагается (вчера заходил → +1, иначе 1)
 const dayStr = (d = new Date()) => d.toISOString().slice(0, 10)
@@ -35,6 +35,7 @@ async function claim() {
     tokens: res.reward?.tokens || 0,
     gold: res.reward?.gold || 0,
   })
+  emit('claimed', res) // App.vue: высокоинтентный момент попросить вкл. уведомлений (охват пушей)
   setTimeout(() => emit('close'), 1100)
 }
 

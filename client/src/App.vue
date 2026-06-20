@@ -113,7 +113,9 @@ onMounted(async () => {
   handleStartParam() // deep-link: реферал ref_<id> / приглашение во взвод sq_<id>
   maybeShowDaily() // первую сессию (0 боёв) НЕ перехватываем — дейлик всплывёт после первого боя
   maybeStartTraining() // самый первый запуск → сразу тренировочный бой (мимо ангара)
-  offerPushBonus() // вовлечённому (battles>0) — разрешение боту на пуши; новичка спросим после первого боя
+  // разрешение боту на пуши. Если есть ежедневная награда — НЕ просим на входе: спросим в
+  // высокоинтентный момент её забора (onDailyClaimed), иначе — на входе как раньше.
+  if (!daily.value) offerPushBonus('boot')
   // ДЕРЖИМ сплэш, пока реально не прогреты визуалы первого экрана (фон ангара + спрайты
   // твоих танков) — иначе юзер ловит «полусобранный» ангар. Предохранитель 6с (выше)
   // страхует от зависания на флейки-сети; preloadCritical всегда резолвится (ошибки глушит).
@@ -200,7 +202,9 @@ function cancelMatchmaking() {
 // за сессию, только после тренировки (не в лоб новичку), и не нудим забравшему.
 const PUSH_PROMPT_KEY = 'pz.pushPrompt'
 let pushOffered = false
-async function offerPushBonus() {
+// reason: 'boot' (на входе) | 'daily' (после забора ежедневной награды — высокоинтентный
+// момент: уведомления = «не пропусти завтрашнюю награду/серию» → выше согласие = выше охват).
+async function offerPushBonus(reason = 'boot') {
   if (profile.pushBonusClaimed || pushOffered || !tgUserId() || !profile.trainingDone) return
   // НЕ чаще раза в 5 дней (а не каждый заход) — кто отказался, того не нудим (маркер в
   // localStorage переживает перезапуск; pushOffered один — сессионный, сбрасывался каждый раз)
@@ -210,14 +214,22 @@ async function offerPushBonus() {
   pushOffered = true
   try { localStorage.setItem(PUSH_PROMPT_KEY, String(Date.now())) } catch {}
   const n = serverConfig.pushBonusTokens || 25
-  track('push_bonus_offered', { tokens: n })
-  const wants = await tgConfirm(`🔔 Включи уведомления — не пропусти награды и события.\n\nБонус за включение: +${n} 💎`)
+  track('push_bonus_offered', { tokens: n, reason })
+  const msg = reason === 'daily'
+    ? `🔔 Напоминать про ежедневную награду и серию, чтобы не сгорела? Включи уведомления.\n\nБонус за включение: +${n} 💎`
+    : `🔔 Включи уведомления — не пропусти награды и события.\n\nБонус за включение: +${n} 💎`
+  const wants = await tgConfirm(msg)
   if (!wants) { track('push_bonus_declined', { stage: 'confirm' }); return }
   const ok = await requestWriteAccess()
   track('push_access_result', { granted: !!ok })
   if (!ok) { track('push_bonus_declined', { stage: 'access' }); return }
   const granted = await claimPushBonus() // сервер верифицирует доступ + начислит жетоны
   if (granted && granted.tokens) track('push_bonus_claimed', { tokens: granted.tokens })
+}
+// забрал ежедневную награду → высокоинтентный момент попросить вкл. уведомлений (охват
+// пушей): пауза, чтобы прошла анимация «получено» и модалка закрылась (~1.1с), потом ask.
+function onDailyClaimed() {
+  setTimeout(() => offerPushBonus('daily'), 1400)
 }
 
 // ПРИЗЫВ ПОДЕЛИТЬСЯ МНЕНИЕМ → саппорт-бот (свободный текст падает в группу «Panzers
@@ -373,7 +385,7 @@ function rematch(reward) {
   <Matchmaking v-else-if="screen === 'matchmaking'" :map-id="draw.mapId" :side="draw.side" :training="training" @battle="deploy" @cancel="cancelMatchmaking" />
   <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :training="!!netMatch && !!netMatch.training" @exit="exitBattle" @rematch="rematch" />
 
-  <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" />
+  <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" @claimed="onDailyClaimed" />
 
   <!-- «Подарок от администрации» — когда применилась админ-выдача (pendingGrants).
        Для веб-юзеров, кому бот не может написать, это единственный способ узнать. -->
