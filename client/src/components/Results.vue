@@ -4,7 +4,7 @@
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref, onMounted } from 'vue'
 import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText } from '../store.js'
-import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID, FREE_XP_SHARE } from '../game/meta.js'
+import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID, FREE_XP_SHARE, CREW_XP_SHARE } from '../game/meta.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
@@ -28,9 +28,11 @@ const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name ||
 const log = computed(() => props.state.damageLog || [])
 const totalDmg = computed(() => log.value.reduce((a, x) => a + x.dmg, 0))
 const tankOf = (id) => (TANK_BY_ID[id] || {}).name || ''
-// сплит опыта: как в bankBattleXp (10% свободный, остаток пополам экипаж/ветка)
+// сплит опыта: ТОЧНО как в bankBattleXp (10% свободный, остаток CREW_XP_SHARE экипажу,
+// прочее в ветку). Доля экипажа вынесена в CREW_XP_SHARE — иначе донесение показывало бы
+// один сплит, а начислялся другой (фидбек «опыт ветки начисляется нечётко», #23).
 const freeXp = computed(() => Math.round((props.reward.xp || 0) * FREE_XP_SHARE))
-const crewXp = computed(() => Math.round(((props.reward.xp || 0) - freeXp.value) / 2))
+const crewXp = computed(() => Math.round(((props.reward.xp || 0) - freeXp.value) * CREW_XP_SHARE))
 const branchXp = computed(() => (props.reward.xp || 0) - freeXp.value - crewXp.value)
 const branchLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(profile.selectedTank)) || {}).label || '')
 const won = computed(() => props.state.result === 'victory')
