@@ -32,6 +32,9 @@ export const NATIONS = [{ id: 'ussr' }, { id: 'ger' }, { id: 'usa' }].map((n) =>
 export const HIDDEN_NATIONS = ['usa']
 export const isHiddenNation = (id) => HIDDEN_NATIONS.includes(id)
 export const visibleNations = () => NATIONS.filter((n) => !HIDDEN_NATIONS.includes(n.id))
+// скрытые нации показываем «заглушкой» (🔒 скоро), чтобы ветка не «пропадала молча»
+// и игрок понимал: прогресс сохранён, просто временно недоступна (фидбек тикет #26).
+export const hiddenNations = () => NATIONS.filter((n) => HIDDEN_NATIONS.includes(n.id))
 
 // Статы 0..10 (dmg/rof/spd/mnv/view/hp) — шкала растянута на 10 уровней
 // до новейших машин: тир-1 — честное днище (1-3), топ-10 — 9-10.

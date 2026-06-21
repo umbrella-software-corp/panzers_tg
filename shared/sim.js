@@ -286,6 +286,7 @@ export class BattleSim {
       if (dist > u.stats.range) continue
       if (Math.abs(angleDiff(ang, u.hull)) > halfEff + 0.01) continue
       if (this._lineBlocked(u.x, u.y, e.x, e.y)) continue
+      if (this._shotBlockedByTank(u, e)) continue // живой танк на линии — снаряд не проходит насквозь
       const err = Math.abs(angleDiff(ang, lineAngle))
       // снаряд летит по прямой → бьёт БЛИЖАЙШЕГО на линии (а не «ровнее по углу»
       // дальнего). Иначе «стреляю по первому, попадаю по тем, кто сзади».
@@ -832,6 +833,17 @@ export class BattleSim {
     }
     for (const w of this.walls) {
       if (segHitsRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true
+    }
+    return false
+  }
+
+  // живой танк (кроме стрелка и цели) на линии «съедает» снаряд: насквозь корпуса
+  // не стреляем (фидбек «снаряды сквозь танки»). Трупы уже учтены в _lineBlocked,
+  // а ОБЗОР это не трогает (только стрельба) — иначе живые танки слепили бы друг друга.
+  _shotBlockedByTank(shooter, target) {
+    for (const u of this.units) {
+      if (!u.alive || u === shooter || u === target) continue
+      if (segHitsCircle(shooter.x, shooter.y, target.x, target.y, u.x, u.y, TANK_RADIUS)) return true
     }
     return false
   }

@@ -145,7 +145,10 @@ onUnmounted(() => {
     <div class="scrim" @click="emit('close')"></div>
 
     <div class="pz-plate sheet">
-      <div class="grip"></div>
+      <div class="sheet-head">
+        <span class="grip"></span>
+        <button class="sheet-close" :aria-label="t('squad.closeBtn')" @click="emit('close')">✕</button>
+      </div>
 
       <!-- табы -->
       <div style="display: flex; gap: 6px; margin-bottom: 12px">
@@ -342,12 +345,41 @@ onUnmounted(() => {
   flex-direction: column;
   animation: pz-slide-up 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.1);
 }
+.sheet-head {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 10px;
+  min-height: 22px;
+}
 .grip {
   width: 36px;
   height: 4px;
   border-radius: 2px;
   background: var(--line-strong);
-  margin: 0 auto 10px;
+}
+.sheet-close {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--ink-dim);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sheet-close:active {
+  background: rgba(0, 0, 0, 0.6);
 }
 .tabbtn {
   flex: 1;

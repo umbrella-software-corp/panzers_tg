@@ -179,6 +179,19 @@ function goGoal(g) {
   if (g.kind === 'tasks') openTasksSheet()
   else emit('go', 'tree') // unlock / research / freexp — всё в «Развитии»
 }
+// тизер статистики: игроки не находят её во вкладке «Рейтинг» (фидбек тикет #26).
+// Чип в ангаре показывает бои/винрейт/фраги и ведёт прямо в профиль (Рейтинг → Профиль).
+const statLine = computed(() => {
+  const s = profile.stats || {}
+  const b = s.battles || 0
+  const wr = b ? Math.round(((s.wins || 0) / b) * 100) : 0
+  return `${b} ${t('hangar.statBattles')} · ${wr}% · ${s.kills || 0} ${t('hangar.statKills')}`
+})
+function goStats() {
+  track('stats_opened', { from: 'hangar' })
+  haptic('light')
+  emit('go', 'rating')
+}
 const nationLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(tank.value.id)) || {}).label)
 // КАРУСЕЛЬ = ТОЛЬКО твои танки (гараж): сортировка по тиру ↓, все нации вперемешку.
 // Весь модельный ряд и исследование живут во вкладке «Развитие» (ангар — это ангар).
@@ -422,6 +435,13 @@ onMounted(() => {
     <button v-if="goal" class="goal-chip" @click="goGoal(goal)">
       <span class="goal-lbl pz-pixel">{{ t('hangar.goalLabel') }}</span>
       <span class="goal-text">{{ nextGoalText(goal) }}</span>
+      <span class="goal-arr">→</span>
+    </button>
+
+    <!-- тизер личной статистики → ведёт в профиль (Рейтинг → Профиль) -->
+    <button v-if="!firstSession" class="goal-chip stats-chip" @click="goStats">
+      <span class="goal-lbl pz-pixel">{{ t('hangar.statsLabel') }}</span>
+      <span class="goal-text">{{ statLine }}</span>
       <span class="goal-arr">→</span>
     </button>
 
@@ -756,6 +776,17 @@ onMounted(() => {
   flex-shrink: 0;
   color: var(--amber);
   font-weight: 800;
+}
+/* тизер статистики — холодный акцент, чтобы не спорить с янтарным чипом цели */
+.stats-chip {
+  background: rgba(124, 192, 255, 0.07);
+}
+.stats-chip:active {
+  background: rgba(124, 192, 255, 0.14);
+}
+.stats-chip .goal-lbl,
+.stats-chip .goal-arr {
+  color: #7cc0ff;
 }
 /* кнопка В БОЙ: «В БОЙ» крупно + имя танка отдельной строкой (длинные имена
    вроде «Т-34-85»/«Leopard 2A7» не распирают и не переносятся как попало) */

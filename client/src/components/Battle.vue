@@ -59,10 +59,11 @@ const game = isNet && use3D ? new NetGame3D(props.net) : new NetGame(props.net)
 // только в ангаре, в самом бою настроек нет. Работает и для 3D (NetGame3D extends NetGame).
 game.invertReverseSteer = profile.reverseSteer !== 'direct'
 
-// цвета команд в HUD: своя/чужая зависят от жребия стороны (онлайн — от сервера)
+// цвета команд в HUD: свои ВСЕГДА синие, враги красные (независимо от стороны —
+// как в NetGame.colors). Раньше зависели от side и путали игрока (фидбек #26).
 const mySide = isNet ? props.net.side : props.side
-const teamCol = computed(() => (mySide === 1 ? 'var(--red)' : 'var(--blue)'))
-const foeCol = computed(() => (mySide === 1 ? 'var(--blue)' : 'var(--red)'))
+const teamCol = computed(() => 'var(--blue)')
+const foeCol = computed(() => 'var(--red)')
 const mapName = computed(() => tr('game.maps.' + (MAP_BY_ID[isNet ? props.net.mapId : props.mapId] || MAPS[0]).id))
 
 const state = shallowRef({
@@ -908,7 +909,7 @@ onBeforeUnmount(() => {
       <div v-if="phase === 'countdown'" class="overlay countdown">
         <div class="cd-num pz-display">{{ count > 0 ? count : tr('battle.go') }}</div>
         <div class="cd-sub">
-          {{ mapName }} · {{ tr('battle.youOn') }}<b :style="{ color: teamCol }">{{ mySide === 1 ? tr('battle.sideRed') : tr('battle.sideBlue') }}</b>
+          {{ mapName }} · {{ tr('battle.youOn') }}<b :style="{ color: teamCol }">{{ tr('battle.sideBlue') }}</b>
           <template v-if="isNet">{{ tr('battle.onlineSuffix') }}</template>
         </div>
         <div class="cd-sub">{{ annihilation ? tr('battle.toLast') : tr('battle.toScore', { n: state.scoreLimit }) }} · {{ fmtTime(state.matchTime) }}</div>

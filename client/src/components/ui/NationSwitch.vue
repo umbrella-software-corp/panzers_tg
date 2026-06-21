@@ -1,14 +1,20 @@
 <script setup>
 // Переключатель наций — прокручиваемые пилюли (порт NationSwitch).
-// Скрытые нации (без 3D-моделей, см. HIDDEN_NATIONS) не показываем — нельзя выбрать.
-import { visibleNations } from '../../game/meta.js'
+// Видимые нации выбираются; скрытые (без 3D-моделей, см. HIDDEN_NATIONS) показываем
+// заглушкой «🔒 скоро» — нельзя выбрать, тап → пояснение у родителя (ветка не «пропала»).
+import { visibleNations, hiddenNations } from '../../game/meta.js'
 import { haptic } from '../../tg.js'
 const NATIONS = visibleNations()
+const SOON = hiddenNations()
 defineProps({ nation: { type: String, required: true } })
-const emit = defineEmits(['pick'])
+const emit = defineEmits(['pick', 'note'])
 const pick = (id) => {
   haptic('select')
   emit('pick', id)
+}
+const note = (id) => {
+  haptic('select')
+  emit('note', id)
 }
 </script>
 
@@ -45,6 +51,26 @@ const pick = (id) => {
       @click="pick(n.id)"
     >
       {{ n.label }}
+    </button>
+    <button
+      v-for="n in SOON"
+      :key="n.id"
+      class="pz-display"
+      :style="{
+        flexShrink: 0,
+        padding: '7px 14px 6px',
+        fontSize: '11.5px',
+        letterSpacing: '.14em',
+        cursor: 'pointer',
+        color: 'var(--ink-faint)',
+        background: 'rgba(0,0,0,.45)',
+        border: '1px dashed var(--line-strong)',
+        borderRadius: '999px',
+        opacity: 0.7,
+      }"
+      @click="note(n.id)"
+    >
+      🔒 {{ n.label }}
     </button>
   </div>
 </template>

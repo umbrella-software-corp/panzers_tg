@@ -41,9 +41,11 @@ export class NetGame {
     this.side = side === 1 ? 1 : 0
     this.youUnit = youUnit
     this.tickDt = 1 / (tickHz || 20)
-    this.colors = this.side === 0
-      ? { ally: TEAM_PALETTE.blue, enemy: TEAM_PALETTE.red }
-      : { ally: TEAM_PALETTE.red, enemy: TEAM_PALETTE.blue }
+    // ВСЕГДА: свои — синие, враги — красные (как в Blitz), независимо от стороны.
+    // Раньше цвет зависел от side (side 1 = «свои красные») → игрок путался («я за
+    // красных, а тиммейты синие», фидбек #26) + рассинхрон с миникартой, где свои
+    // хардкодом синие. Всё остальное рисуется относительно ally/enemy — когерентно.
+    this.colors = { ally: TEAM_PALETTE.blue, enemy: TEAM_PALETTE.red }
 
     this.setClass(DEFAULT_CLASS)
     this.playerTankId = null
@@ -180,6 +182,21 @@ export class NetGame {
   fire() {
     if (this.paused || this.matchOver) return
     this.client.send({ type: 'fire' })
+    // ПРЕДИКТ ВЫСТРЕЛА: вспышка/отдача камеры МГНОВЕННО по тапу, не дожидаясь
+    // сервера (~RTT+тик пинга «съедали» отклик — фидбек «пинг, управление-мрак»).
+    // Гейтим по this.you.ready (орудие заряжено по последнему снапшоту) + локальный
+    // кулдаун на перезарядку — иначе фантомная вспышка на спам/заблокированный выстрел.
+    const you = this.you
+    const pred = this._pred
+    const now = performance.now()
+    const gunOk = you && you.ready && !(you.crippled && you.crippled.gun > 0)
+    if (gunOk && pred && now > (this._predReloadUntil || 0)) {
+      const a = (pred.hull || 0) + this._sweepOffset()
+      this.muzzles.push({ x: pred.x + Math.cos(a) * 40, y: pred.y + Math.sin(a) * 40, a, age: 0, color: 0xffd866 })
+      this._fxSelfShot = true // отдача камеры (читает NetGame3D)
+      this._predShotAt = now // серверную вспышку этого выстрела не продублируем
+      this._predReloadUntil = now + (this.cls.reload || 0) * 1000 * 0.85
+    }
   }
 
   // --- сеть ---
@@ -264,8 +281,19 @@ export class NetGame {
           this.onHurt(d)
         }
       }
+      // ПРОМАХ: обрезаем трассер до первого твёрдого блокера (камень/стена/танк),
+      // чтобы снаряд не «пролетал насквозь» (фидбек игроков). Попадание не трогаем —
+      // оно уже доведено до цели, а сервер гарантировал чистую линию до неё.
+      if (!ev.hit) {
+        const cl = this._clipShot(ev.x1, ev.y1, ex, ey, ev.unit)
+        ex = cl.x
+        ey = cl.y
+      }
       const a = Math.atan2(ey - ev.y1, ex - ev.x1)
-      this.muzzles.push({ x: ev.x1 + Math.cos(a) * 40, y: ev.y1 + Math.sin(a) * 40, a, age: 0, color: col })
+      // свой выстрел уже показан мгновенной вспышкой по тапу (предикт) — серверную не дублируем
+      const skipMuzzle = mine && !ev.blocked && this._predShotAt && performance.now() - this._predShotAt < 360
+      if (!skipMuzzle) this.muzzles.push({ x: ev.x1 + Math.cos(a) * 40, y: ev.y1 + Math.sin(a) * 40, a, age: 0, color: col })
+      if (mine) this._predShotAt = 0
       this.shells.push({
         x1: ev.x1,
         y1: ev.y1,
@@ -749,6 +777,66 @@ export class NetGame {
       if (this._segRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true
     }
     return false
+  }
+  // точка, где трассер ПРОМАХА упирается в первый твёрдый блокер (камень/стена/танк).
+  // Возвращает конец сегмента, если ничего не мешает. Камуфляж/вода/кусты не блокируют.
+  _clipShot(x1, y1, x2, y2, shooterId) {
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const seg2 = dx * dx + dy * dy
+    if (seg2 < 1) return { x: x2, y: y2 }
+    let bestT = 1
+    // ближайший вход луча в круг (t в [0,1]); старт внутри круга не клипуем
+    const circ = (cx, cy, r) => {
+      const fx = x1 - cx
+      const fy = y1 - cy
+      const b = 2 * (fx * dx + fy * dy)
+      const c = fx * fx + fy * fy - r * r
+      let disc = b * b - 4 * seg2 * c
+      if (disc < 0) return
+      disc = Math.sqrt(disc)
+      const t = (-b - disc) / (2 * seg2)
+      if (t > 0.02 && t < bestT) bestT = t
+    }
+    for (const o of this.obstacles) {
+      if (o.kind === 'water' || o.kind === 'bush') continue
+      circ(o.x, o.y, o.r)
+    }
+    if (this._units) {
+      for (const u of this._units.values()) {
+        // стрелка не клипуем; свой танк тоже — иначе «театр промаха мимо меня»
+        // (серверный увод снаряда вбок) обрезался бы как попадание по мне.
+        if (u.id === shooterId || u.id === this.youUnit) continue
+        circ(u.x, u.y, TANK_RADIUS)
+      }
+    }
+    for (const w of this.walls) {
+      const t = this._rayRectEntry(x1, y1, dx, dy, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)
+      if (t != null && t > 0.02 && t < bestT) bestT = t
+    }
+    return bestT >= 1 ? { x: x2, y: y2 } : { x: x1 + dx * bestT, y: y1 + dy * bestT }
+  }
+  // параметр входа луча в осевой прямоугольник (Liang–Barsky), null если не пересекает
+  _rayRectEntry(x1, y1, dx, dy, minx, miny, maxx, maxy) {
+    let t0 = 0
+    let t1 = 1
+    const clip = (p, q) => {
+      if (p === 0) return q >= 0
+      const r = q / p
+      if (p < 0) {
+        if (r > t1) return false
+        if (r > t0) t0 = r
+      } else {
+        if (r < t0) return false
+        if (r < t1) t1 = r
+      }
+      return true
+    }
+    if (!clip(-dx, x1 - minx)) return null
+    if (!clip(dx, maxx - x1)) return null
+    if (!clip(-dy, y1 - miny)) return null
+    if (!clip(dy, maxy - y1)) return null
+    return t0 <= t1 ? t0 : null
   }
   _segCircle(x1, y1, x2, y2, cx, cy, r) {
     const dx = x2 - x1

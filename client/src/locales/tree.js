@@ -13,6 +13,8 @@ export default {
     checkTopModules: ({ name }) => `Top modules ${name}`,
     checkXp: 'Branch XP',
     branchXp: 'Branch XP',
+    // заглушка скрытой ветки (США): прогресс цел, ветка временно недоступна
+    nationSoon: 'This branch is temporarily unavailable — its 3D models are on the way. Your tanks and progress are safe.',
     // свободный опыт: общий пул, вкладывается в любую нацию
     freeXp: 'Free XP',
     pourFree: ({ n }) => `Invest ${n} →`,
@@ -46,6 +48,7 @@ export default {
     checkTopModules: ({ name }) => `Топ-модули ${name}`,
     checkXp: 'Опыт ветки',
     branchXp: 'Опыт ветки',
+    nationSoon: 'Ветка временно недоступна — готовим её 3D-модели. Твои танки и весь прогресс сохранены.',
     freeXp: 'Свободный опыт',
     pourFree: ({ n }) => `Вложить ${n} →`,
     freeXpHint: 'Этой ветке хватает — переключи нацию и вложи',

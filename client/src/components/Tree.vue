@@ -32,6 +32,16 @@ import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['go'])
 
+// пояснение по скрытой ветке (США): чтобы «пропавшая» нация не читалась как баг —
+// прогресс цел, ветка лишь временно недоступна (фидбек тикет #26).
+const nationNote = ref('')
+let nationNoteTimer = null
+function showNationNote() {
+  nationNote.value = tr('tree.nationSoon')
+  clearTimeout(nationNoteTimer)
+  nationNoteTimer = setTimeout(() => (nationNote.value = ''), 3600)
+}
+
 const tanks = computed(() => tanksOfNation(profile.nation))
 const premiums = computed(() => premiumOfNation(profile.nation)) // прем-техника нации (за ⭐)
 // накопленный опыт ВЫБРАННОЙ ветки (нации) — исследовательская валюта; копится за бои
@@ -243,7 +253,7 @@ watch(selected, (t) => {
       <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
     </header>
 
-    <NationSwitch :nation="profile.nation" style="padding: 2px 14px 4px" @pick="pickNation" />
+    <NationSwitch :nation="profile.nation" style="padding: 2px 14px 4px" @pick="pickNation" @note="showNationNote" />
 
     <!-- опыт ветки + свободный опыт (обе валюты исследования) — просто строкой, без баров.
          Свободный льётся в эту ветку кнопкой (доливает столько, сколько нужно след. танку). -->
@@ -449,11 +459,41 @@ watch(selected, (t) => {
       </template>
     </div>
 
+    <transition name="pz-toast">
+      <div v-if="nationNote" class="nation-note pz-display" @click="nationNote = ''">{{ nationNote }}</div>
+    </transition>
+
     <BottomNav screen="tree" @go="emit('go', $event)" />
   </div>
 </template>
 
 <style scoped>
+.nation-note {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: 78px;
+  z-index: 40;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(10, 12, 8, 0.96);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.pz-toast-enter-active,
+.pz-toast-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.pz-toast-enter-from,
+.pz-toast-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
 .xp-line {
   display: flex;
   flex-wrap: wrap;

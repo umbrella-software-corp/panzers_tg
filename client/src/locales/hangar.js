@@ -26,6 +26,10 @@ export default {
     goalUnlock: ({ name }) => `${name} ready to research!`,
     goalResearch: ({ name, n }) => `${name}: ${n} more branch XP`,
     goalFreeXp: ({ n }) => `invest ${n} free XP`,
+    // тизер статистики (ведёт в Рейтинг → Профиль)
+    statsLabel: 'STATS',
+    statBattles: 'battles',
+    statKills: 'frags',
   },
   ru: {
     bay: 'Б-01',
@@ -51,5 +55,9 @@ export default {
     goalUnlock: ({ name }) => `${name} — можно открыть!`,
     goalResearch: ({ name, n }) => `${name}: ещё ${n} опыта ветки`,
     goalFreeXp: ({ n }) => `вложи ${n} свободного опыта`,
+    // тизер статистики (ведёт в Рейтинг → Профиль)
+    statsLabel: 'СТАТА',
+    statBattles: 'боёв',
+    statKills: 'фрагов',
   },
 }
