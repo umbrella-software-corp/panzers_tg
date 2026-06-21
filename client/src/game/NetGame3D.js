@@ -8,7 +8,8 @@
 // База — наш продовый NetGame (2D-движок): снапшот-протокол и API базы байт-совместимы
 // с NetGameCore форка, поэтому 3D-рендер садится прямо на него (NetGameCore не портируем).
 import { NetGame } from './NetGame.js'
-import { tankModelUrl, tankSizeScale, PROP_MODELS } from './meta.js'
+import { tankModelUrl, tankSizeScale, PROP_MODELS, modelNeedsFlip, CAMO_BY_ID } from './meta.js'
+import { drawCamoPattern } from './camo.js' // процедурный камо-узор (как в ангаре)
 import { MAP_SIZE } from './config.js'
 import { decorObstacles } from './decor.js' // декор-скаттер ТОЛЬКО для 3D-визуала (без коллизий)
 
@@ -426,7 +427,7 @@ export class NetGame3D extends NetGame {
 
   // нормализация GLB: центр по XZ, основание на y=0, масштаб = TANK_LEN×размер_класса,
   // ось «вперёд» к Z (часть моделей смоделирована длиной по X — довернуть на 90°), тени
-  _normalizeModel(model, sizeScale = 1) {
+  _normalizeModel(model, sizeScale = 1, flip = false) {
     const box = new THREE.Box3().setFromObject(model)
     const size = new THREE.Vector3(); box.getSize(size)
     const center = new THREE.Vector3(); box.getCenter(center)
@@ -436,7 +437,30 @@ export class NetGame3D extends NetGame {
     model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
     const wrap = new THREE.Group(); wrap.add(model)
     if (size.x > size.z) wrap.rotation.y = -Math.PI / 2 // длина по X → довернуть «вперёд» к Z
+    if (flip) wrap.rotation.y += Math.PI // модель смоделирована «задом» (см. MODEL_FLIP) → доворот 180°
     return wrap
+  }
+
+  // КАМУФЛЯЖ на модель танка: процедурный узор (camo.js) → CanvasTexture поверх
+  // материалов GLB (как в ангаре Tank3DView). Без камо ('' / неизвестный) — оставляем
+  // заводскую текстуру модели. Зерно — хэш tankId (стабильный узор у всех клиентов).
+  _applyCamoToModel(root, camoId, seed) {
+    const def = CAMO_BY_ID[camoId]
+    if (!def || !def.pattern) return
+    const S = 512
+    const cv = document.createElement('canvas'); cv.width = cv.height = S
+    drawCamoPattern(cv.getContext('2d'), S, def.pattern, seed)
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2.2, 2.2)
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material) return
+      o.material = o.material.clone() // не мутируем общий кэш сцен
+      o.material.map = tex
+      if (o.material.color) o.material.color.set(0xffffff)
+      if ('metalness' in o.material) o.material.metalness = 0.1
+      if ('roughness' in o.material) o.material.roughness = 0.85
+      o.material.needsUpdate = true
+    })
   }
 
   // НИЗКОПОЛИ-ТАНК из примитивов — плейсхолдер/фоллбэк, когда GLB не загрузился.
@@ -479,16 +503,21 @@ export class NetGame3D extends NetGame {
     // загрузилась (нет в реестре / сбой сети) — фоллбэк на модель нации, чтобы НИКОГДА
     // не торчал плейсхолдер-бокс («это t28 в 3d, ахахаха»). Бокс — только пока грузит.
     const url = tankModelUrl(u.tankId, u.nation)
-    const place = (sc) => {
+    // камуфляж: свой танк — выбранный игроком (playerCamo, как в 2D, local-only), чужие —
+    // их u.camo из снапшота (если сервер шлёт; иначе заводская). Узор — процедурный.
+    const camoId = u.id === this.youUnit ? this.playerCamo : u.camo
+    const place = (sc, srcUrl) => {
       if (!sc || this.tankGroups.get(u.id) !== t || !this.scene) return false // юнит исчез / destroy
       holder.clear()
-      holder.add(this._normalizeModel(sc.clone(true), tankSizeScale(u.tankId)))
+      const m = this._normalizeModel(sc.clone(true), tankSizeScale(u.tankId), modelNeedsFlip(srcUrl))
+      this._applyCamoToModel(m, camoId, hashId(u.tankId))
+      holder.add(m)
       return true
     }
     loadModelScene(url).then((sc) => {
-      if (place(sc) || this.tankGroups.get(u.id) !== t || !this.scene) return
+      if (place(sc, url) || this.tankGroups.get(u.id) !== t || !this.scene) return
       const fb = tankModelUrl(null, u.nation) // модель нации (СССР→Т-90 и т.д.) — обычно уже прогрета
-      if (fb !== url) loadModelScene(fb).then(place).catch(() => {})
+      if (fb !== url) loadModelScene(fb).then((sc2) => place(sc2, fb)).catch(() => {})
     }).catch(() => {})
     return t
   }

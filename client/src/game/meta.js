@@ -329,14 +329,17 @@ export const SKIN_BY_ID = Object.fromEntries(SKINS.map((s) => [s.id, s]))
 // Реальная перекраска машины: спрайт /sprites/camo/<tankId>_<camoId>.png
 // (наш танк top-down, перекрашенный flux-kontext, на той же магенте — кеится
 // в рантайме как обычный танк). id '' — заводская окраска (базовый спрайт).
+// pattern — процедурный узор для 3D-рендера (camo.js drawCamoPattern: spots/digital/
+// stripes). Без него 3D показывал запечённую текстуру модели вместо выбранного камо
+// (баг «неправильное отображение камо в ангаре и бою»). 2D по-прежнему берёт спрайты.
 export const CAMOS = [
   { id: '', cost: 0 },
-  { id: 'woodland', cost: 25 },
-  { id: 'desert', cost: 25 },
-  { id: 'winter', cost: 25 },
-  { id: 'tiger', cost: 40 },
-  { id: 'predator', cost: 40 },
-  { id: 'magma', cost: 40 },
+  { id: 'woodland', cost: 25, pattern: { type: 'spots', colors: ['#5e7a3e', '#3c572c', '#7d6a45'] } },
+  { id: 'desert', cost: 25, pattern: { type: 'spots', colors: ['#cdab73', '#a9824a', '#836237'] } },
+  { id: 'winter', cost: 25, pattern: { type: 'spots', colors: ['#e9eef5', '#bcc8d8', '#8a97a8'] } },
+  { id: 'tiger', cost: 40, pattern: { type: 'stripes', colors: ['#c4a05c', '#2f2818'] } },
+  { id: 'predator', cost: 40, pattern: { type: 'digital', colors: ['#2f3a2c', '#1b231a', '#46563a'] } },
+  { id: 'magma', cost: 40, pattern: { type: 'spots', colors: ['#2a1a14', '#c2521f', '#e0902a'] } },
 ].map((c) => {
   const key = c.id || 'stock' // заводская окраска (id '') живёт под ключом 'stock'
   return defLoc(c, { name: () => `game.camos.${key}.name`, short: () => `game.camos.${key}.short` })
@@ -497,6 +500,18 @@ export const hasTankModel = (id) => !!TANK_MODELS[id]
 // URL модели для танка: своя → фоллбэк по нации → Т-90
 export function tankModelUrl(id, nation) {
   return TANK_MODELS[id] || NATION_MODEL_URL[nation] || '/models/t90_opt.glb'
+}
+// МОДЕЛИ «ЗАДОМ»: часть GLB смоделирована стволом в −Z (норм. кладёт длину к Z, но
+// перёд оказывается сзади) → в бою такой танк «едет задом». Им нужен доворот +180°.
+// Список определён авто-детектом (тонкий конец = ствол): /_idcheck.html. Ключ — basename
+// файла модели (флип — свойство файла, не tankId; фоллбэк-модели тоже учтены).
+export const MODEL_FLIP = new Set([
+  't28', 'pnt', 'tgr', 'tgr2', 'pz4', 'pz4h', 'maus',
+  'tank2', 'tank3', 'leo1', 'leo2a7', 'kf51',
+])
+export function modelNeedsFlip(url) {
+  const m = /([^/]+)_opt\.glb/.exec(url || '')
+  return m ? MODEL_FLIP.has(m[1]) : false
 }
 // «музейные» размеры: реальная длина КОРПУСА (м) → масштаб = len / SIZE_REF_M
 const SIZE_REF_M = 7.3

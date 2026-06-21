@@ -5,7 +5,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { loadModelScene } from '../../game/NetGame3D.js'
 import { drawCamoPattern } from '../../game/camo.js'
-import { CAMO_BY_ID, NATION_MODEL_URL } from '../../game/meta.js'
+import { CAMO_BY_ID, NATION_MODEL_URL, modelNeedsFlip } from '../../game/meta.js'
 
 const props = defineProps({
   url: { type: String, default: '/models/t90_opt.glb' }, // файл модели танка (см. meta.tankModelUrl)
@@ -101,7 +101,8 @@ async function show() {
   // ориентированы по-разному — часть смоделирована длиной по X (T-26/БТ-7) → доворот
   // на 90°. Так любая (и будущая) модель встаёт лицом к игроку. window.__FACE — доп-тюнер.
   const faceY = size.x > size.z ? -Math.PI / 2 : 0
-  wrap.rotation.y = faceY + ((typeof window !== 'undefined' && window.__FACE != null) ? window.__FACE : 0)
+  const flipY = modelNeedsFlip(props.url) ? Math.PI : 0 // модели «задом» (MODEL_FLIP) → лицом к игроку
+  wrap.rotation.y = faceY + flipY + ((typeof window !== 'undefined' && window.__FACE != null) ? window.__FACE : 0)
   model = wrap; scene.add(wrap)
   loading.value = false // модель в сцене → убираем индикатор загрузки
 }
