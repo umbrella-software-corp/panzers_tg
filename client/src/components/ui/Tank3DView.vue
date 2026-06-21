@@ -5,7 +5,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { loadModelScene } from '../../game/NetGame3D.js'
 import { drawCamoPattern } from '../../game/camo.js'
-import { CAMO_BY_ID } from '../../game/meta.js'
+import { CAMO_BY_ID, NATION_MODEL_URL } from '../../game/meta.js'
 
 const props = defineProps({
   url: { type: String, default: '/models/t90_opt.glb' }, // файл модели танка (см. meta.tankModelUrl)
@@ -14,6 +14,7 @@ const props = defineProps({
   scale: { type: Number, default: 1 }, // относительный размер по классу (meta.tankSizeScale)
 })
 const host = ref(null)
+const loading = ref(true) // показываем «загрузка модели…» пока GLB не отрисован (платформа не выглядит пустой)
 let THREE, renderer, scene, camera, model, raf
 let disposed = false
 
@@ -76,8 +77,16 @@ function applyCamo(root, id, seed) {
 }
 
 async function show() {
-  const src = await loadModelScene(props.url)
-  if (disposed || !scene || !src) return
+  loading.value = true
+  let src = await loadModelScene(props.url)
+  if (disposed || !scene) return
+  // модель не загрузилась (сбой сети) → фоллбэк на базовую модель, чтобы платформа не
+  // осталась пустой (props.url и так уже резолвится на модель нации/Т-90 при отсутствии своей)
+  if (!src) {
+    const fb = NATION_MODEL_URL.ussr
+    if (props.url !== fb) src = await loadModelScene(fb)
+    if (disposed || !scene || !src) { loading.value = false; return } // совсем не вышло — снимаем индикатор
+  }
   if (model) { scene.remove(model); model = null }
   const m = src.clone(true)
   const box = new THREE.Box3().setFromObject(m)
@@ -94,6 +103,7 @@ async function show() {
   const faceY = size.x > size.z ? -Math.PI / 2 : 0
   wrap.rotation.y = faceY + ((typeof window !== 'undefined' && window.__FACE != null) ? window.__FACE : 0)
   model = wrap; scene.add(wrap)
+  loading.value = false // модель в сцене → убираем индикатор загрузки
 }
 
 watch(() => [props.url, props.camo, props.seed, props.scale], () => show())
@@ -109,9 +119,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="host" class="tank3d"></div>
+  <div ref="host" class="tank3d">
+    <div v-if="loading" class="tank3d-load"><span class="tank3d-spin"></span>загрузка модели…</div>
+  </div>
 </template>
 
 <style scoped>
-.tank3d { width: 100%; height: 100%; }
+.tank3d { width: 100%; height: 100%; position: relative; }
+.tank3d-load {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
+  color: var(--ink-dim, #9aa6b2); font-size: 13px; font-weight: 600; letter-spacing: 0.3px; pointer-events: none;
+}
+.tank3d-spin {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(242, 165, 12, 0.25); border-top-color: #f2a50c;
+  animation: tank3d-spin 0.8s linear infinite;
+}
+@keyframes tank3d-spin { to { transform: rotate(360deg); } }
 </style>
