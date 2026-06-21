@@ -4,10 +4,10 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText } from '../store.js'
 import { squad } from '../game/squad.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal } from '../game/meta.js'
-import { haptic, isTester3D } from '../tg.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
+import { haptic } from '../tg.js'
 import { apiUsed3D } from '../api.js'
-import { preload3D, TANK3D } from '../game/NetGame3D.js'
+import { preload3D } from '../game/NetGame3D.js'
 import Tank3DView from './ui/Tank3DView.vue'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -28,41 +28,31 @@ const props = defineProps({ postBattle: { type: Boolean, default: false } }) // 
 // 3D-рендере (Three.js, NetGame3D) вместо 2D. Гейт по tg-id; в деве (localhost)
 // показываем всегда для проверки. Флаг живёт в localStorage.pz3d, Battle.vue
 // читает его при монтировании боя — перезагрузка не нужна.
-const isTester = isTester3D() // галка «3D» — только тестерам (на проде по tg-id)
+// ТУМБЛЕР 2D/3D — виден ВСЕМ (по умолчанию 2D, опт-ин: безопасно для живых). 3D включает
+// и ангар (3D-модель выбранного танка), и бой (NetGame3D). Флаг в localStorage.pz3d —
+// Battle.vue читает его при монтировании боя.
 const threeD = ref((() => { try { return localStorage.getItem('pz3d') === '1' } catch { return false } })())
-// 3D-режим: ангар показывает только 3 танка (T-90/Leopard/Abrams) в 3D, мордой к
-// игроку. Пикер сразу ставит нацию+танк (для эксперимента — без гейта владения).
-const td3Sel = ref(Math.max(0, TANK3D.findIndex((t) => t.key === profile.selectedTank)))
-const td3Index = computed(() => TANK3D[td3Sel.value].model)
-function pick3D(i) {
-  td3Sel.value = i
-  const t = TANK3D[i]
-  profile.nation = t.nation
-  profile.selectedTank = t.key
-  haptic('select')
-}
-if (threeD.value) { preload3D(); pick3D(td3Sel.value) } // 3D уже включён → греем ассеты + ставим 3D-танк
-// держим согласованность танка с режимом: в 3D — один из 3 (даже если async-профиль
-// перезатёр); ВНЕ 3D — только купленный (иначе залоченный 3D-танк не пустит в 2D-бой)
-watch([threeD, () => profile.selectedTank], () => {
-  if (threeD.value) {
-    if (!TANK3D.some((t) => t.key === profile.selectedTank)) pick3D(td3Sel.value)
-  } else {
-    // ВНЕ 3D: ангар = ТОЛЬКО твои танки (гараж). Если выбран не свой (стейл-профиль,
-    // 3D-ключ, превью из дерева) — ставим лучший по тиру из гаража. Нацию ангара держим
-    // равной нации выбранного танка (для подписи и дефолта вкладки «Развитие»).
-    if (!isOwned(profile.selectedTank)) {
-      const best = profile.owned.map((id) => TANK_BY_ID[id]).filter(Boolean).sort((a, b) => b.tier - a.tier)[0]
-      if (best) selectTank(best.id)
-    }
-    if (profile.selectedTank) profile.nation = nationOf(profile.selectedTank)
+const hashId = (s) => { let h = 0; s = String(s || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h) }
+// hero-модель ангара = 3D-модель ВЫБРАННОГО танка (любого): листание карусели меняет модель
+const heroUrl = computed(() => tankModelUrl(tank.value && tank.value.id, nationOf((tank.value && tank.value.id) || profile.selectedTank)))
+const heroSeed = computed(() => hashId(tank.value && tank.value.id)) // зерно узора камо — стабильно по танку
+const heroScale = computed(() => tankSizeScale(tank.value && tank.value.id)) // размер по классу/длине корпуса
+if (threeD.value) preload3D() // 3D включён → греем three.js + модели (превью ангара + вход в бой без фриза)
+// ангар = ТОЛЬКО твои танки: выбран не свой (стейл/превью из дерева) → лучший по тиру; нацию
+// держим = нации выбранного (подпись + дефолт «Развития»). Работает одинаково в 2D и 3D.
+watch(() => profile.selectedTank, () => {
+  // не свой ИЛИ из скрытой нации (США без 3D) → лучший по тиру из ВИДИМЫХ своих
+  if (!isOwned(profile.selectedTank) || isHiddenNation(nationOf(profile.selectedTank))) {
+    const best = profile.owned.map((id) => TANK_BY_ID[id]).filter((t) => t && !isHiddenNation(nationOf(t.id))).sort((a, b) => b.tier - a.tier)[0]
+    if (best) selectTank(best.id)
   }
+  if (profile.selectedTank) profile.nation = nationOf(profile.selectedTank)
 }, { immediate: true })
 function toggle3D() {
   threeD.value = !threeD.value
   try { localStorage.setItem('pz3d', threeD.value ? '1' : '0') } catch { /* приватный режим */ }
   if (threeD.value) {
-    preload3D(); pick3D(td3Sel.value) // включили → прогрев + выбрать 3D-танк
+    preload3D()
     if (!profile.used3D) { profile.used3D = true; apiUsed3D().catch(() => {}) } // метрика «перешёл в 3D» (липкий флаг)
   }
   haptic('light')
@@ -196,7 +186,7 @@ const NATION_ORDER = { ussr: 0, ger: 1, usa: 2 }
 const tanks = computed(() =>
   profile.owned
     .map((id) => TANK_BY_ID[id])
-    .filter(Boolean)
+    .filter((t) => t && !isHiddenNation(nationOf(t.id))) // скрытые нации (США без 3D) в карусели не показываем
     .sort((a, b) => b.tier - a.tier || (NATION_ORDER[nationOf(a.id)] ?? 9) - (NATION_ORDER[nationOf(b.id)] ?? 9) || a.name.localeCompare(b.name)),
 )
 const ttx = ref(false)
@@ -273,8 +263,8 @@ onMounted(() => {
       <!-- тень + танк -->
       <div class="tank-wrap" data-tut="tank">
         <div class="tank-shadow"></div>
-        <!-- 3D-ЭКСПЕРИМЕНТ: модель танка сверху-спереди, мордой к игроку -->
-        <Tank3DView v-if="threeD" :index="td3Index" class="tank3d-host" />
+        <!-- 3D: модель ВЫБРАННОГО танка (любого), мордой к игроку; листание карусели меняет её -->
+        <Tank3DView v-if="threeD" :url="heroUrl" :camo="locked ? '' : dispCamo" :seed="heroSeed" :scale="heroScale" class="tank3d-host" :style="locked ? 'filter: brightness(0.82) saturate(0.85)' : ''" />
         <template v-else>
           <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
             <TankImg :tank-id="tank.id" :size="300" :hangar="true" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
@@ -308,8 +298,8 @@ onMounted(() => {
       </div>
     </header>
 
-    <!-- ЭКСПЕРИМЕНТ: тестерский тоггл 3D — плавающий, чтобы не перекрывался шапкой/балансом -->
-    <button v-if="isTester" class="td-toggle pz-display" :class="{ on: threeD }" title="3D-рендер боя (тест)" @click="toggle3D">3D{{ threeD ? ' ✓' : '' }}</button>
+    <!-- ТУМБЛЕР 2D/3D — плавающий, виден всем; по умолчанию 2D (опт-ин) -->
+    <button class="td-toggle pz-display" :class="{ on: threeD }" :title="threeD ? 'Бой в 3D — нажми для 2D' : 'Бой в 2D — нажми для 3D'" @click="toggle3D">{{ threeD ? '3D' : '2D' }}</button>
 
     <!-- ID-плашка танка -->
     <div style="margin-top: auto; padding: 0 14px 6px; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px">
@@ -372,18 +362,8 @@ onMounted(() => {
       </div>
     </template>
 
-    <!-- 3D-ЭКСПЕРИМЕНТ: пикер 3 танков вместо карусели -->
-    <div v-if="threeD" style="display: flex; gap: 8px; padding: 4px 14px; flex-shrink: 0; justify-content: center">
-      <button
-        v-for="(t, i) in TANK3D"
-        :key="t.key"
-        class="td-pick"
-        :class="{ on: i === td3Sel }"
-        @click="pick3D(i)"
-      >{{ t.label }}</button>
-    </div>
-    <!-- карусель -->
-    <div v-else class="pz-noscroll" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 14px; flex-shrink: 0">
+    <!-- карусель твоих танков (одна на 2D и 3D): выбор меняет и большой рендер, и hero-3D-модель -->
+    <div class="pz-noscroll" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 14px; flex-shrink: 0">
       <button
         v-for="t in tanks"
         :key="t.id"

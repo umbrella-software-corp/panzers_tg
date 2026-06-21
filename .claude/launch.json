@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "panzer-tg-client", "dev"],
       "port": 5173
+    },
+    {
+      "name": "tanks3d",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/aleksej/Documents/tanks_mini_3d/client && pnpm dev"],
+      "port": 5173
     }
   ]
 }

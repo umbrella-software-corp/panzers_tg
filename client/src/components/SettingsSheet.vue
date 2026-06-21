@@ -5,13 +5,24 @@
 //    Значение в профиле (store.setReverseSteer), Battle.vue читает на старте боя.
 //  • строку «Поддержка» — открывает саппорт-бот (раньше была иконкой в шапке ангара).
 // Teleport в body — чтобы модалка не срывалась на мобиле (как у FeedbackSheet).
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { profile, setReverseSteer } from '../store.js'
-import { haptic, openSupport } from '../tg.js'
+import { haptic, openSupport, isTester3D } from '../tg.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 
 const emit = defineEmits(['close'])
+
+// 3D-графика (бета): галочка пишет localStorage.pz3d, который Battle.vue читает на старте
+// боя (use3D). Виден только тем, кому доступен 3D-эксперимент (isTester3D).
+const canUse3D = isTester3D()
+const render3dOn = ref((() => { try { return localStorage.getItem('pz3d') === '1' } catch { return false } })())
+function toggle3d() {
+  render3dOn.value = !render3dOn.value
+  try { localStorage.setItem('pz3d', render3dOn.value ? '1' : '0') } catch { /* приватный режим */ }
+  haptic('select')
+  track('settings_3d_changed', { on: render3dOn.value })
+}
 
 // чекбокс отмечен = режим 'follow' (руль по джойстику, дефолт); снят = 'direct' (классика)
 const reverseOn = computed(() => profile.reverseSteer !== 'direct')
@@ -36,6 +47,17 @@ function support() {
       <div class="set-card pz-plate pz-brackets" style="--bk: var(--amber)">
         <button class="set-x" @click="emit('close')">✕</button>
         <div class="pz-display set-title">⚙ {{ t('settings.title') }}</div>
+
+        <!-- 3D-графика (бета): чекбокс — пишет localStorage.pz3d, Battle.vue читает на старте боя -->
+        <button v-if="canUse3D" class="set-check" :class="{ on: render3dOn }" @click="toggle3d">
+          <span class="set-check-txt">
+            <span class="set-check-label">{{ t('settings.render3dLabel') }}</span>
+            <span class="set-check-hint">{{ t('settings.render3dHint') }}</span>
+          </span>
+          <span class="set-box" :class="{ on: render3dOn }" aria-hidden="true">
+            <svg v-if="render3dOn" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          </span>
+        </button>
 
         <!-- реверсивное управление: чекбокс -->
         <button class="set-check" :class="{ on: reverseOn }" @click="toggleReverse">

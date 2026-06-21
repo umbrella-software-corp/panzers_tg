@@ -1,7 +1,9 @@
 <script setup>
 // Переключатель наций — прокручиваемые пилюли (порт NationSwitch).
-import { NATIONS } from '../../game/meta.js'
+// Скрытые нации (без 3D-моделей, см. HIDDEN_NATIONS) не показываем — нельзя выбрать.
+import { visibleNations } from '../../game/meta.js'
 import { haptic } from '../../tg.js'
+const NATIONS = visibleNations()
 defineProps({ nation: { type: String, required: true } })
 const emit = defineEmits(['pick'])
 const pick = (id) => {

@@ -9,7 +9,7 @@ import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, party, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
 import { TANK_BY_ID, PREM_TANK, GOLD_AMMO_MULT } from '../game/meta.js'
-import { haptic, isTester3D } from '../tg.js'
+import { haptic } from '../tg.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // alias: `t` встречается как локальная переменная ниже
 import Results from './Results.vue'
@@ -50,9 +50,9 @@ function finishTraining() {
   track('training_guide_finished', { time_sec: battleSec() })
 }
 // онлайн-онли: бой всегда сетевой (Battle рендерится только после deploy(net)).
-// ЭКСПЕРИМЕНТ: 3D-рендер ТОЛЬКО тестерам (по tg-id) И при включённом флаге
-// (?3d или localStorage.pz3d=1). Без тестер-id 3D не запустится даже через ?3d.
-const use3D = isTester3D() && (() => { try { return new URLSearchParams(location.search).has('3d') || localStorage.getItem('pz3d') === '1' } catch { return false } })()
+// 3D-рендер — по ТУМБЛЕРУ 2D/3D из ангара (localStorage.pz3d=1) или ?3d. Виден всем,
+// по умолчанию 2D (опт-ин). NetGame3D extends NetGame — снапшоты/ввод те же.
+const use3D = (() => { try { return new URLSearchParams(location.search).has('3d') || localStorage.getItem('pz3d') === '1' } catch { return false } })()
 const game = isNet && use3D ? new NetGame3D(props.net) : new NetGame(props.net)
 // схема заднего хода из настроек игрока: 'direct' — без инверсии руля (старое управление),
 // иначе руль идёт по джойстику (дефолт). Читаем один раз на старте боя — менять можно
@@ -645,6 +645,9 @@ function startCountdown() {
       countTimer = null
       phase.value = 'fighting'
       game.setPaused(false)
+      // СИНХРОН СТАРТА: говорим серверу «готов» — он держит мир замороженным, пока не
+      // готовы все игроки (фикс «боты едут до конца отсчёта/раньше на позициях»).
+      if (isNet && props.net && props.net.send) props.net.send({ type: 'ready' })
       markBattleStarted()
       // онлайн: match-end мог прийти ВО ВРЕМЯ отсчёта (сервер ушёл на рестарт) —
       // onState с matchOver тогда отгейтился фазой; переигрываем состояние

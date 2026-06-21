@@ -26,6 +26,12 @@ const withClass = (tk) =>
   })
 
 export const NATIONS = [{ id: 'ussr' }, { id: 'ger' }, { id: 'usa' }].map((n) => defLoc(n, { label: (o) => `game.nations.${o.id}` }))
+// ВРЕМЕННО СКРЫТЫЕ нации: у США пока нет 3D-моделей танков (рендерились бы фоллбэком-
+// Abrams) → прячем ветку из выбора (переключатель наций / выбор 2-го танка / карусель
+// ангара). Чисто display-уровень: вернуть = очистить массив. Танки в данных остаются.
+export const HIDDEN_NATIONS = ['usa']
+export const isHiddenNation = (id) => HIDDEN_NATIONS.includes(id)
+export const visibleNations = () => NATIONS.filter((n) => !HIDDEN_NATIONS.includes(n.id))
 
 // Статы 0..10 (dmg/rof/spd/mnv/view/hp) — шкала растянута на 10 уровней
 // до новейших машин: тир-1 — честное днище (1-3), топ-10 — 9-10.

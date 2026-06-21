@@ -4,7 +4,7 @@
 // (grantFreeTank — в обход обычного гейта прокачки). Остальные открываются позже
 // обычным путём в «Развитии», так что выбор не эксклюзивный, просто «первый бесплатно».
 import { ref, computed } from 'vue'
-import { TANK_BY_ID, nationOf, STAT_LABELS } from '../game/meta.js'
+import { TANK_BY_ID, nationOf, STAT_LABELS, isHiddenNation } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -13,7 +13,8 @@ import StatRow from './ui/StatRow.vue'
 
 const emit = defineEmits(['pick'])
 
-const OPTIONS = ['bt7', 'pz3', 'stu'].map((id) => TANK_BY_ID[id]).filter(Boolean)
+// СССР bt7 / Германия pz3 / США stu — скрытые нации (без 3D, HIDDEN_NATIONS) убираем из выбора
+const OPTIONS = ['bt7', 'pz3', 'stu'].map((id) => TANK_BY_ID[id]).filter((t) => t && !isHiddenNation(nationOf(t.id)))
 const sel = ref(OPTIONS[0] ? OPTIONS[0].id : null)
 const selTank = computed(() => TANK_BY_ID[sel.value] || OPTIONS[0])
 const nationLabel = (id) => t('game.nations.' + nationOf(id))

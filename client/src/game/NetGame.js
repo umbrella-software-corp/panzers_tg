@@ -280,6 +280,7 @@ export class NetGame {
       if (mine) {
         // outcome брони: 'ricochet'/'nopen' → свой фидбек, иначе hit/miss
         this.onShot({ type: ev.outcome || (ev.hit ? 'hit' : 'miss'), reason: 'line' })
+        this._fxSelfShot = true // лёгкая отдача камеры на свой выстрел (читает NetGame3D)
         if (ev.hit && ev.target && ev.dmg) {
           const t = this._units.get(ev.target)
           const entry = this.damageLog.get(ev.target) || { name: t ? t.name : '—', tankId: t ? t.tankId : null, dmg: 0, killed: false }
@@ -294,7 +295,7 @@ export class NetGame {
       }
     } else if (ev.type === 'hp') {
       this.flash.set(ev.unit, 0.25)
-      if (mine) this.hurtFlash = 0.25
+      if (mine) { this.hurtFlash = 0.25; this._fxSelfHit = true } // тряхнуть камеру от попадания по мне (3D)
     } else if (ev.type === 'crit') {
       if (mine) this.onCrit(ev.slot)
     } else if (ev.type === 'kill') {
@@ -352,6 +353,7 @@ export class NetGame {
   // ТОЧНАЯ копия серверного _collide (кусты не блокируют), чтобы предикт НЕ
   // расходился с сервером у стен (иначе «я не там, где меня бьют»).
   _collidePred(p, radius) {
+    const _bx = p.x, _by = p.y // позиция ДО расталкивания — меряем «отпор» для FX упора (NetGame3D)
     for (const o of this.obstacles) {
       if (o.kind === 'bush') continue
       const dx = p.x - o.x
@@ -391,6 +393,7 @@ export class NetGame {
     const m = 60
     p.x = Math.max(m, Math.min(this.mapSize - m, p.x))
     p.y = Math.max(m, Math.min(this.mapSize - m, p.y))
+    this._bumpPush = Math.hypot(p.x - _bx, p.y - _by) // насколько препятствие оттолкнуло (0 = свободно) — FX упора
   }
 
   // КЛИЕНТСКИЙ ПРЕДИКТ своего танка «по-взрослому»: интегрируем текущий ввод

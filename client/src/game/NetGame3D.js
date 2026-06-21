@@ -9,16 +9,21 @@
 // с NetGameCore форка, поэтому 3D-рендер садится прямо на него (NetGameCore не портируем).
 import { NetGame } from './NetGame.js'
 import { tankModelUrl, tankSizeScale, PROP_MODELS } from './meta.js'
+import { MAP_SIZE } from './config.js'
+import { decorObstacles } from './decor.js' // декор-скаттер ТОЛЬКО для 3D-визуала (без коллизий)
 
 // three.js грузится ДИНАМИЧЕСКИ (только когда тестер реально входит в 3D-бой) —
 // иначе ~150КБ gzip висели бы в главном бандле у всех 2D-игроков (96% трафика).
-// Модульные THREE/GLTFLoader/MeshoptDecoder заполняются в ensureThree() до mount.
-let THREE, GLTFLoader, MeshoptDecoder
+// three.quarks (GPU-партиклы для VFX) — туда же: импортится только здесь, попадает
+// в тот же ленивый чанк, что и three (NetGame3D статически тянет Battle/Hangar).
+// Модульные THREE/GLTFLoader/MeshoptDecoder/QK заполняются в ensureThree() до mount.
+let THREE, GLTFLoader, MeshoptDecoder, QK
 async function ensureThree() {
   if (THREE) return
   THREE = await import('three')
   ;({ GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js'))
   ;({ MeshoptDecoder } = await import('three/examples/jsm/libs/meshopt_decoder.module.js'))
+  QK = await import('three.quarks')
 }
 
 const MODEL_URLS = ['/models/t90_opt.glb', '/models/tank2_opt.glb', '/models/tank3_opt.glb']
@@ -136,19 +141,23 @@ export class NetGame3D extends NetGame {
 
     this._buildGround()
     this._buildStatic()
-    // GLB-окружение (камни/кусты/ящики → модели + декор) — асинхронно, без фриза входа.
-    // Кэш мог быть прогрет preload3D; пока грузится — стоят примитивы-фоллбэки.
-    loadPropScenes().then((scenes) => { if (this.scene) this._load3DProps(scenes) }).catch((e) => console.warn('[3d] пропы не загрузились', e))
+    // ВРЕМЕННО ОТКЛЮЧЕНО (по просьбе): GLB-окружение убрано, оставлены геометрические
+    // примитивы из _buildStatic (камни-икосаэдры, ящики-боксы, кусты-сферы). Чтобы
+    // вернуть GLB-модели окружения — раскомментировать строку ниже.
+    // loadPropScenes().then((scenes) => { if (this.scene) this._load3DProps(scenes) }).catch((e) => console.warn('[3d] пропы не загрузились', e))
 
-    // эффекты: пулы трассеров-стриков + вспышек/взрывов (объёмные меши, видны)
+    // эффекты: трассеры-стрики снаряда (объёмные меши) + GPU-партиклы (three.quarks)
+    // для вспышек/взрывов/искр/дыма — см. _initParticles. fxGroup/sparkGroup оставлены
+    // пустыми (партиклы рисует BatchedRenderer); shell/tracer — по-прежнему меш-пулы.
     this.fxGroup = new THREE.Group(); scene.add(this.fxGroup)
     this.tracerGroup = new THREE.Group(); scene.add(this.tracerGroup) // светящиеся трейлы снарядов
     this.shellGroup = new THREE.Group(); scene.add(this.shellGroup)   // «головы» снарядов (ядра)
-    this.sparkGroup = new THREE.Group(); scene.add(this.sparkGroup)   // искры удара/рикошета
+    this.sparkGroup = new THREE.Group(); scene.add(this.sparkGroup)
     // импульс света от дульной вспышки — ОДИН переиспользуемый источник (intensity 0 в покое,
     // чтобы не пересобирать шейдеры добавлением/удалением света на каждый выстрел)
     this.muzzleLight = new THREE.PointLight(0xffce7a, 0, 360, 2)
     this.muzzleLight.castShadow = false; scene.add(this.muzzleLight)
+    this._initParticles() // three.quarks: пулы вспышка/огонь/дым/искра/пыль
 
     // ПЫЛЬ из-под едущего танка (ring-buffer пуфов; на LOW не эмитим). Следы гусениц
     // на земле убраны по просьбе — оставляем только пыль.
@@ -356,6 +365,25 @@ export class NetGame3D extends NetGame {
       if (prim) prim.visible = false
       this.scene.add(wrap)
     }
+    // ДЕКОР-СКАТТЕР (только 3D-визуал, БЕЗ коллизий): бочки/ежи/руины/мешки по военным
+    // картам. Генерим клиентски (detерминированно по id карты), НЕ трогая sim/баланс/2D.
+    for (const d of this._decorProps()) {
+      const sc = scenes[d.prop]
+      if (!sc) continue
+      const wrap = this._normalizeProp(sc, { fit: d.r * 2.2 })
+      wrap.position.set(d.x, 0, d.y)
+      wrap.rotation.y = (hashId(`${d.x}:${d.y}`) % 360) * Math.PI / 180
+      this.scene.add(wrap)
+    }
+  }
+
+  // декор-пропы текущей карты в пикселях (dx/dy форка → px по sc). ВИЗУАЛ, без коллизий —
+  // sim/сервер/2D их не видят (намеренно: не меняем баланс живого боя).
+  _decorProps() {
+    if (!this.map) return []
+    const c = this.mapSize / 2
+    const sc = this.mapSize / MAP_SIZE
+    return decorObstacles(this.map).map((d) => ({ x: c + d.dx * sc, y: c + d.dy * sc, r: d.r, prop: d.prop }))
   }
 
   // плоское кольцо на земле (видимое, в отличие от 1px-линии)
@@ -496,6 +524,7 @@ export class NetGame3D extends NetGame {
     this._drawFx()
     const nowD = performance.now()
     const ddt = Math.min(0.05, (nowD - (this._lastDrawT || nowD)) / 1000); this._lastDrawT = nowD
+    if (this.batch) this.batch.update(ddt) // продвигаем GPU-партиклы (вспышки/взрывы/дым/искры)
     this._dustTracks(units, ddt)
     this._wreckFx(units, ddt)
 
@@ -581,8 +610,127 @@ export class NetGame3D extends NetGame {
     this.aimReticle.scale.setScalar(locked ? 1.3 : 1)
   }
 
+  // === GPU-партиклы (three.quarks): вспышка дула / огонь / дым / искры / пыль ===
+  // Пулы fire-and-forget систем. На выстрел/взрыв берём систему по кругу, ставим в
+  // позицию и restart() (он обнуляет particleNum — поэтому пул должен пережить время
+  // жизни партиклов; размеры подобраны с запасом под 7×7). Стартовый burst гасим
+  // endEmit() при создании: первый кадр update() выходит рано (emitEnded && 0 частиц),
+  // пока реальный _fx не вызовет restart().
+  _initParticles() {
+    if (!QK || !this.scene) return
+    const batch = new QK.BatchedRenderer()
+    this.scene.add(batch)
+    this.batch = batch
+
+    // мягкий круглый спрайт партикла — рисуем в canvas (без ассета)
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64
+    const cx = cv.getContext('2d')
+    const grd = cx.createRadialGradient(32, 32, 0, 32, 32, 32)
+    grd.addColorStop(0.0, 'rgba(255,255,255,1)')
+    grd.addColorStop(0.35, 'rgba(255,255,255,0.7)')
+    grd.addColorStop(1.0, 'rgba(255,255,255,0)')
+    cx.fillStyle = grd; cx.fillRect(0, 0, 64, 64)
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace
+    const matAdd = new THREE.MeshBasicMaterial({ map: tex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+    const matNorm = new THREE.MeshBasicMaterial({ map: tex, blending: THREE.NormalBlending, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+    this._pDispose = [tex, matAdd, matNorm] // освобождаем в destroy()
+
+    const V3 = (r, g, b) => new QK.Vector3(r, g, b)
+    const V4 = (r, g, b, a) => new QK.Vector4(r, g, b, a)
+    const iv = (a, b) => new QK.IntervalValue(a, b)
+    const grow = (a, b, c, d) => new QK.SizeOverLife(new QK.PiecewiseBezier([[new QK.Bezier(a, b, c, d), 0]]))
+    const up = (mag) => new QK.ApplyForce(new QK.Vector3(0, 1, 0), new QK.ConstantValue(mag))
+    const down = (mag) => new QK.ApplyForce(new QK.Vector3(0, -1, 0), new QK.ConstantValue(mag))
+
+    // фабрика одной системы + пула; emitter в сцену, регистрируем в batch, глушим стартовый burst
+    const mk = (cfg) => {
+      const ps = new QK.ParticleSystem({
+        duration: cfg.duration, looping: false, autoDestroy: false, worldSpace: true,
+        startLife: cfg.life, startSpeed: cfg.speed, startSize: cfg.size, startColor: cfg.color,
+        emissionOverTime: new QK.ConstantValue(0),
+        emissionBursts: [{ time: 0, count: new QK.ConstantValue(cfg.count), cycle: 1, interval: 0.01, probability: 1 }],
+        shape: cfg.shape, material: cfg.mat,
+        renderMode: QK.RenderMode.BillBoard, behaviors: cfg.behaviors || [],
+      })
+      batch.addSystem(ps); this.scene.add(ps.emitter); ps.endEmit()
+      return ps
+    }
+    const pool = (n, cfg) => { const p = []; for (let i = 0; i < n; i++) p.push(mk(cfg)); p._n = 0; return p }
+    const sphere = (r) => new QK.SphereEmitter({ radius: r, thickness: 1, arc: Math.PI * 2 })
+
+    // ВСПЫШКА ДУЛА — короткий яркий аддитивный пых
+    this._pFlash = pool(10, {
+      duration: 0.2, life: iv(0.04, 0.12), speed: iv(20, 90), size: iv(10, 26),
+      color: new QK.ConstantColor(V4(1, 0.86, 0.46, 1)), shape: sphere(4), mat: matAdd,
+      count: 9, behaviors: [new QK.ColorOverLife(new QK.Gradient([[V3(1, 0.92, 0.6), 0], [V3(1, 0.5, 0.16), 1]], [[1, 0], [0.9, 0.3], [0, 1]])), grow(1, 1, 0.6, 0)],
+    })
+    // ОГОНЬ ВЗРЫВА — аддитивный шар, всплывает и тает
+    this._pFire = pool(6, {
+      duration: 0.5, life: iv(0.18, 0.42), speed: iv(15, 70), size: iv(14, 34),
+      color: new QK.ConstantColor(V4(1, 0.74, 0.3, 1)), shape: sphere(6), mat: matAdd,
+      count: 16, behaviors: [new QK.ColorOverLife(new QK.Gradient([[V3(1, 0.85, 0.45), 0], [V3(1, 0.4, 0.1), 0.55], [V3(0.4, 0.1, 0.05), 1]], [[0, 0], [0.95, 0.15], [0, 1]])), grow(0.35, 1, 0.9, 0.2), up(28)],
+    })
+    // ДЫМ — нормальный блендинг, тёмный, поднимается и расширяется (на LOW не льём)
+    this._pSmoke = pool(6, {
+      duration: 0.9, life: iv(0.5, 1.0), speed: iv(8, 30), size: iv(16, 30),
+      color: new QK.ConstantColor(V4(0.12, 0.12, 0.12, 0.7)), shape: sphere(6), mat: matNorm,
+      count: 10, behaviors: [new QK.ColorOverLife(new QK.Gradient([[V3(0.13, 0.13, 0.13), 0], [V3(0.07, 0.07, 0.07), 1]], [[0, 0], [0.55, 0.25], [0, 1]])), grow(0.4, 0.8, 1, 1)],
+    })
+    // ИСКРЫ — аддитивные мелкие, гравитация вниз, разлёт
+    this._pSpark = pool(6, {
+      duration: 0.4, life: iv(0.15, 0.4), speed: iv(80, 240), size: iv(3, 8),
+      color: new QK.ConstantColor(V4(1, 0.95, 0.7, 1)), shape: sphere(2), mat: matAdd,
+      count: 14, behaviors: [new QK.ColorOverLife(new QK.Gradient([[V3(1, 0.95, 0.7), 0], [V3(1, 0.55, 0.2), 1]], [[1, 0], [1, 0.5], [0, 1]])), down(150)],
+    })
+    // ПЫЛЬ ЗЕМЛИ — промах/рикошет: бежевый пых, нормальный блендинг
+    this._pDust = pool(6, {
+      duration: 0.6, life: iv(0.3, 0.6), speed: iv(10, 40), size: iv(12, 26),
+      color: new QK.ConstantColor(V4(0.62, 0.56, 0.4, 0.6)), shape: sphere(5), mat: matNorm,
+      count: 10, behaviors: [new QK.ColorOverLife(new QK.Gradient([[V3(0.62, 0.56, 0.4), 0], [V3(0.5, 0.45, 0.32), 1]], [[0, 0], [0.5, 0.25], [0, 1]])), grow(0.4, 0.9, 1, 1), up(12)],
+    })
+  }
+
+  // взять систему из пула по кругу, поставить в мир (x,y,z) и пыхнуть. updateWorldMatrix
+  // форсим вручную: batch.update идёт ДО renderer.render, иначе burst в старой позиции.
+  _firePool(pool, x, y, z) {
+    if (!pool || !pool.length) return
+    pool._n = (pool._n + 1) % pool.length
+    const ps = pool[pool._n]
+    ps.emitter.position.set(x, y, z)
+    ps.emitter.updateWorldMatrix(true, false)
+    ps.restart()
+  }
+
+  _fxMuzzle(x, y) {
+    if (!this.batch) return
+    this._firePool(this._pFlash, x, 18, y)
+    this._firePool(this._pSpark, x, 18, y) // лёгкий сноп искр из ствола
+  }
+
+  _fxBoom(x, y, big, dust) {
+    if (!this.batch) return
+    if (dust) { // промах/рикошет: пыль + короткий «пинг» искр
+      this._firePool(this._pDust, x, 8, y)
+      this._firePool(this._pSpark, x, 10, y)
+      return
+    }
+    // попадание: огонь + дым (кроме LOW) + искры
+    this._firePool(this._pFire, x, 16, y)
+    this._firePool(this._pSpark, x, 14, y)
+    if (this._quality >= 1) this._firePool(this._pSmoke, x, 14, y)
+    if (big) { // киллшот — плотнее: ещё огонь+искры рядом
+      this._firePool(this._pFire, x + 6, 22, y + 4)
+      this._firePool(this._pSpark, x - 4, 18, y - 6)
+    }
+  }
+
   // трассеры + вспышки + взрывы (данные ведёт super._update в this.shells/muzzles/booms)
   _drawFx() {
+    // НОВЫЕ выстрелы/взрывы → одноразовый GPU-burst (помечаем _fx, чтобы пыхнуть раз)
+    if (this.batch) {
+      for (const m of this.muzzles) { if (!m._fx) { m._fx = true; this._fxMuzzle(m.x, m.y) } }
+      for (const bm of this.booms) { if (!bm._fx) { bm._fx = true; this._fxBoom(bm.x, bm.y, bm.big, bm.dust) } }
+    }
     // СНАРЯД: светящаяся голова летит ПО ДУГЕ + затухающий трейл за ней (аддитивное свечение)
     const tg = this.tracerGroup, sg = this.shellGroup
     while (tg.children.length < this.shells.length) {
@@ -615,51 +763,18 @@ export class NetGame3D extends NetGame {
     for (let i = ti; i < tg.children.length; i++) tg.children[i].visible = false
     for (let i = ti; i < sg.children.length; i++) sg.children[i].visible = false
 
-    // вспышки/взрывы — пул сфер в fxGroup
-    const need = this.muzzles.length + this.booms.length
-    while (this.fxGroup.children.length < need) {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), new THREE.MeshBasicMaterial({ transparent: true }))
-      this.fxGroup.add(m)
-    }
-    let idx = 0
-    // дульная вспышка + импульс света от САМОЙ свежей вспышки (один общий PointLight)
+    // ИМПУЛЬС СВЕТА от самой свежей дульной вспышки (один общий PointLight; сами
+    // вспышки/взрывы/искры рисуют GPU-партиклы из _fxMuzzle/_fxBoom). Подсветка
+    // живёт чуть дольше партикл-пыха (по m.age) — даёт «толчок» сцене на выстреле.
     let lit = null, litK = 0
     for (const m of this.muzzles) {
-      const sp = this.fxGroup.children[idx++]; sp.visible = true
       const k = Math.max(0, 1 - m.age / 0.09)
-      sp.position.set(m.x, 18, m.y); sp.scale.setScalar(11 + 17 * k)
-      sp.material.color.setHex(0xffe6a0); sp.material.opacity = 0.9 * k
       if (k > litK) { litK = k; lit = m }
     }
     if (this.muzzleLight) {
       if (lit) { this.muzzleLight.position.set(lit.x, 28, lit.y); this.muzzleLight.intensity = 9 * litK }
       else this.muzzleLight.intensity = 0
     }
-    for (const bm of this.booms) {
-      const sp = this.fxGroup.children[idx++]; sp.visible = true
-      const life = bm.big ? 0.7 : 0.45
-      const k = Math.max(0, 1 - bm.age / life)
-      sp.position.set(bm.x, 16, bm.y)
-      sp.scale.setScalar((bm.big ? 46 : bm.dust ? 20 : 30) * (1.1 - k))
-      sp.material.color.setHex(bm.big ? 0xff7a2a : bm.dust ? 0x9a8a6a : 0xffb24a)
-      sp.material.opacity = 0.7 * k
-    }
-    for (let i = idx; i < this.fxGroup.children.length; i++) this.fxGroup.children[i].visible = false
-
-    // ИСКРА удара — яркое бело-горячее ядро поверх взрыва (кроме пыли-промаха), гаснет быстро
-    const sk = this.sparkGroup
-    const hits = this.booms.filter((b) => !b.dust)
-    while (sk.children.length < hits.length) {
-      sk.add(new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })))
-    }
-    let si = 0
-    for (const bm of hits) {
-      const fast = Math.max(0, 1 - bm.age / 0.12)
-      const sp = sk.children[si++]; sp.visible = true
-      sp.position.set(bm.x, 18, bm.y); sp.scale.setScalar((bm.big ? 28 : 17) * (0.4 + 0.6 * fast))
-      sp.material.opacity = 0.95 * fast
-    }
-    for (let i = si; i < sk.children.length; i++) sk.children[i].visible = false
   }
 
   // пыль при упоре в препятствие (берём пуф из общего пула — его анимирует _dustTracks)
@@ -797,6 +912,12 @@ export class NetGame3D extends NetGame {
     window.removeEventListener('keydown', this._onKeyDown)
     window.removeEventListener('keyup', this._onKeyUp)
     if (this._ro) try { this._ro.disconnect() } catch {}
+    // GPU-партиклы: освобождаем системы + общую текстуру/материалы (WebGL-ресурсы
+    // добьёт forceContextLoss ниже, но JS/текстуры чистим явно — боёв за сессию много)
+    for (const pool of [this._pFlash, this._pFire, this._pSmoke, this._pSpark, this._pDust]) {
+      if (pool) for (const ps of pool) try { ps.dispose() } catch {}
+    }
+    if (this._pDispose) for (const r of this._pDispose) try { r.dispose() } catch {}
     if (this.client) { this.client.onMessage = null; this.client.onSocketClose = null; this.client.close() }
     if (this.renderer) {
       try { this.renderer.forceContextLoss() } catch { /* ok */ } // ОСВОБОДИТЬ WebGL-контекст (dispose сам по себе не освобождает → утечка → «3D не заходит»)
