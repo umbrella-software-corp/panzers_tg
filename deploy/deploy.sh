@@ -17,7 +17,7 @@ SSH="$SSHP ssh -o StrictHostKeyChecking=accept-new $HOST"
 echo "== 1/6 rsync кода =="
 $SSHP rsync -az --delete -e "ssh -o StrictHostKeyChecking=accept-new" \
   --exclude node_modules --exclude .git --exclude client/dist \
-  --exclude server/data --exclude design-ref --exclude tools \
+  --exclude server/data --exclude server/.env --exclude design-ref --exclude tools \
   "$REPO/" "$HOST:$DIR/"
 
 echo "== 2/6 окружение (один раз) =="
