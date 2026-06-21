@@ -18,11 +18,14 @@ import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['go'])
 
+// gain — ДИАПАЗОН [min,max] кредитов, катится при вскрытии (фидбек #26). ЗЕРКАЛО
+// server economy.js CRATES. Под econOn кредиты катит/начисляет сервер (берём r.credits).
 const CRATES = [
-  { id: 'c1', nameKey: 'crateFieldName', subKey: 'crateFieldSub', icon: 'crate_field', costTokens: 5, gain: 600, drop: 0.1, bonus: 3 },
-  { id: 'c2', nameKey: 'crateOfficerName', subKey: 'crateOfficerSub', icon: 'crate_officer', costTokens: 12, gain: 1800, drop: 0.35, bonus: 5 },
-  { id: 'c3', nameKey: 'crateGeneralName', subKey: 'crateGeneralSub', icon: 'crate_general', costTokens: 25, gain: 4500, drop: 1, bonus: 8 },
+  { id: 'c1', nameKey: 'crateFieldName', subKey: 'crateFieldSub', icon: 'crate_field', costTokens: 5, gain: [400, 900], drop: 0.1, bonus: 3 },
+  { id: 'c2', nameKey: 'crateOfficerName', subKey: 'crateOfficerSub', icon: 'crate_officer', costTokens: 12, gain: [1000, 2500], drop: 0.35, bonus: 5 },
+  { id: 'c3', nameKey: 'crateGeneralName', subKey: 'crateGeneralSub', icon: 'crate_general', costTokens: 25, gain: [3000, 5000], drop: 1, bonus: 8 },
 ]
+const rollGain = (g) => (Array.isArray(g) ? g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1)) : g)
 const CREDIT_PACKS = [
   { id: 'p1', amount: 1000, price: '50 ⭐' },
   { id: 'p2', amount: 3500, price: '135 ⭐', hot: true },
@@ -52,7 +55,7 @@ async function buyCrate(c) {
   })
   let camo = null
   let tokens = 0
-  let credits = c.gain
+  let credits = rollGain(c.gain) // офлайн-путь катит локально; под econOn перезапишем из ответа сервера
   if (econOn()) {
     // авторитетная экономика: списание/RNG/начисление на СЕРВЕРЕ, принимаем результат
     if ((profile.tokens || 0) < c.costTokens) { showToast(tr('shop.notEnoughTokens'), true); return }
@@ -64,7 +67,7 @@ async function buyCrate(c) {
       showToast(tr('shop.notEnoughTokens'), true)
       return
     }
-    addRewards(c.gain, 0)
+    addRewards(credits, 0)
     // ящик: кредиты + (по шансу drop) случайный ЗАПЕРТЫЙ камуфляж на одном из твоих
     // танков. Все камо уже открыты → компенсируем жетонами (rewardTokens «…камуфляжи
     // собраны»). Генеральский (drop:1) даёт камо гарантированно.
@@ -142,6 +145,8 @@ async function buyGold(p) {
   showToast(tr('shop.goldGot', { n: p.amount }))
 }
 const fmt = (n) => fmtNum(n)
+// подпись награды ящика: диапазон «400–900» или одиночное число (старый формат)
+const gainLabel = (g) => (Array.isArray(g) ? `${fmt(g[0])}–${fmt(g[1])}` : fmt(g))
 
 onMounted(() => {
   track('shop_viewed', {
@@ -214,7 +219,7 @@ onMounted(() => {
             <img :src="`/sprites/${c.icon}.png`" style="width: 52px; height: 52px; border-radius: 8px; object-fit: cover" />
             <div style="flex: 1; min-width: 0">
               <div class="pz-display" style="font-size: 14.5px">{{ tr('shop.' + c.nameKey) }}</div>
-              <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ tr('shop.' + c.subKey, { credits: fmt(c.gain) }) }}</div>
+              <div style="font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-weight: 500">{{ tr('shop.' + c.subKey, { credits: gainLabel(c.gain) }) }}</div>
             </div>
             <button class="pz-btn2" style="padding: 9px 12px; font-size: 12.5px; gap: 5px" @click="buyCrate(c)">
               <PzIcon name="token" :size="13" /> {{ c.costTokens }}

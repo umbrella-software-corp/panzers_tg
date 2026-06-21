@@ -69,6 +69,7 @@ import {
   STARTERS,
   NATIONS,
   FREE_XP_SHARE,
+  CREW_XP_SHARE,
   nationOf,
   tanksOfNation,
   MODULE_DEFS,
@@ -678,7 +679,7 @@ export function bankBattleXp(xp) {
   const total = Math.max(0, xp || 0)
   let free = Math.round(total * FREE_XP_SHARE)
   const rest = Math.max(0, total - free)
-  let crew = Math.round(rest / 2)
+  let crew = Math.round(rest * CREW_XP_SHARE) // было /2 (0.5) — экипаж качался слишком быстро (#26)
   const branch = Math.max(0, rest - crew)
   const crewRoom = Math.max(0, (CREW_MAX_LEVEL - 1) * CREW_LEVEL_XP - (profile.crew.xp || 0))
   if (crew > crewRoom) { free += crew - crewRoom; crew = crewRoom } // излишек экипажа → свободный

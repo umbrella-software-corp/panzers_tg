@@ -100,10 +100,12 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     const xpTotal = Math.round((r.xp + medalXp) * m)
     const freeShare = Math.round(xpTotal * E.FREE_XP_SHARE)
     const rest = Math.max(0, xpTotal - freeShare)
-    const branchShare = rest - Math.round(rest / 2)
-    // экипаж на МАКСЕ — крю-доля (её излишек до капа) не пропадает, а идёт в свободный опыт
-    // (зеркало client bankBattleXp). crew.xp ведёт клиент; берём его последнее значение.
-    const crewShare = rest - branchShare
+    // crew-доля срезана (CREW_XP_SHARE 0.5→0.3): экипаж качался слишком быстро (#26),
+    // высвобожденное идёт в ветку → танки открываются чуть быстрее. ЗЕРКАЛО client bankBattleXp.
+    const crewShare = Math.round(rest * E.CREW_XP_SHARE)
+    const branchShare = rest - crewShare
+    // экипаж на МАКСЕ — крю-доля (её излишек до капа) не пропадает, а идёт в свободный опыт.
+    // crew.xp ведёт клиент; берём его последнее значение.
     const crewRoom = Math.max(0, (E.CREW_MAX_LEVEL - 1) * E.CREW_LEVEL_XP - ((p.crew && p.crew.xp) || 0))
     const crewOverflow = Math.max(0, crewShare - crewRoom)
     const freeTotal = freeShare + crewOverflow
@@ -295,18 +297,22 @@ export function spendGoldAmmo(uid, n) {
 
 // ящик (лутбокс): тратит жетоны → кредиты + шанс камуфляжа. RNG на СЕРВЕРЕ. ЗЕРКАЛО
 // CRATES из client/src/components/Shop.vue.
-const CRATES = { c1: { costTokens: 5, gain: 600, drop: 0.1, bonus: 3 }, c2: { costTokens: 12, gain: 1800, drop: 0.35, bonus: 5 }, c3: { costTokens: 25, gain: 4500, drop: 1, bonus: 8 } }
+// gain — ДИАПАЗОН кредитов [min,max], катится при вскрытии (фидбек #26: «пусть падает по
+// разному»). ЗЕРКАЛО client Shop.vue CRATES. rollCrateGain совместим со старым числом.
+const CRATES = { c1: { costTokens: 5, gain: [400, 900], drop: 0.1, bonus: 3 }, c2: { costTokens: 12, gain: [1000, 2500], drop: 0.35, bonus: 5 }, c3: { costTokens: 25, gain: [3000, 5000], drop: 1, bonus: 8 } }
+const rollCrateGain = (g) => (Array.isArray(g) ? g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1)) : g)
 export function buyCrate(uid, crateId) {
   return withProfileLock(uid, async () => {
     const p = await loadProfile(uid); if (!p) return err('no-profile')
     const c = CRATES[crateId]; if (!c) return err('bad-arg')
     if ((p.tokens || 0) < c.costTokens) return err('funds')
     p.tokens -= c.costTokens
-    p.credits = (p.credits || 0) + c.gain
+    const gain = rollCrateGain(c.gain)
+    p.credits = (p.credits || 0) + gain
     let camo = null, tokens = 0
     if (Math.random() < c.drop) { camo = dropRandomCamo(p); if (!camo) { tokens = c.bonus || 3; p.tokens += tokens } }
     await saveProfile(uid, p)
-    return ok(p, { reward: { credits: c.gain, camo, tokens } })
+    return ok(p, { reward: { credits: gain, camo, tokens } })
   })
 }
 

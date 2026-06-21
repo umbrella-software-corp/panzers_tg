@@ -252,6 +252,9 @@ export const tankResearchXp = (tier) => TIER_XP[tier] || 0
 // СВОБОДНЫЙ ОПЫТ: доля опыта боя, уходящая в общий пул (вместо ветки/экипажа). Его
 // можно вложить в любую нацию (см. spendFreeXp в store). ЗЕРКАЛО shared/economy.js.
 export const FREE_XP_SHARE = 0.1
+// доля боевого опыта (от остатка) в ЭКИПАЖ; остальное — в ветку. Срезана 0.5→0.3
+// (экипаж качался слишком быстро, фидбек #26). ЗЕРКАЛО shared/economy.js.
+export const CREW_XP_SHARE = 0.3
 
 // ---------- голдовые снаряды ----------
 export const GOLD_AMMO_MULT = 1.35 // множитель урона голдового снаряда
