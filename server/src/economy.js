@@ -362,7 +362,8 @@ function dropRandomCamo(p) {
   const order = []
   const seen = new Set()
   for (const tid of [p.selectedTank, ...recent, ...owned]) {
-    if (tid && owned.includes(tid) && !seen.has(tid)) { seen.add(tid); order.push(tid) }
+    // премы без камо-системы — камо на них пропадает впустую (фидбек #26)
+    if (tid && owned.includes(tid) && !seen.has(tid) && !E.isPremiumTank(tid)) { seen.add(tid); order.push(tid) }
   }
   const cids = Object.keys(E.CAMO_COST).filter(Boolean)
   for (const tid of order) {

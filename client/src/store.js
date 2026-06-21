@@ -776,7 +776,8 @@ export function grantRandomCamo() {
   const order = []
   const seen = new Set()
   for (const tid of [profile.selectedTank, ...recent, ...profile.owned]) {
-    if (tid && profile.owned.includes(tid) && !seen.has(tid)) { seen.add(tid); order.push(tid) }
+    // премы без камо-системы (top-down, без скинов) — камо на них = подарок в пустоту (фидбек #26)
+    if (tid && profile.owned.includes(tid) && !seen.has(tid) && !(TANK_BY_ID[tid] || {}).premium) { seen.add(tid); order.push(tid) }
   }
   for (const tid of order) {
     const pool = CAMOS.filter((c) => c.id && !camoUnlocked(tid, c.id))
