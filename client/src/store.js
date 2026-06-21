@@ -876,7 +876,7 @@ export function addBattleResult(result, kills = 0, extra = {}) {
   while (profile.rankClaimed < reached) {
     profile.rankClaimed++
     const r = RANKS[profile.rankClaimed]
-    if (r) addRewards(r.credits || 0, r.tokens || 0)
+    if (r) addRewards(r.credits || 0, 0) // алмазы (жетоны) в бою больше не капают — только прем-танки фармят (#26)
   }
   profile.history.unshift({
     t: Date.now(),
@@ -924,7 +924,7 @@ export function bankMedals(b) {
     const first = !profile.medals[e.id]
     profile.medals[e.id] = (profile.medals[e.id] || 0) + 1
     const r = MEDAL_BY_ID[e.id]?.reward
-    if (first && r) addRewards(r.credits || 0, r.tokens || 0)
+    if (first && r) addRewards(r.credits || 0, 0) // алмазы (жетоны) за медали в бою убраны — фарм только премами (#26)
   }
   return earned
 }

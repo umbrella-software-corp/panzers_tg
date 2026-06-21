@@ -76,10 +76,10 @@ function claimMeta() {
           style="padding: 7px 12px; font-size: 11px; gap: 4px; border-color: var(--green); color: var(--green)"
           @click="claimMeta"
         >
-          {{ t('tasks.claim') }} <PzIcon name="coin" :size="12" /> {{ meta.reward.credits }} <PzIcon name="token" :size="12" /> {{ meta.reward.tokens }}
+          {{ t('tasks.claim') }} <PzIcon name="coin" :size="12" /> {{ meta.reward.credits }}<template v-if="meta.reward.tokens"> <PzIcon name="token" :size="12" /> {{ meta.reward.tokens }}</template>
         </button>
         <span v-else class="pz-chip" style="font-size: 10.5px; color: var(--ink-dim)">
-          <PzIcon name="coin" :size="11" /> {{ meta.reward.credits }} <PzIcon name="token" :size="11" /> {{ meta.reward.tokens }}
+          <PzIcon name="coin" :size="11" /> {{ meta.reward.credits }}<template v-if="meta.reward.tokens"> <PzIcon name="token" :size="11" /> {{ meta.reward.tokens }}</template>
         </span>
       </div>
 

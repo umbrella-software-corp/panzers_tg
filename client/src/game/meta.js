@@ -273,22 +273,22 @@ export const GOLD_AMMO_PACKS = [
 export const DAILY_TASKS = [
   { id: 'dmg600', goal: 4500, key: 'damage', credits: 400 },
   { id: 'kills3', goal: 3, key: 'kills', credits: 500 },
-  { id: 'light2', goal: 2, key: 'lightKills', tokens: 5 },
+  { id: 'light2', goal: 2, key: 'lightKills', credits: 400 }, // алмазы→кредиты: жетоны фармят только премы (#26)
   { id: 'block3', goal: 3, key: 'blocked', credits: 350 },
   { id: 'win1', goal: 1, key: 'wins', credits: 600 },
   { id: 'battles3', goal: 3, key: 'battles', credits: 300 },
   { id: 'dmg9000', goal: 9000, key: 'damage', credits: 800 },
   { id: 'kills5', goal: 5, key: 'kills', credits: 800 },
-  { id: 'win3', goal: 3, key: 'wins', tokens: 10 },
+  { id: 'win3', goal: 3, key: 'wins', credits: 600 }, // было tokens:10 → кредиты (#26)
   { id: 'battles5', goal: 5, key: 'battles', credits: 500 },
   { id: 'survive2', goal: 2, key: 'survived', credits: 450 },
   { id: 'armor2000', goal: 2000, key: 'blockedDmg', credits: 450 },
-  { id: 'light3', goal: 3, key: 'lightKills', tokens: 7 },
+  { id: 'light3', goal: 3, key: 'lightKills', credits: 500 }, // было tokens:7 → кредиты (#26)
 ].map((d) => defLoc(d, { label: (o) => `game.tasks.${o.id}` }))
 export const TASKS_PER_DAY = 4
 // бонус за выполнение ВСЕХ задач дня (по фидбеку) — ощутимо жирнее любой одиночной.
 // ЗЕРКАЛО shared/economy.js TASKS_ALL_BONUS.
-export const TASKS_ALL_BONUS = { credits: 1500, tokens: 5 }
+export const TASKS_ALL_BONUS = { credits: 1500 } // жетоны убраны — фарм алмазов только премами (#26)
 
 // детерминированный выбор задач дня (у всех игроков одинаковые): стабильно
 // перетасовываем пул по дате и берём первые TASKS_PER_DAY — без повторов при любом
@@ -307,14 +307,15 @@ export function tasksOfDay(dayString) {
 }
 
 // ---------- ежедневный вход (цикл 7 дней) ----------
+// жетоны убраны из дейли-входа — фарм алмазов только премами (#26); заменены кредитами
 export const DAILY_REWARDS = [
   { credits: 200 },
   { credits: 350 },
-  { tokens: 5 },
+  { credits: 400 },
   { credits: 600 },
   { credits: 800 },
-  { tokens: 10 },
-  { credits: 1200, tokens: 10, gold: 5 },
+  { credits: 700 },
+  { credits: 1800, gold: 5 },
 ]
 
 // ---------- камуфляжи (платные скины, видны всем) ----------

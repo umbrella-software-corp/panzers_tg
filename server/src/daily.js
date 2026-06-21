@@ -12,14 +12,15 @@
 import { loadProfile, saveProfile, withProfileLock } from './db.js'
 
 // 7-дневный цикл. gold = золотые снаряды (goldAmmo на профиле), НЕ валюта.
+// жетоны убраны — фарм алмазов только премами (#26); заменены кредитами. ЗЕРКАЛО meta.js.
 const DAILY_REWARDS = [
   { credits: 200 },
   { credits: 350 },
-  { tokens: 5 },
+  { credits: 400 },
   { credits: 600 },
   { credits: 800 },
-  { tokens: 10 },
-  { credits: 1200, tokens: 10, gold: 5 },
+  { credits: 700 },
+  { credits: 1800, gold: 5 },
 ]
 
 let grantSeq = 0 // уникальный хвост id гранта дейлика

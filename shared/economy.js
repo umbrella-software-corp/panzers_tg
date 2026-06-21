@@ -152,21 +152,21 @@ export function careerMedalIds(s) {
 export const DAILY_TASKS = [
   { id: 'dmg600', goal: 4500, key: 'damage', credits: 400 },
   { id: 'kills3', goal: 3, key: 'kills', credits: 500 },
-  { id: 'light2', goal: 2, key: 'lightKills', tokens: 5 },
+  { id: 'light2', goal: 2, key: 'lightKills', credits: 400 }, // алмазы→кредиты: жетоны фармят только премы (#26)
   { id: 'block3', goal: 3, key: 'blocked', credits: 350 },
   { id: 'win1', goal: 1, key: 'wins', credits: 600 },
   { id: 'battles3', goal: 3, key: 'battles', credits: 300 },
   { id: 'dmg9000', goal: 9000, key: 'damage', credits: 800 },
   { id: 'kills5', goal: 5, key: 'kills', credits: 800 },
-  { id: 'win3', goal: 3, key: 'wins', tokens: 10 },
+  { id: 'win3', goal: 3, key: 'wins', credits: 600 }, // было tokens:10 → кредиты (#26)
   { id: 'battles5', goal: 5, key: 'battles', credits: 500 },
   { id: 'survive2', goal: 2, key: 'survived', credits: 450 },
   { id: 'armor2000', goal: 2000, key: 'blockedDmg', credits: 450 },
-  { id: 'light3', goal: 3, key: 'lightKills', tokens: 7 },
+  { id: 'light3', goal: 3, key: 'lightKills', credits: 500 }, // было tokens:7 → кредиты (#26)
 ]
 export const TASKS_PER_DAY = 4
 // бонус за выполнение ВСЕХ задач дня. ЗЕРКАЛО meta.js TASKS_ALL_BONUS.
-export const TASKS_ALL_BONUS = { credits: 1500, tokens: 5 }
+export const TASKS_ALL_BONUS = { credits: 1500 } // жетоны убраны — фарм алмазов только премами (#26)
 export const TASK_BY_ID = Object.fromEntries(DAILY_TASKS.map((t) => [t.id, t]))
 export function tasksOfDay(dayString) {
   let s = [...String(dayString)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7)

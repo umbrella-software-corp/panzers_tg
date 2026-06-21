@@ -21,9 +21,9 @@ const emit = defineEmits(['go'])
 // gain — ДИАПАЗОН [min,max] кредитов, катится при вскрытии (фидбек #26). ЗЕРКАЛО
 // server economy.js CRATES. Под econOn кредиты катит/начисляет сервер (берём r.credits).
 const CRATES = [
-  { id: 'c1', nameKey: 'crateFieldName', subKey: 'crateFieldSub', icon: 'crate_field', costTokens: 5, gain: [400, 900], drop: 0.1, bonus: 3 },
-  { id: 'c2', nameKey: 'crateOfficerName', subKey: 'crateOfficerSub', icon: 'crate_officer', costTokens: 12, gain: [1000, 2500], drop: 0.35, bonus: 5 },
-  { id: 'c3', nameKey: 'crateGeneralName', subKey: 'crateGeneralSub', icon: 'crate_general', costTokens: 25, gain: [3000, 5000], drop: 1, bonus: 8 },
+  { id: 'c1', nameKey: 'crateFieldName', subKey: 'crateFieldSub', icon: 'crate_field', costTokens: 15, gain: [400, 900], drop: 0.1, bonus: 3 },
+  { id: 'c2', nameKey: 'crateOfficerName', subKey: 'crateOfficerSub', icon: 'crate_officer', costTokens: 40, gain: [1000, 2500], drop: 0.35, bonus: 5 },
+  { id: 'c3', nameKey: 'crateGeneralName', subKey: 'crateGeneralSub', icon: 'crate_general', costTokens: 75, gain: [3000, 5000], drop: 1, bonus: 8 },
 ]
 const rollGain = (g) => (Array.isArray(g) ? g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1)) : g)
 const CREDIT_PACKS = [

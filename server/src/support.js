@@ -60,6 +60,12 @@ async function setGroup(chatId) {
   await saveStore()
 }
 
+// кулдаун подтверждения «✅ Тикет #N доставлен»: при серии сообщений шлём его не на
+// каждое, а раз в ACK_COOLDOWN_MS — игрока раздражал спам подтверждений (фидбек #26).
+// In-memory (сброс при рестарте безвреден — это лишь подавление дубля-плашки).
+const lastAck = new Map()
+const ACK_COOLDOWN_MS = 5 * 60 * 1000
+
 const TOKEN = process.env.SUPPORT_BOT_TOKEN || ''
 const GROUP_RAW = process.env.SUPPORT_CHAT_ID || '' // id группы разработчиков (число; супергруппа: -100…)
 
@@ -195,5 +201,10 @@ async function handle(u) {
     await api('sendMessage', { chat_id: chat.id, text: t('sup.deliveryFailed', lang) })
     return
   }
-  await api('sendMessage', { chat_id: chat.id, text: t('sup.ticketDone', lang, { n: ticket }) })
+  // подтверждение игроку — с кулдауном: серия сообщений → одна плашка, не спам
+  const ackNow = Date.now()
+  if (ackNow - (lastAck.get(from.id) || 0) > ACK_COOLDOWN_MS) {
+    lastAck.set(from.id, ackNow)
+    await api('sendMessage', { chat_id: chat.id, text: t('sup.ticketDone', lang, { n: ticket }) })
+  }
 }
