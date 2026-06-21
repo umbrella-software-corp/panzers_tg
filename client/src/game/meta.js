@@ -384,6 +384,9 @@ export function rankByBattles(battles) {
 // ---------- рейтинг ----------
 export const RATING_START = 1000
 export const RATING_DELTA = { victory: 24, draw: 2, defeat: -16 }
+// минимум боёв для попадания в рейтинг (ЗЕРКАЛО server/src/db.js RATING_MIN_BATTLES):
+// меньше — WN8 раздут на малой выборке, не ранжируем (фидбек «3 боя = топ»)
+export const RATING_MIN_BATTLES = 5
 
 // «Боевой рейтинг» — оценка по эффективности на конкретном танке относительно
 // ОЖИДАЕМЫХ значений (а не просто по урону). Структурно как у известного формата:

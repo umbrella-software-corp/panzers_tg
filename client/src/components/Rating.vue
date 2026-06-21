@@ -5,7 +5,7 @@
 // стабильные между заходами, чтобы таблица не скакала.
 import { computed, ref, onMounted, watch } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft, playerRank } from '../store.js'
-import { ratingRivals, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS } from '../game/meta.js'
+import { ratingRivals, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS, RATING_MIN_BATTLES } from '../game/meta.js'
 import { apiRename, apiLeaderboard, apiPlayer, apiClans, apiCreateClan, apiJoinClan, apiLeaveClan, apiTournaments, apiJoinTournament, apiLeaveTournament } from '../api.js'
 import { haptic, tgUserId } from '../tg.js'
 import { t as tr, fmtDate } from '../i18n.js'
@@ -93,7 +93,11 @@ const board = computed(() => {
       premium: p.name === profile.name ? isPremium() : !!p.premium, // ★ прем-игрок
       live: true,
     }))
-    if (!rows.some((r) => r.you)) rows.push({ name: profile.name, rating: profile.stats.wn8, you: true, premium: isPremium(), live: false }) // я вне топа
+    if (!rows.some((r) => r.you)) {
+      // я вне топа. <5 боёв → не ранжируюсь (показываем «ещё N боёв» вместо рейтинга)
+      const need = Math.max(0, RATING_MIN_BATTLES - (profile.stats.battles || 0))
+      rows.push({ name: profile.name, rating: profile.stats.wn8, you: true, premium: isPremium(), live: false, unranked: need > 0, needBattles: need })
+    }
     return rows
   }
   // фоллбэк: детерминированные «соперники» вокруг моего рейтинга
@@ -496,7 +500,8 @@ const fmtTime = (t) => {
               <span v-if="r.premium" class="prem-crown" :title="tr('rating.premiumTitle')">♛</span>{{ r.name }}
             </span>
             <span v-if="r.live" style="font-size: 10.5px; color: var(--ink-dim); font-weight: 600; margin-right: 6px">{{ r.winrate }}%</span>
-            <span class="pz-display" :style="{ fontSize: '13.5px', color: ratingBand(r.rating).color }">{{ r.rating }}</span>
+            <span v-if="r.unranked" style="font-size: 11px; color: var(--ink-dim); font-weight: 600">{{ tr('rating.needBattles', { n: r.needBattles }) }}</span>
+            <span v-else class="pz-display" :style="{ fontSize: '13.5px', color: ratingBand(r.rating).color }">{{ r.rating }}</span>
           </div>
         </div>
         <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 8px; font-weight: 500; text-align: center">

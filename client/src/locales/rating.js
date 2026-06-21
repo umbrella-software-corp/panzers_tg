@@ -83,6 +83,7 @@ export default {
     leaderboard: 'LEADERBOARD',
     premiumTitle: 'Premium',
     scoring: 'win +24 · draw +2 · defeat −16',
+    needBattles: '{n} more battles',
   },
   ru: {
     title: 'РЕЙТИНГ',
@@ -157,5 +158,6 @@ export default {
     leaderboard: 'ТАБЛИЦА ЛИДЕРОВ',
     premiumTitle: 'Премиум',
     scoring: 'победа +24 · ничья +2 · поражение −16',
+    needBattles: 'ещё {n} боёв',
   },
 }

@@ -6,6 +6,10 @@ import { fileURLToPath } from 'url'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data')
 const PROFILES = path.join(ROOT, 'profiles')
+
+// минимум боёв для попадания в рейтинг/лидерборд (фидбек: «чел с 3 боёв и 100% винрейта
+// выше всех» — WN8 по эффективности раздувается на малой выборке). ЗЕРКАЛО client meta.js.
+const RATING_MIN_BATTLES = 5
 const CLANS = path.join(ROOT, 'clans')
 const PAYMENTS = path.join(ROOT, 'payments.json')
 const SETTINGS = path.join(ROOT, 'settings.json')
@@ -74,7 +78,7 @@ export async function leaderboard(limit = 20) {
   const paid = await paidPremiumUids()
   const now = Date.now()
   return all
-    .filter((p) => p.name)
+    .filter((p) => p.name && (p.battles || 0) >= RATING_MIN_BATTLES) // в рейтинг только от 5 боёв
     .sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
     .slice(0, limit)
     .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > now && paid.has(p.uid) }))
@@ -83,7 +87,7 @@ export async function leaderboard(limit = 20) {
 // публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):
 // стата + любимая техника (самая частая в истории боёв)
 export async function playerByRank(rank) {
-  const sorted = (await listProfiles()).filter((p) => p.name).sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
+  const sorted = (await listProfiles()).filter((p) => p.name && (p.battles || 0) >= RATING_MIN_BATTLES).sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0)) // тот же фильтр ≥5 боёв, что и leaderboard (места совпадают)
   const row = sorted[rank - 1]
   if (!row) return null
   const paid = await paidPremiumUids()
