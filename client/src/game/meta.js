@@ -387,6 +387,10 @@ export const RATING_DELTA = { victory: 24, draw: 2, defeat: -16 }
 // минимум боёв для попадания в рейтинг (ЗЕРКАЛО server/src/db.js RATING_MIN_BATTLES):
 // меньше — WN8 раздут на малой выборке, не ранжируем (фидбек «3 боя = топ»)
 export const RATING_MIN_BATTLES = 5
+// «доверие» рейтинга по числу боёв: до RATING_FULL_CONF боёв рейтинг ПРОВИЗОРНЫЙ
+// (занижен пропорционально), к этому числу выходит на истинную эффективность. Так
+// рейтинг учитывает объём — больше боёв = выше (фидбек «учитывать количество боёв»).
+export const RATING_FULL_CONF = 25
 
 // «Боевой рейтинг» — оценка по эффективности на конкретном танке относительно
 // ОЖИДАЕМЫХ значений (а не просто по урону). Структурно как у известного формата:
@@ -417,7 +421,11 @@ export function battleScore(agg) {
   const rFRAGc = Math.max(0, Math.min(rDMGc + 0.2, (rFRAG - 0.12) / (1 - 0.12)))
   const rSPOTc = Math.max(0, Math.min(rDMGc + 0.1, (rSPOT - 0.38) / (1 - 0.38)))
   const rWINc = Math.max(0, (rWIN - 0.71) / (1 - 0.71))
-  return Math.round(980 * rDMGc + 210 * rDMGc * rFRAGc + 155 * rFRAGc * rSPOTc + 145 * Math.min(1.8, rWINc))
+  const raw = 980 * rDMGc + 210 * rDMGc * rFRAGc + 155 * rFRAGc * rSPOTc + 145 * Math.min(1.8, rWINc)
+  // «доверие» по числу боёв: рейтинг провизорный (занижен) до RATING_FULL_CONF боёв,
+  // затем полный. Учитывает объём — несколько удачных боёв не дают топ (фидбек).
+  const conf = Math.min(1, agg.battles / RATING_FULL_CONF)
+  return Math.round(raw * conf)
 }
 
 // градации рейтинга — подпись и цвет (наша шкала, откалибрована под expectedBattle)
