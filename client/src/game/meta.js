@@ -243,7 +243,7 @@ export const moduleCost = (tier, level) => tier * (level === 2 ? 40 : 80)
 
 // ИССЛЕДОВАНИЕ: стоимость открытия танка в ОПЫТЕ ВЕТКИ по тиру (тратится, отдельно от
 // кредитов). ЗЕРКАЛО shared/economy.js TIER_XP — менять В ОБОИХ местах.
-export const TIER_XP = { 1: 0, 2: 800, 3: 2500, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
+export const TIER_XP = { 1: 0, 2: 450, 3: 2200, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
 export const tankResearchXp = (tier) => TIER_XP[tier] || 0
 
 // СВОБОДНЫЙ ОПЫТ: доля опыта боя, уходящая в общий пул (вместо ветки/экипажа). Его
@@ -280,6 +280,9 @@ export const DAILY_TASKS = [
   { id: 'light3', goal: 3, key: 'lightKills', tokens: 7 },
 ].map((d) => defLoc(d, { label: (o) => `game.tasks.${o.id}` }))
 export const TASKS_PER_DAY = 4
+// бонус за выполнение ВСЕХ задач дня (по фидбеку) — ощутимо жирнее любой одиночной.
+// ЗЕРКАЛО shared/economy.js TASKS_ALL_BONUS.
+export const TASKS_ALL_BONUS = { credits: 1500, tokens: 5 }
 
 // детерминированный выбор задач дня (у всех игроков одинаковые): стабильно
 // перетасовываем пул по дате и берём первые TASKS_PER_DAY — без повторов при любом
@@ -438,14 +441,15 @@ export const modsMaxedCount = (modules, tankId) => MODULE_DEFS.filter((m) => mod
 // metric/need — декларативное условие (см. store.battleMedalIds / careerMedalIds).
 // glyph — символ-фоллбэк, если спрайт /sprites/medals/<id>.png ещё не подгрузился.
 export const MEDALS = [
-  // боевые — за один бой
-  { id: 'warrior', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150 } },
-  { id: 'sniper', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2 } },
-  { id: 'firestorm', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1 } },
-  { id: 'wall', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blockedDmg', need: 2000, reward: { credits: 300, tokens: 1 } },
-  { id: 'scout', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200 } },
-  { id: 'survivor', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150 } },
-  { id: 'triumph', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3 } },
+  // боевые — за один бой. reward.xp — опыт за медаль (по фидбеку: за медали ощутимо
+  // больше опыта; начисляется в reward.xp боя, см. battleMedalXp).
+  { id: 'warrior', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150, xp: 120 } },
+  { id: 'sniper', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2, xp: 300 } },
+  { id: 'firestorm', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1, xp: 250 } },
+  { id: 'wall', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blockedDmg', need: 2000, reward: { credits: 300, tokens: 1, xp: 200 } },
+  { id: 'scout', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200, xp: 150 } },
+  { id: 'survivor', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150, xp: 100 } },
+  { id: 'triumph', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3, xp: 400 } },
   // карьерные — рубежи
   { id: 'recruit', tier: 'bronze', glyph: '➀', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
   { id: 'veteran', tier: 'silver', glyph: '➁', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
@@ -456,6 +460,19 @@ export const MEDALS = [
 ].map((m) => defLoc(m, { name: (o) => `game.medals.${o.id}.name`, desc: (o) => `game.medals.${o.id}.desc` }))
 export const MEDAL_BY_ID = Object.fromEntries(MEDALS.map((m) => [m.id, m]))
 export const MEDAL_TIER_COLOR = { bronze: '#c08349', silver: '#cfd4da', gold: '#f2a50c' }
+// суммарный опыт за боевые медали этого боя (b: { kills, damage, blockedDmg, lightKills,
+// survived, victory }). ЗЕРКАЛО shared/economy.js battleMedalXp. Входит в reward.xp боя.
+export function battleMedalXp(b) {
+  let xp = 0
+  for (const m of MEDALS) {
+    if (m.kind !== 'battle' || !m.reward || !m.reward.xp) continue
+    const ok = m.metric === 'triumph' ? (!!b.survived && !!b.victory)
+      : m.metric === 'survived' ? !!b.survived
+      : (+b[m.metric] || 0) >= m.need
+    if (ok) xp += m.reward.xp
+  }
+  return xp
+}
 
 // ---------- кланы ----------
 // эмблема клана = символ + цвет (выбор из набора при создании)

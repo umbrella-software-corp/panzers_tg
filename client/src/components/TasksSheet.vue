@@ -2,7 +2,7 @@
 // Задачи дня: три цели с прогрессом и наградой; «Забрать» начисляет
 // кредиты/жетоны. Ротация задач — по дате, общая для всех (meta.tasksOfDay).
 import { computed, ref } from 'vue'
-import { dailyTasksList, claimTask } from '../store.js'
+import { dailyTasksList, claimTask, metaTaskState, claimMetaTask } from '../store.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
@@ -10,6 +10,7 @@ import PzIcon from './ui/PzIcon.vue'
 const emit = defineEmits(['close'])
 const bump = ref(0)
 const tasks = computed(() => (bump.value, dailyTasksList()))
+const meta = computed(() => (bump.value, metaTaskState())) // мета-задача «все задачи дня»
 
 async function claim(t) {
   if (await claimTask(t.id)) {
@@ -20,6 +21,12 @@ async function claim(t) {
       credits: t.credits || 0,
       tokens: t.tokens || 0,
     })
+    bump.value++
+  }
+}
+function claimMeta() {
+  if (claimMetaTask()) {
+    track('task_reward_claimed', { task_id: 'all_tasks', credits: meta.value.reward.credits, tokens: meta.value.reward.tokens })
     bump.value++
   }
 }
@@ -52,6 +59,27 @@ async function claim(t) {
         </button>
         <span v-else class="pz-chip" style="font-size: 10.5px; color: var(--ink-dim)">
           <PzIcon :name="task.tokens ? 'token' : 'coin'" :size="11" /> {{ task.tokens || task.credits }}
+        </span>
+      </div>
+
+      <!-- МЕТА-ЗАДАЧА: выполни все задачи дня → жирный бонус -->
+      <div class="task meta" :style="{ opacity: meta.claimed ? 0.55 : 1 }">
+        <div style="flex: 1; min-width: 0">
+          <div style="font-size: 12.5px; font-weight: 700; color: var(--amber)">★ {{ t('tasks.allTitle') }}</div>
+          <div class="bar"><b :style="{ width: (meta.doneCount / meta.total) * 100 + '%', background: meta.allDone ? 'var(--green)' : 'var(--amber)' }"></b></div>
+          <div style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500; margin-top: 3px">{{ meta.doneCount }} / {{ meta.total }} · {{ t('tasks.allHint') }}</div>
+        </div>
+        <span v-if="meta.claimed" class="pz-chip" style="color: var(--green); font-size: 10.5px">{{ t('tasks.claimed') }}</span>
+        <button
+          v-else-if="meta.allDone"
+          class="pz-btn2"
+          style="padding: 7px 12px; font-size: 11px; gap: 4px; border-color: var(--green); color: var(--green)"
+          @click="claimMeta"
+        >
+          {{ t('tasks.claim') }} <PzIcon name="coin" :size="12" /> {{ meta.reward.credits }} <PzIcon name="token" :size="12" /> {{ meta.reward.tokens }}
+        </button>
+        <span v-else class="pz-chip" style="font-size: 10.5px; color: var(--ink-dim)">
+          <PzIcon name="coin" :size="11" /> {{ meta.reward.credits }} <PzIcon name="token" :size="11" /> {{ meta.reward.tokens }}
         </span>
       </div>
 
@@ -89,6 +117,10 @@ async function claim(t) {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.35);
+}
+.task.meta {
+  border-color: rgba(242, 165, 12, 0.5);
+  background: rgba(242, 165, 12, 0.08);
 }
 .bar {
   height: 5px;

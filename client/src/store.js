@@ -88,6 +88,7 @@ import {
   CREW_PERK_MAX,
   crewPerkCost,
   tasksOfDay,
+  TASKS_ALL_BONUS,
   MEDALS,
   MEDAL_BY_ID,
   RANKS,
@@ -348,7 +349,8 @@ export async function syncProfile() {
           const claimed = [...new Set([...(srvTasks.claimed || []), ...(localTasks.claimed || [])])]
           const progress = { ...(srvTasks.progress || {}) }
           for (const [k, v] of Object.entries(localTasks.progress || {})) progress[k] = Math.max(progress[k] || 0, v || 0)
-          profile.tasks = { date: localTasks.date, progress, claimed }
+          const metaClaimed = !!(srvTasks.metaClaimed || localTasks.metaClaimed) // не воскрешаем мета-бонус
+          profile.tasks = { date: localTasks.date, progress, claimed, metaClaimed }
         }
       }
       // ЗАЩИТА ВЫБРАННОГО ТАНКА: свежий локальный выбор (есть несохранённые правки) НЕ
@@ -961,7 +963,20 @@ export async function claimDaily() {
 // ---------- ежедневные задачи: 3 в день, прогресс из итогов боя ----------
 function ensureTasksDay() {
   const d = dayStr()
-  if (profile.tasks.date !== d) profile.tasks = { date: d, progress: {}, claimed: [] }
+  if (profile.tasks.date !== d) profile.tasks = { date: d, progress: {}, claimed: [], metaClaimed: false }
+}
+// мета-задача «выполни все задачи дня» → бонус (TASKS_ALL_BONUS), один раз в день.
+export function metaTaskState() {
+  const list = dailyTasksList()
+  const doneCount = list.filter((t) => t.done).length
+  return { doneCount, total: list.length, allDone: list.length > 0 && doneCount >= list.length, claimed: !!profile.tasks.metaClaimed, reward: TASKS_ALL_BONUS }
+}
+export function claimMetaTask() {
+  const st = metaTaskState()
+  if (!st.allDone || st.claimed) return false
+  profile.tasks.metaClaimed = true
+  addRewards(TASKS_ALL_BONUS.credits || 0, TASKS_ALL_BONUS.tokens || 0)
+  return true
 }
 
 export function dailyTasksList() {

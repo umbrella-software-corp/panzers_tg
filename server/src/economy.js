@@ -85,16 +85,19 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     const p = await loadProfile(h.uid)
     if (!p) return null
     let credits = 0, tokens = 0
-    const r = E.battleReward({ result, kills, damage, allyScore })
+    const r = E.battleReward({ result, kills, damage })
+    // опыт за боевые медали этого боя (повторяемый, не разовый) — складывается в общий
+    // опыт боя, как на клиенте. blockedDmg/lightKills сервер из sim не знает → 0 (как ниже).
+    const medalXp = E.battleMedalXp({ kills, damage, blockedDmg: 0, lightKills: 0, survived, victory: result === 'victory' })
     let m = 1
     if ((p.premiumUntil || 0) > Date.now()) m += E.PREMIUM_BONUS
     const premTank = E.isPremiumTank(h.tankId)
     if (premTank) m += E.PREM_TANK.creditMult
-    credits += Math.round(r.credits * m)
+    credits += Math.round((r.xp + medalXp) * 1.25 * m) // кредиты ∝ опыту (база+медали), как silver=xp*1.25
     // ОПЫТ БОЯ за бой (с премиум-множителем). Делёж как у клиента: 10% в СВОБОДНЫЙ опыт
     // (в любую нацию), остаток — пополам ветка текущей нации / экипаж (экипаж клиентский).
     // Опыт ветки и свободный — серверные исследовательские валюты (тратятся на открытие).
-    const xpTotal = Math.round(r.xp * m)
+    const xpTotal = Math.round((r.xp + medalXp) * m)
     const freeShare = Math.round(xpTotal * E.FREE_XP_SHARE)
     const rest = Math.max(0, xpTotal - freeShare)
     const branchShare = rest - Math.round(rest / 2)

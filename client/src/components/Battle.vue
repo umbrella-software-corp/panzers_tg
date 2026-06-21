@@ -8,7 +8,7 @@ import { NetGame3D } from '../game/NetGame3D.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, party, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
-import { TANK_BY_ID, PREM_TANK, GOLD_AMMO_MULT } from '../game/meta.js'
+import { TANK_BY_ID, PREM_TANK, GOLD_AMMO_MULT, battleMedalXp } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // alias: `t` встречается как локальная переменная ниже
@@ -424,9 +424,14 @@ const reward = computed(() => {
   // gemsIn — через сколько боёв следующая выдача (для подсказки игроку).
   const premTank = !!(TANK_BY_ID[profile.selectedTank] && TANK_BY_ID[profile.selectedTank].premium)
   const premAfter = premTank ? (profile.premTankBattles || 0) + 1 : 0
+  // ОПЫТ от РЕЗУЛЬТАТА боя (фидбек: раньше давалось почти одинаково — теперь решает
+  // урон/фраги/медали, а не флэт-база). Кредиты ∝ опыту («относительно опыта — кредиты»).
+  const dmg = s.damageDealt || 0
+  const medalXp = battleMedalXp({ kills: s.kills, damage: dmg, blockedDmg: s.blockedDmg || 0, lightKills: s.lightKills || 0, survived: !s.deaths, victory: win })
+  const xp = (win ? 150 : draw ? 90 : 60) + s.kills * 55 + Math.round(dmg / 22) + medalXp + (s.bonusXp || 0)
   return {
-    xp: (win ? 200 : draw ? 120 : 80) + s.kills * 45 + s.hits * 4 + (s.bonusXp || 0),
-    silver: (win ? 260 : draw ? 150 : 100) + s.kills * 45 + Math.round(s.allyScore * 6),
+    xp,
+    silver: Math.round(xp * 1.25),
     kills: s.kills,
     allyScore: s.allyScore,
     // для задач дня

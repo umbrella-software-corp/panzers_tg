@@ -12,7 +12,7 @@ export const tankCost = (tier) => TIER_COST[tier] || 0
 // ---------- ИССЛЕДОВАНИЕ: стоимость в опыте ветки по тиру (WoT-модель) ----------
 // Опыт ветки (branchXp[нация]) копится в боях на танках нации и ТРАТИТСЯ при открытии
 // след. танка — отдельно от кредитов. ЗЕРКАЛО client/src/game/meta.js TIER_XP.
-export const TIER_XP = { 1: 0, 2: 800, 3: 2500, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
+export const TIER_XP = { 1: 0, 2: 450, 3: 2200, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
 export const tankResearchXp = (tier) => TIER_XP[tier] || 0
 
 // ---------- СВОБОДНЫЙ ОПЫТ (free XP) ----------
@@ -72,14 +72,27 @@ export function canUnlockTank(owned, modules, tankId, branchXp) {
 // ---------- награда за бой из АВТОРИТЕТНЫХ серверных чисел ----------
 // result: 'victory'|'draw'|'defeat'; kills/damage — из sim; allyScore — счёт команды.
 // Возвращает { credits, xp } (БЕЗ премиум-множителей — их накидывает сервер по premiumUntil/прем-танку).
-export function battleReward({ result, kills = 0, damage = 0, allyScore = 0 }) {
+export function battleReward({ result, kills = 0, damage = 0 }) {
+  // ЗЕРКАЛО client Battle.vue reward. Опыт решает РЕЗУЛЬТАТ боя (урон/фраги), не флэт-база
+  // (фидбек: «давалось одинаково и немного»). Кредиты ∝ опыту. Опыт за медали — отдельно
+  // (battleMedalXp), складывается в grantBattle (сервер) / reward (клиент).
   const win = result === 'victory'
   const draw = result === 'draw'
-  const baseXp = win ? 200 : draw ? 120 : 80
-  const baseCr = win ? 260 : draw ? 150 : 100
-  const xp = baseXp + kills * 45 + Math.round((damage || 0) / 40)
-  const credits = baseCr + kills * 45 + Math.round((allyScore || 0) * 6) + Math.round((damage || 0) / 120)
-  return { credits: Math.max(0, credits), xp: Math.max(0, xp) }
+  const baseXp = win ? 150 : draw ? 90 : 60
+  const xp = Math.max(0, baseXp + kills * 55 + Math.round((damage || 0) / 22))
+  return { credits: Math.round(xp * 1.25), xp }
+}
+// суммарный опыт за боевые медали этого боя. ЗЕРКАЛО meta.js battleMedalXp.
+export function battleMedalXp(b) {
+  let xp = 0
+  for (const m of MEDALS) {
+    if (m.kind !== 'battle' || !m.reward || !m.reward.xp) continue
+    const ok = m.metric === 'triumph' ? (!!b.survived && !!b.victory)
+      : m.metric === 'survived' ? !!b.survived
+      : (+b[m.metric] || 0) >= m.need
+    if (ok) xp += m.reward.xp
+  }
+  return xp
 }
 export const PREMIUM_BONUS = 0.15 // премиум-аккаунт: +15% к кредитам/опыту
 export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemEvery: 10, gems: 10 }
@@ -101,13 +114,13 @@ export function rankIndexByBattles(battles) {
 // ---------- медали ----------
 // ЗЕРКАЛО meta.js MEDALS (только id/kind/metric/need/reward — i18n не нужен серверу).
 export const MEDALS = [
-  { id: 'warrior', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150 } },
-  { id: 'sniper', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2 } },
-  { id: 'firestorm', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1 } },
-  { id: 'wall', kind: 'battle', metric: 'blockedDmg', need: 2000, reward: { credits: 300, tokens: 1 } },
-  { id: 'scout', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200 } },
-  { id: 'survivor', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150 } },
-  { id: 'triumph', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3 } },
+  { id: 'warrior', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150, xp: 120 } },
+  { id: 'sniper', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2, xp: 300 } },
+  { id: 'firestorm', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1, xp: 250 } },
+  { id: 'wall', kind: 'battle', metric: 'blockedDmg', need: 2000, reward: { credits: 300, tokens: 1, xp: 200 } },
+  { id: 'scout', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200, xp: 150 } },
+  { id: 'survivor', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150, xp: 100 } },
+  { id: 'triumph', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3, xp: 400 } },
   { id: 'recruit', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
   { id: 'veteran', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
   { id: 'guards', kind: 'career', metric: 'battles', need: 500, reward: { credits: 1500, tokens: 5 } },
@@ -148,6 +161,8 @@ export const DAILY_TASKS = [
   { id: 'light3', goal: 3, key: 'lightKills', tokens: 7 },
 ]
 export const TASKS_PER_DAY = 4
+// бонус за выполнение ВСЕХ задач дня. ЗЕРКАЛО meta.js TASKS_ALL_BONUS.
+export const TASKS_ALL_BONUS = { credits: 1500, tokens: 5 }
 export const TASK_BY_ID = Object.fromEntries(DAILY_TASKS.map((t) => [t.id, t]))
 export function tasksOfDay(dayString) {
   let s = [...String(dayString)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7)
