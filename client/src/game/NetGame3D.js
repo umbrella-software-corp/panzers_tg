@@ -439,14 +439,33 @@ export class NetGame3D extends NetGame {
     return wrap
   }
 
+  // НИЗКОПОЛИ-ТАНК из примитивов — плейсхолдер/фоллбэк, когда GLB не загрузился.
+  // Узнаваемый силуэт (корпус+башня+ствол), ствол вперёд (+Z). Цвет команды.
+  _placeholderTank(isSelf) {
+    const col = isSelf ? 0xd99a2c : 0x6f7a66
+    const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.85, metalness: 0.05, flatShading: true })
+    const g = new THREE.Group()
+    const W = TANK_LEN * 0.52 // ширина корпуса
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(W, 15, TANK_LEN * 0.9), mat)
+    hull.position.y = 11; hull.castShadow = true; g.add(hull)
+    const turret = new THREE.Mesh(new THREE.BoxGeometry(W * 0.66, 12, TANK_LEN * 0.46), mat)
+    turret.position.set(0, 23, -TANK_LEN * 0.04); turret.castShadow = true; g.add(turret)
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, TANK_LEN * 0.6, 10), mat)
+    barrel.rotation.x = Math.PI / 2 // ось Y→Z (ствол вперёд)
+    barrel.position.set(0, 23, TANK_LEN * 0.42); barrel.castShadow = true; g.add(barrel)
+    return g
+  }
+
   _tankGroup(u, isSelf) {
     let t = this.tankGroups.get(u.id)
     if (t) return t
     const group = new THREE.Group()
     const holder = new THREE.Group(); group.add(holder)
-    // плейсхолдер-бокс, пока грузится реальная модель танка
-    const ph = new THREE.Mesh(new THREE.BoxGeometry(TANK_LEN * 0.55, 26, TANK_LEN), new THREE.MeshStandardMaterial({ color: isSelf ? 0xe0a52a : 0x7a7d72 }))
-    ph.position.y = 16; ph.castShadow = true; holder.add(ph)
+    // ПЛЕЙСХОЛДЕР: низкополи-танк из примитивов (корпус+башня+ствол), пока грузится
+    // GLB. На устройствах, где GLB не тянется (webp/meshopt в webview), он ОСТАЁТСЯ —
+    // и это узнаваемый танк, а не голый куб («это t28, ахахаха»). Ствол смотрит в +Z
+    // (локальное «вперёд»: holder крутится по hull, см. _draw).
+    holder.add(this._placeholderTank(isSelf))
     // командное кольцо под танком
     const ringCol = isSelf ? 0xf2d24a : (u.team === this.side ? this.colors.ally : this.colors.enemy).hp
     const ring = this._mkGroundRing(37, 42, ringCol, 0.82); ring.position.y = 2; group.add(ring)
