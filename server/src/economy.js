@@ -104,12 +104,13 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     // высвобожденное идёт в ветку → танки открываются чуть быстрее. ЗЕРКАЛО client bankBattleXp.
     const crewShare = Math.round(rest * E.CREW_XP_SHARE)
     const branchShare = rest - crewShare
-    // экипаж на МАКСЕ — крю-доля (её излишек до капа) не пропадает, а идёт в свободный опыт.
-    // crew.xp ведёт клиент; берём его последнее значение.
+    // экипаж на МАКСЕ — крю-доля (её излишек до капа) НЕ пропадает: конвертится в КРЕДИТЫ
+    // (xp×1.25, как silver) — фидбек #26 «экипаж фулл за 25 боёв, зато кредитов не хватает».
+    // crew.xp ведёт клиент; берём его последнее значение. ЗЕРКАЛО client bankBattleXp.
     const crewRoom = Math.max(0, (E.CREW_MAX_LEVEL - 1) * E.CREW_LEVEL_XP - ((p.crew && p.crew.xp) || 0))
     const crewOverflow = Math.max(0, crewShare - crewRoom)
-    const freeTotal = freeShare + crewOverflow
-    if (freeTotal > 0) p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + freeTotal
+    credits += Math.round(crewOverflow * 1.25) // экипаж на максе → кредиты вместо «в никуда»
+    if (freeShare > 0) p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + freeShare
     if (branchShare > 0) {
       if (!p.branchXp || typeof p.branchXp !== 'object') p.branchXp = {}
       const nat = E.tankNation(h.tankId)

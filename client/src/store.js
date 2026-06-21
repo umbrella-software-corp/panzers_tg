@@ -694,9 +694,9 @@ export function addFreeXp(xp) {
   profile.freeXp = (profile.freeXp || 0) + Math.max(0, Math.round(xp || 0))
 }
 
-// сплит опыта боя: 10% в свободный опыт, остаток пополам — ветка текущего танка / экипаж.
-// Экипаж на МАКСЕ (level >= CREW_MAX_LEVEL) — крю-доля (или её излишек до капа) не пропадает,
-// а льётся в свободный опыт. Так после прокачки экипажа опыт боя не уходит в никуда.
+// сплит опыта боя: 10% в свободный опыт, остаток CREW_XP_SHARE экипажу, прочее в ветку.
+// Экипаж на МАКСЕ — излишек крю-доли НЕ пропадает: конвертится в КРЕДИТЫ (xp×1.25, как
+// silver) — фидбек #26 «экипаж фулл за 25 боёв, зато кредитов не хватает». ЗЕРКАЛО server.
 export function bankBattleXp(xp) {
   const total = Math.max(0, xp || 0)
   let free = Math.round(total * FREE_XP_SHARE)
@@ -704,11 +704,13 @@ export function bankBattleXp(xp) {
   let crew = Math.round(rest * CREW_XP_SHARE) // было /2 (0.5) — экипаж качался слишком быстро (#26)
   const branch = Math.max(0, rest - crew)
   const crewRoom = Math.max(0, (CREW_MAX_LEVEL - 1) * CREW_LEVEL_XP - (profile.crew.xp || 0))
-  if (crew > crewRoom) { free += crew - crewRoom; crew = crewRoom } // излишек экипажа → свободный
+  let crewCredits = 0
+  if (crew > crewRoom) { crewCredits = Math.round((crew - crewRoom) * 1.25); crew = crewRoom } // максовый экипаж → кредиты
   addCrewXp(crew)
   addBranchXp(nationOf(profile.selectedTank), branch)
   addFreeXp(free)
-  return { crew, branch, free }
+  if (crewCredits) addRewards(crewCredits, 0) // под econOn — no-op (кредиты начислит сервер)
+  return { crew, branch, free, crewCredits }
 }
 
 // вложить свободный опыт в ветку выбранной нации (для исследования любой ветки/нации).

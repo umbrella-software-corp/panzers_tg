@@ -3,7 +3,7 @@
 // как в макете — «Сводка» и «По целям» (по-целевой лог урона из движка).
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref, onMounted } from 'vue'
-import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText } from '../store.js'
+import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText, CREW_MAX_LEVEL, CREW_LEVEL_XP } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID, FREE_XP_SHARE, CREW_XP_SHARE } from '../game/meta.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -31,9 +31,12 @@ const tankOf = (id) => (TANK_BY_ID[id] || {}).name || ''
 // сплит опыта: ТОЧНО как в bankBattleXp (10% свободный, остаток CREW_XP_SHARE экипажу,
 // прочее в ветку). Доля экипажа вынесена в CREW_XP_SHARE — иначе донесение показывало бы
 // один сплит, а начислялся другой (фидбек «опыт ветки начисляется нечётко», #23).
+const crewRoom = computed(() => Math.max(0, (CREW_MAX_LEVEL - 1) * CREW_LEVEL_XP - ((profile.crew && profile.crew.xp) || 0)))
 const freeXp = computed(() => Math.round((props.reward.xp || 0) * FREE_XP_SHARE))
-const crewXp = computed(() => Math.round(((props.reward.xp || 0) - freeXp.value) * CREW_XP_SHARE))
-const branchXp = computed(() => (props.reward.xp || 0) - freeXp.value - crewXp.value)
+const crewXpRaw = computed(() => Math.round(((props.reward.xp || 0) - freeXp.value) * CREW_XP_SHARE))
+const crewXp = computed(() => Math.min(crewXpRaw.value, crewRoom.value)) // что реально ушло в экипаж
+const crewCredits = computed(() => Math.round(Math.max(0, crewXpRaw.value - crewRoom.value) * 1.25)) // экипаж на максе → кредиты (#26)
+const branchXp = computed(() => (props.reward.xp || 0) - freeXp.value - crewXpRaw.value)
 const branchLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(profile.selectedTank)) || {}).label || '')
 const won = computed(() => props.state.result === 'victory')
 // «следующая цель» — нудж к следующему бою (хук удержания, та же логика что в ангаре)
@@ -170,6 +173,10 @@ function setPage(i) {
         <!-- куда ушёл опыт -->
         <div style="font-size: 11.5px; font-weight: 600; opacity: 0.75; text-align: center; margin-top: 8px">
           {{ t('results.branchLine', { branch: branchLabel, branchXp, crewXp, freeXp }) }}
+        </div>
+        <!-- экипаж на максе: излишек крю-доли конвертирован в кредиты (#26) -->
+        <div v-if="crewCredits > 0" style="font-size: 11px; font-weight: 700; color: var(--amber); text-align: center; margin-top: 3px">
+          {{ t('results.crewMaxedCredits', { credits: crewCredits }) }}
         </div>
         <!-- прем-танк: кристаллы (💎) — выдача этого боя или счётчик до следующей -->
         <div v-if="reward.gems" class="prem-gems">
