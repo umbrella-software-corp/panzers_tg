@@ -147,6 +147,9 @@ if (!Array.isArray(profile.claimedRef)) profile.claimedRef = []
 if (typeof profile.goldAmmo !== 'number') profile.goldAmmo = 5
 if (!profile.stats || typeof profile.stats !== 'object')
   profile.stats = { battles: 0, wins: 0, kills: 0, rating: RATING_START }
+// статы ПО КАЖДОМУ танку: { tankId: { battles, wins, kills } }. Копятся с обновления
+// (легаси-игрокам не реконструируем — растёт от боёв вперёд). Показываются в ангаре.
+if (!profile.tankStats || typeof profile.tankStats !== 'object') profile.tankStats = {}
 // агрегаты боевого рейтинга (урон/фраги факт + ожидаемые). У существующих игроков
 // сидим из доступной истории боёв (танк берём текущий — приблизительно), новым — 0.
 if (typeof profile.stats.sumDmg !== 'number') {
@@ -240,7 +243,7 @@ const clearDirtyIf = (rev) => { if (dirtyRev === rev) lcSet(DIRTY_KEY, '0') }
 const rememberSrvAt = (at) => { if (at) lcSet(SRVAT_KEY, String(at)) }
 // поля «локального прогресса» — их при preferLocal возвращаем поверх старого серверного.
 // НЕ включаем серверно-ведомые (referrals/premiumUntil/daily/tasks/pendingGrants/srv*).
-const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'freeXp', 'stats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef']
+const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'freeXp', 'stats', 'tankStats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef']
 
 // локальный кеш — мгновенно; на сервер — с дебаунсом (офлайн не мешает игре)
 let pushTimer = null
@@ -911,7 +914,19 @@ export function addBattleResult(result, kills = 0, extra = {}) {
     tank: extra.tank || '',
   })
   if (profile.history.length > 12) profile.history.length = 12
+  // статы по сыгранному танку (бои/победы/фраги именно на нём)
+  const playedTank = extra.tank || profile.selectedTank
+  if (playedTank) {
+    if (!profile.tankStats || typeof profile.tankStats !== 'object') profile.tankStats = {}
+    const ts = profile.tankStats[playedTank] || { battles: 0, wins: 0, kills: 0 }
+    ts.battles++
+    if (result === 'victory') ts.wins++
+    ts.kills += kills
+    profile.tankStats[playedTank] = ts
+  }
 }
+// статы конкретного танка (для ангара) — всегда объект, дефолт нули
+export const tankStat = (id) => (profile.tankStats || {})[id] || { battles: 0, wins: 0, kills: 0 }
 
 // ---------- медали ----------
 // b — итоги одного боя: { kills, damage, blocked, lightKills, survived, victory }

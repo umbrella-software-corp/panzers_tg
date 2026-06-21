@@ -26,10 +26,11 @@ export default {
     goalUnlock: ({ name }) => `${name} ready to research!`,
     goalResearch: ({ name, n }) => `${name}: ${n} more branch XP`,
     goalFreeXp: ({ n }) => `invest ${n} free XP`,
-    // тизер статистики (ведёт в Рейтинг → Профиль)
-    statsLabel: 'STATS',
+    // статистика выбранного танка (ведёт в Рейтинг → Профиль)
+    statsLabel: 'ON TANK',
     statBattles: 'battles',
     statKills: 'frags',
+    statNone: 'no battles on this tank yet',
   },
   ru: {
     bay: 'Б-01',
@@ -55,9 +56,10 @@ export default {
     goalUnlock: ({ name }) => `${name} — можно открыть!`,
     goalResearch: ({ name, n }) => `${name}: ещё ${n} опыта ветки`,
     goalFreeXp: ({ n }) => `вложи ${n} свободного опыта`,
-    // тизер статистики (ведёт в Рейтинг → Профиль)
-    statsLabel: 'СТАТА',
+    // статистика выбранного танка (ведёт в Рейтинг → Профиль)
+    statsLabel: 'НА ТАНКЕ',
     statBattles: 'боёв',
     statKills: 'фрагов',
+    statNone: 'на этом танке ещё нет боёв',
   },
 }

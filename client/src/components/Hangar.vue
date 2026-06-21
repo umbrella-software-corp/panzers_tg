@@ -2,7 +2,7 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText } from '../store.js'
+import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, tankStat } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
 import { haptic } from '../tg.js'
@@ -179,16 +179,16 @@ function goGoal(g) {
   if (g.kind === 'tasks') openTasksSheet()
   else emit('go', 'tree') // unlock / research / freexp — всё в «Развитии»
 }
-// тизер статистики: игроки не находят её во вкладке «Рейтинг» (фидбек тикет #26).
-// Чип в ангаре показывает бои/винрейт/фраги и ведёт прямо в профиль (Рейтинг → Профиль).
-const statLine = computed(() => {
-  const s = profile.stats || {}
-  const b = s.battles || 0
-  const wr = b ? Math.round(((s.wins || 0) / b) * 100) : 0
-  return `${b} ${t('hangar.statBattles')} · ${wr}% · ${s.kills || 0} ${t('hangar.statKills')}`
+// статистика ВЫБРАННОГО танка (бои/винрейт/фраги именно на нём) — фидбек: глобальная
+// «стата» не нужна, нужны статы по конкретному танку. Тап ведёт в полный профиль.
+const tankStatLine = computed(() => {
+  const st = tankStat(tank.value.id)
+  if (!st.battles) return t('hangar.statNone')
+  const wr = Math.round((st.wins / st.battles) * 100)
+  return `${st.battles} ${t('hangar.statBattles')} · ${wr}% · ${st.kills} ${t('hangar.statKills')}`
 })
 function goStats() {
-  track('stats_opened', { from: 'hangar' })
+  track('stats_opened', { from: 'hangar', tank_id: tank.value.id })
   haptic('light')
   emit('go', 'rating')
 }
@@ -438,10 +438,10 @@ onMounted(() => {
       <span class="goal-arr">→</span>
     </button>
 
-    <!-- тизер личной статистики → ведёт в профиль (Рейтинг → Профиль) -->
+    <!-- статистика ВЫБРАННОГО танка → тап ведёт в полный профиль (Рейтинг) -->
     <button v-if="!firstSession" class="goal-chip stats-chip" @click="goStats">
       <span class="goal-lbl pz-pixel">{{ t('hangar.statsLabel') }}</span>
-      <span class="goal-text">{{ statLine }}</span>
+      <span class="goal-text">{{ tankStatLine }}</span>
       <span class="goal-arr">→</span>
     </button>
 
