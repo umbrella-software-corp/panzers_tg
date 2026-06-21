@@ -51,7 +51,15 @@ export function loadModelScenes() {
   return modelScenesPromise
 }
 // прогрев three.js + моделей заранее (ангар зовёт при входе)
-export function preload3D() { try { loadModelScenes(); loadPropScenes() } catch { /* ничего */ } }
+// Прогрев 3D перед боем: three.js + базовые/проп-модели + (важно!) модель ИМЕННО
+// твоего танка — иначе она (444КБ) качается лишь на старте боя и виден плейсхолдер-
+// бокс, пока грузит. tankId/nation передаёт ангар (см. Hangar preload3D).
+export function preload3D(tankId, nation) {
+  try {
+    loadModelScenes(); loadPropScenes()
+    if (tankId || nation) loadModelScene(tankModelUrl(tankId, nation))
+  } catch { /* ничего */ }
+}
 
 // === ОКРУЖЕНИЕ: модели пропов ===
 // Загрузка всех GLB-пропов один раз на сессию → { kind: scene|null }.
@@ -75,7 +83,9 @@ export function loadModelScene(url) {
   if (sceneByUrl.has(url)) return sceneByUrl.get(url)
   const p = ensureThree().then(() => new Promise((res) => {
     const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder)
-    loader.load(url, (g) => res(g.scene), undefined, (e) => { console.warn('[3d] модель не загрузилась', url, e); res(null) })
+    // при сбое НЕ отравляем кэш null'ом навсегда — снимаем запись, чтобы повтор/фоллбэк
+    // мог попробовать ещё раз (иначе один транзиентный сбой = коробка на всю сессию)
+    loader.load(url, (g) => res(g.scene), undefined, (e) => { console.warn('[3d] модель не загрузилась', url, e); sceneByUrl.delete(url); res(null) })
   }))
   sceneByUrl.set(url, p)
   return p
@@ -442,11 +452,20 @@ export class NetGame3D extends NetGame {
     this.scene.add(group)
     t = { group, holder, ring, blob }
     this.tankGroups.set(u.id, t)
-    // РЕАЛЬНАЯ модель танка по реестру (своя → фоллбэк по нации) + размер по классу
-    loadModelScene(tankModelUrl(u.tankId, u.nation)).then((sc) => {
-      if (!sc || this.tankGroups.get(u.id) !== t || !this.scene) return // юнит исчез / destroy
+    // РЕАЛЬНАЯ модель танка по реестру + размер по классу. Если своя модель не
+    // загрузилась (нет в реестре / сбой сети) — фоллбэк на модель нации, чтобы НИКОГДА
+    // не торчал плейсхолдер-бокс («это t28 в 3d, ахахаха»). Бокс — только пока грузит.
+    const url = tankModelUrl(u.tankId, u.nation)
+    const place = (sc) => {
+      if (!sc || this.tankGroups.get(u.id) !== t || !this.scene) return false // юнит исчез / destroy
       holder.clear()
       holder.add(this._normalizeModel(sc.clone(true), tankSizeScale(u.tankId)))
+      return true
+    }
+    loadModelScene(url).then((sc) => {
+      if (place(sc) || this.tankGroups.get(u.id) !== t || !this.scene) return
+      const fb = tankModelUrl(null, u.nation) // модель нации (СССР→Т-90 и т.д.) — обычно уже прогрета
+      if (fb !== url) loadModelScene(fb).then(place).catch(() => {})
     }).catch(() => {})
     return t
   }

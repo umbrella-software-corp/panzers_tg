@@ -37,7 +37,7 @@ const hashId = (s) => { let h = 0; s = String(s || ''); for (let i = 0; i < s.le
 const heroUrl = computed(() => tankModelUrl(tank.value && tank.value.id, nationOf((tank.value && tank.value.id) || profile.selectedTank)))
 const heroSeed = computed(() => hashId(tank.value && tank.value.id)) // зерно узора камо — стабильно по танку
 const heroScale = computed(() => tankSizeScale(tank.value && tank.value.id)) // размер по классу/длине корпуса
-if (threeD.value) preload3D() // 3D включён → греем three.js + модели (превью ангара + вход в бой без фриза)
+if (threeD.value) preload3D(profile.selectedTank, nationOf(profile.selectedTank)) // 3D включён → греем three.js + модель СВОЕГО танка (превью ангара + вход в бой без коробки)
 // ангар = ТОЛЬКО твои танки: выбран не свой (стейл/превью из дерева) → лучший по тиру; нацию
 // держим = нации выбранного (подпись + дефолт «Развития»). Работает одинаково в 2D и 3D.
 watch(() => profile.selectedTank, () => {
@@ -52,7 +52,7 @@ function toggle3D() {
   threeD.value = !threeD.value
   try { localStorage.setItem('pz3d', threeD.value ? '1' : '0') } catch { /* приватный режим */ }
   if (threeD.value) {
-    preload3D()
+    preload3D(profile.selectedTank, nationOf(profile.selectedTank))
     if (!profile.used3D) { profile.used3D = true; apiUsed3D().catch(() => {}) } // метрика «перешёл в 3D» (липкий флаг)
   }
   haptic('light')
