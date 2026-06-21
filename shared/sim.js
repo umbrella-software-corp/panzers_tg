@@ -227,8 +227,8 @@ export class BattleSim {
       blocked: 0, // заблокировано бронёй (рикошет/непробитие) — в награду/медали
       spotSeen: new Set(), // id врагов, чей первый засвет уже зачтён
       revealT: 0, // сек демаскировки выстрелом: пока >0 — видно врагу из тумана
-      // боты (урон режется softStart-множителем в «мягком первом бою»)
-      botDamage: Math.round(stats.damage * this.botDmgMult * dmgMult),
+      // боты: урон режется softStart-множителем (новичку), но РАСТЁТ с vet (ветерана «не пробивали»)
+      botDamage: Math.round(stats.damage * this.botDmgMult * dmgMult * (1 + (VET.dmgMult - 1) * this.vet)),
       botSpeed: stats.maxSpeed * BOT_SPEED_MULT,
       botTurn: stats.turnRate * 0.9,
       fireCd: 1 + slot * 0.2,
@@ -643,10 +643,17 @@ export class BattleSim {
   // рикошет или непробитие. Лоб держит, корма — нет (фланг/доворот = награда).
   // Возвращает null (пробил) или { kind:'ricochet'|'nopen', mult } (mult — доля урона).
   _penetration(shotAngle, victim) {
-    const base = ARMOR.byClass[victim.classId] ?? 0.15
-    const rel = Math.abs(angleDiff(shotAngle, victim.hull))
-    const facing = (1 - Math.cos(rel)) / 2 // 1 — снаряд в лоб, 0 — в корму
-    const chance = Math.min(ARMOR.maxBlock, base * facing * ARMOR.facingMult)
+    const base = ARMOR.byClass[victim.classId] ?? ARMOR.byClass.medium
+    // a — угол между «направлением на стрелка» и КОРПУСОМ цели: 0 — стрелок строго в лоб,
+    // π/2 — в борт, π — в корму. Это угол ВСТРЕЧИ снаряда с лобовой плитой.
+    const a = Math.abs(angleDiff(shotAngle + Math.PI, victim.hull))
+    // УГОЛ ПОПАДАНИЯ: держит только лобовая полусфера (front), а доворот плиты (slope) даёт
+    // максимум бунса при ~45° (РОМБ). В лоб-плоско — слабо, в борт/корму — ноль. Так доворот
+    // реально спасает (скилл), а боты, фейсящие тебя плоско, наоборот пробиваются.
+    const front = Math.max(0, Math.cos(a)) // 1 фронт → 0 борт/корма
+    const slope = Math.max(0, Math.sin(2 * a)) // 0 в лоб-плоско → 1 при ~45° доворота → 0 в борт
+    const angleFactor = 0.35 * front + 0.65 * slope
+    const chance = Math.min(ARMOR.maxBlock, base * angleFactor)
     if (Math.random() >= chance) return null // пробитие
     return Math.random() < ARMOR.ricochetShare ? { kind: 'ricochet', mult: 0 } : { kind: 'nopen', mult: ARMOR.nopenMult }
   }
@@ -813,6 +820,15 @@ export class BattleSim {
       // иначе сидя В кусте упираешься лучом в свой же куст и «никого не видишь»
       if (o.kind === 'water' || o.kind === 'bush') continue
       if (segHitsCircle(x1, y1, x2, y2, o.x, o.y, o.r)) return true
+    }
+    // ТРУПЫ ТАНКОВ — твёрдое укрытие: подбитый танк блокирует выстрел И обзор (можно
+    // прятаться за остовом, снаряды не проходят насквозь). Симметрично всем. Труп у САМОГО
+    // начала луча (стрелок стоит на месте чужой гибели) НЕ блокируем — иначе самоослепление.
+    for (const u of this.units) {
+      if (u.alive) continue
+      const dx0 = x1 - u.x, dy0 = y1 - u.y
+      if (dx0 * dx0 + dy0 * dy0 <= (TANK_RADIUS + 8) * (TANK_RADIUS + 8)) continue
+      if (segHitsCircle(x1, y1, x2, y2, u.x, u.y, TANK_RADIUS)) return true
     }
     for (const w of this.walls) {
       if (segHitsRect(x1, y1, x2, y2, w.cx - w.hw, w.cy - w.hh, w.cx + w.hw, w.cy + w.hh)) return true

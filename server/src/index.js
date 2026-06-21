@@ -766,6 +766,12 @@ const INSTANT_BATTLE_BELOW = +(process.env.INSTANT_BATTLE_BELOW || 7)
 // крутит 3с). Чуть больше 3с — с поправкой на пинг игрок дочитывает раньше, чем
 // боты тронутся (а не «боты поехали на цифре 3»).
 const COUNTDOWN_MS = +(process.env.COUNTDOWN_MS || 3200)
+// БЭКСТОП готовности: мир стоит, пока клиент не пришлёт 'ready' (досчитал «3-2-1» / instant).
+// Чинит «боты едут до конца отсчёта»: у клиента до боя ещё пауза «бой найден» + лоадер +
+// отсчёт (~4с ПОСЛЕ match-start), а сервер морозил лишь COUNTDOWN_MS → размораживался раньше
+// игрока → боты с форой. Старт по 'ready' синхронит игрока и ботов. startAt — лишь бэкстоп,
+// если 'ready' не пришёл (старый/застрявший клиент), чтобы комната не висела вечно.
+const READY_MAX_MS = +(process.env.READY_MAX_MS || 6500)
 // 60Гц симуляция+поток — максимальная плавность/отзывчивость (шаг интерп. ~16мс,
 // задержка рендера ~20мс). Частота НЕ была причиной iOS-проблемы (сокет тянул и
 // 20Гц; корень — сорванный push, лечится pull-очередью в NetGame). Это ТЕСТОВЫЙ
@@ -1052,6 +1058,12 @@ function setupBattleSocket(ws, room, human, ip) {
     } else if (msg.type === 'tutorial-done') {
       // клиент закончил/пропустил обучающий гайд первого боя — будим замороженных ботов
       if (room.training) room.guided = false
+    } else if (msg.type === 'ready') {
+      // клиент досчитал «3-2-1» (или instant) и готов вступить в бой. Размораживаем мир,
+      // когда готовы ВСЕ люди комнаты → старт у игрока и ботов синхронный (фикс «боты едут
+      // в отсчёт + раньше на позициях»). Если кто-то не пришлёт — спасёт бэкстоп startAt.
+      human.ready = true
+      if (room.humans.length && room.humans.every((h) => h.ready)) room.fightStarted = true
     } else if (msg.type === 'ping') {
       send(ws, { type: 'pong', ts: msg.ts })
     }
@@ -1223,8 +1235,11 @@ function startRoom(room) {
     anchorTier,
   })
 
-  // стартовый отсчёт: мир застыл до этого момента (см. roomTick) — синхронно с «3-2-1»
-  room.startAt = Date.now() + COUNTDOWN_MS
+  // мир застыл, ПОКА клиент(ы) не пришлют 'ready' (досчитали «3-2-1»/instant). startAt —
+  // только БЭКСТОП (см. READY_MAX_MS): старт боя — по готовности ВСЕХ людей (см. roomTick).
+  room.startAt = Date.now() + READY_MAX_MS
+  room.fightStarted = false
+  for (const h of room.humans) h.ready = false
   // тренировка: враги заморожены, пока клиент ведёт гайд; бэкстоп — будим через 90с,
   // если tutorial-done так и не пришёл (стух/закрыл вкладку)
   if (room.training) room.guidedDeadline = Date.now() + 90000
@@ -1310,7 +1325,7 @@ function roomTick(room) {
     // СТАРТОВЫЙ ОТСЧЁТ: клиент крутит «3-2-1» (Battle.vue), и пока он идёт — мир
     // на сервере ЗАСТЫЛ (боты не едут и не стреляют, время t не идёт). Снапшоты
     // всё равно шлём — поле видно за оверлеем отсчёта. Размораживаемся в startAt.
-    const warming = room.startAt && Date.now() < room.startAt
+    const warming = !room.fightStarted && room.startAt && Date.now() < room.startAt
     // буфер событий инициализируем ВСЕГДА (даже в warmup) — иначе снапшот ниже
     // вызывает eventsForTeam(undefined) и комната падает на первом тике отсчёта
     if (!room.evBuf) room.evBuf = []

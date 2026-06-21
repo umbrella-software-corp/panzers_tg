@@ -225,7 +225,7 @@ function setPage(i) {
     </div>
 
     <!-- действия -->
-    <div style="width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 10px; margin-top: 18px">
+    <div style="width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 10px; margin-top: 18px; margin-bottom: auto">
       <div v-if="goalText" class="next-goal">▸ {{ goalText }}</div>
       <button class="pz-cta pz-cta--hazard" @click="emit('rematch')">{{ t('results.rematch') }}</button>
       <button class="pz-btn2" @click="track('results_hangar_clicked', { result: state.result, end_reason: state.endReason || null }); emit('hangar')">{{ t('common.toHangar') }}</button>
@@ -329,8 +329,11 @@ function setPage(i) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start; /* высокий контент (медали) скроллится сверху, верх не обрезается */
+  overflow-y: auto;
   padding: 18px;
+  /* кнопка «В ангар» не должна уезжать под home-бар Telegram — отступ на safe-area снизу */
+  padding-bottom: calc(18px + var(--safe-bottom, 0px));
 }
 /* «следующая цель» — нудж над кнопкой «ЕЩЁ БОЙ» */
 .next-goal {
@@ -347,6 +350,7 @@ function setPage(i) {
   width: 100%;
   max-width: 340px;
   position: relative;
+  margin-top: auto; /* с margin-bottom:auto у блока действий — центрирует, КОГДА влезает; при переполнении схлопывается → скролл сверху */
   background:
     linear-gradient(175deg, rgba(242, 232, 207, 0.92), rgba(230, 217, 184, 0.94) 80%),
     url('/sprites/paper.png') center / cover;
