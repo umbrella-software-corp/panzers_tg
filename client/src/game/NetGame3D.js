@@ -196,6 +196,10 @@ export class NetGame3D extends NetGame {
     // ПРИЦЕЛ: лучевой маркер на земле (бокс) + ретикл-кольцо на конце
     this.aimBeam = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 1), new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.9, depthWrite: false }))
     this.aimBeam.renderOrder = 4; scene.add(this.aimBeam)
+    // СЕКТОР РАЗБРОСА: две боковые линии-края (как в 2D) — где «гуляет» прицел вокруг
+    // корпуса. Тоньше/тусклее луча сведения. Геометрия как у aimBeam (бокс по Z).
+    const mkSector = () => { const m = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2, 1), new THREE.MeshBasicMaterial({ color: 0xf2a50c, transparent: true, opacity: 0.22, depthWrite: false })); m.renderOrder = 3; scene.add(m); return m }
+    this.sectorL = mkSector(); this.sectorR = mkSector()
     this.aimReticle = this._mkGroundRing(22, 27, 0xffe066, 1)
     this.aimReticle.position.y = 6; this.aimReticle.renderOrder = 4; scene.add(this.aimReticle)
 
@@ -588,6 +592,8 @@ export class NetGame3D extends NetGame {
     this.visionRing.visible = alive
     this.aimBeam.visible = alive
     this.aimReticle.visible = alive
+    this.sectorL.visible = alive
+    this.sectorR.visible = alive
     if (!alive) return
     // туман + кольцо обзора следуют за игроком (масштаб под текущий обзор)
     const sv = vis / (this.visionRing._vis || vis)
@@ -599,6 +605,12 @@ export class NetGame3D extends NetGame {
     const lineA = oh + this._sweepOffset()
     // ассист: ближайшая валидная цель в секторе → прицел зеленеет (как в 2D)
     const half = this._sectorHalfEff()
+    // края сектора разброса — две линии на oh±half (как в 2D); луч сведения «гуляет» меж них
+    const placeEdge = (mesh, a) => {
+      mesh.position.set(ox + Math.cos(a) * vis / 2, 2.5, oy + Math.sin(a) * vis / 2)
+      mesh.rotation.y = Math.PI / 2 - a; mesh.scale.z = vis
+    }
+    placeEdge(this.sectorL, oh - half); placeEdge(this.sectorR, oh + half)
     let target = null, td = Infinity, tx = 0, ty = 0
     for (const u of (this.cur ? this.cur.units : [])) {
       if (!u.alive || u.team === this.side) continue
