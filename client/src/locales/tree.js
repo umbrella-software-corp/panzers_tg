@@ -15,6 +15,13 @@ export default {
     branchXp: 'Branch XP',
     // заглушка скрытой ветки (США): прогресс цел, ветка временно недоступна
     nationSoon: 'This branch is temporarily unavailable — its 3D models are on the way. Your tanks and progress are safe.',
+    // продажа танка
+    sell: 'Sell',
+    remove: 'Remove from garage',
+    sellConfirm: ({ credits }) => `Confirm — sell for ${credits}?`,
+    removeConfirm: 'Confirm — remove?',
+    soldToast: ({ name, credits }) => `${name} sold · +${credits}`,
+    removedToast: ({ name }) => `${name} removed from garage`,
     // свободный опыт: общий пул, вкладывается в любую нацию
     freeXp: 'Free XP',
     pourFree: ({ n }) => `Invest ${n} →`,
@@ -49,6 +56,13 @@ export default {
     checkXp: 'Опыт ветки',
     branchXp: 'Опыт ветки',
     nationSoon: 'Ветка временно недоступна — готовим её 3D-модели. Твои танки и весь прогресс сохранены.',
+    // продажа танка
+    sell: 'Продать',
+    remove: 'Убрать из ангара',
+    sellConfirm: ({ credits }) => `Точно продать за ${credits}?`,
+    removeConfirm: 'Точно убрать?',
+    soldToast: ({ name, credits }) => `${name} продан · +${credits}`,
+    removedToast: ({ name }) => `${name} убран из ангара`,
     freeXp: 'Свободный опыт',
     pourFree: ({ n }) => `Вложить ${n} →`,
     freeXpHint: 'Этой ветке хватает — переключи нацию и вложи',

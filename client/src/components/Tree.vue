@@ -11,6 +11,9 @@ import {
   canUnlock,
   unlockReason,
   buyTank,
+  canSell,
+  sellTank,
+  tankSellPrice,
   upgradeModule,
   tankModLevel,
   prevTank,
@@ -32,14 +35,35 @@ import PzIcon from './ui/PzIcon.vue'
 
 const emit = defineEmits(['go'])
 
-// пояснение по скрытой ветке (США): чтобы «пропавшая» нация не читалась как баг —
-// прогресс цел, ветка лишь временно недоступна (фидбек тикет #26).
+// тост поверх экрана (пояснение по скрытой ветке США + результат продажи танка)
 const nationNote = ref('')
 let nationNoteTimer = null
-function showNationNote() {
-  nationNote.value = tr('tree.nationSoon')
+function showToast(msg, ms = 2600) {
+  nationNote.value = msg
   clearTimeout(nationNoteTimer)
-  nationNoteTimer = setTimeout(() => (nationNote.value = ''), 3600)
+  nationNoteTimer = setTimeout(() => (nationNote.value = ''), ms)
+}
+const showNationNote = () => showToast(tr('tree.nationSoon'), 3600)
+
+// продажа танка (#26): двухтапное подтверждение, чтобы не продать случайно.
+const sellConfirmId = ref(null)
+let sellConfirmTimer = null
+async function onSell(tk) {
+  if (!tk || !canSell(tk)) return
+  if (sellConfirmId.value !== tk.id) {
+    sellConfirmId.value = tk.id // первый тап — просим подтвердить
+    clearTimeout(sellConfirmTimer)
+    sellConfirmTimer = setTimeout(() => (sellConfirmId.value = null), 4000)
+    return
+  }
+  clearTimeout(sellConfirmTimer)
+  sellConfirmId.value = null
+  const price = tankSellPrice(tk)
+  const name = tk.name
+  track('tank_sell_clicked', { tank_id: tk.id, tank_tier: tk.tier, refund: price })
+  if (await sellTank(tk)) {
+    showToast(price > 0 ? tr('tree.soldToast', { name, credits: price.toLocaleString('ru-RU') }) : tr('tree.removedToast', { name }))
+  }
 }
 
 const tanks = computed(() => tanksOfNation(profile.nation))
@@ -431,6 +455,17 @@ watch(selected, (t) => {
         </div>
 
         <button class="pz-btn2" @click="pickInHangar">{{ tr('tree.pickInHangar') }}</button>
+        <!-- продажа танка (#26): только «позади фронтира», не прем, не боевой -->
+        <button
+          v-if="canSell(selected)"
+          class="pz-btn2 sell-btn"
+          :class="{ confirm: sellConfirmId === selected.id }"
+          @click="onSell(selected)"
+        >
+          <template v-if="sellConfirmId === selected.id">⚠ {{ tankSellPrice(selected) > 0 ? tr('tree.sellConfirm', { credits: fmt(tankSellPrice(selected)) }) : tr('tree.removeConfirm') }}</template>
+          <template v-else-if="tankSellPrice(selected) > 0">{{ tr('tree.sell') }} · <PzIcon name="coin" :size="12" /> {{ fmt(tankSellPrice(selected)) }}</template>
+          <template v-else>{{ tr('tree.remove') }}</template>
+        </button>
       </template>
 
       <template v-else>
@@ -493,6 +528,18 @@ watch(selected, (t) => {
 .pz-toast-leave-to {
   opacity: 0;
   transform: translateY(10px);
+}
+/* продажа танка — нейтральная кнопка; в режиме подтверждения краснеет */
+.sell-btn {
+  margin-top: 8px;
+  color: var(--ink-dim);
+  border-color: var(--line-strong);
+}
+.sell-btn.confirm {
+  color: #ff6a5a;
+  border-color: #ff6a5a;
+  background: rgba(255, 106, 90, 0.1);
+  animation: pz-shake 0.3s linear 1;
 }
 .xp-line {
   display: flex;

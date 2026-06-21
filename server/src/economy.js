@@ -179,6 +179,23 @@ export function buyTank(uid, tankId) {
   })
 }
 
+// продажа танка: возврат кредитов (tankSellPrice). canSellTank гарантирует, что
+// продаётся не премиум, не боевой и не фронтир ветки → дерево не ломается. Опыт ветки
+// при продаже НЕ возвращаем (это исследование, не покупка).
+export function sellTank(uid, tankId) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    if (!Array.isArray(p.owned)) p.owned = [...E.STARTERS]
+    if (!E.canSellTank(p.owned, tankId, p.selectedTank)) return err('cant-sell')
+    const refund = E.tankSellPrice(E.tankTier(tankId))
+    p.owned = p.owned.filter((id) => id !== tankId)
+    p.credits = (p.credits || 0) + refund
+    await saveProfile(uid, p)
+    logEvent(uid, 'sell_tank', { tank: tankId, refund })
+    return ok(p, { sold: tankId, refund })
+  })
+}
+
 // вложить свободный опыт в ветку ЛЮБОЙ нации (исследовательская валюта). Клиент шлёт
 // nation + amount; сервер клампит к доступному и переносит freeXp → branchXp[nation].
 export function spendFreeXp(uid, nation, amount) {

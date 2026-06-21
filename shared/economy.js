@@ -53,6 +53,22 @@ export const tankTier = (id) => (RESEARCH_TANKS[id] && RESEARCH_TANKS[id].tier) 
 // танк существует (исследуемый или премиум) — для валидации id из клиента
 export const tankExists = (id) => !!RESEARCH_TANKS[id] || PREMIUM_TANK_TIER[id] != null
 
+// ---------- ПРОДАЖА ТАНКА (#26: «танки 1 ур. лежат без дела, хочу продать») ----------
+// Возврат = доля кредитовой цены. Тир-1 (стартеры, цена 0) → возврат 0: иначе чит-цикл
+// «продал стартер (+кр) → бесплатно вернул → снова продал». ЗЕРКАЛО client store.js.
+export const SELL_REFUND = 0.5
+export const tankSellPrice = (tier) => Math.round((TIER_COST[tier] || 0) * SELL_REFUND)
+// продать можно, если: владеешь, НЕ прем (куплен за ⭐), НЕ текущий боевой, и в нации
+// есть КУПЛЕННЫЙ танк ВЫШЕ тиром → этот не фронтир ветки, продажа не блокирует
+// исследование (owned остаётся рабочим префиксом дерева). ЗЕРКАЛО store.js canSell.
+export function canSellTank(owned, tankId, selectedTank) {
+  if (!Array.isArray(owned) || !owned.includes(tankId)) return false
+  if (isPremiumTank(tankId) || tankId === selectedTank) return false
+  const nat = tankNation(tankId)
+  const tier = tankTier(tankId)
+  return owned.some((id) => id !== tankId && tankNation(id) === nat && tankTier(id) > tier)
+}
+
 // предыдущий по тиру танк в той же нации (для гейта разблокировки)
 export function prevTankId(tankId) {
   const t = RESEARCH_TANKS[tankId]

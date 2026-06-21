@@ -96,6 +96,7 @@ export const apiGrantsApply = () => call('/api/grants-apply', { method: 'POST', 
 // и начисляет СЕРВЕР, клиент принимает авторитетный кошелёк. См. server/src/economy.js.
 const apiEcon = (action, body = {}) => call('/api/econ/' + action, { method: 'POST', body: JSON.stringify(body) })
 export const apiBuyTank = (tankId) => apiEcon('buy-tank', { tankId })
+export const apiSellTank = (tankId) => apiEcon('sell-tank', { tankId })
 export const apiSpendFreeXp = (nation, amount) => apiEcon('spend-free-xp', { nation, amount })
 export const apiUpgradeModule = (tankId, modId) => apiEcon('upgrade-module', { tankId, modId })
 export const apiUpgradeCrew = (memberId) => apiEcon('upgrade-crew', { memberId })

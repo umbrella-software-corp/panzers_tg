@@ -2,7 +2,7 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch, ref } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiSpendFreeXp, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef, apiPushBonus } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiSellTank, apiSpendFreeXp, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef, apiPushBonus } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
@@ -518,6 +518,28 @@ export async function buyTank(tank) {
   const nat = nationOf(tank.id)
   profile.branchXp[nat] = Math.max(0, (profile.branchXp[nat] || 0) - researchXpNeed(tank))
   profile.owned.push(tank.id)
+  return true
+}
+
+// продажа танка (#26): возврат 50% кредитовой цены (стартер-тир1 = 0, только убрать).
+// ЗЕРКАЛО shared canSellTank/tankSellPrice. Дерево не ломается: продаём только «позади
+// фронтира» — в нации есть владеемый ВЫШЕ тиром, значит этот не нужен для исследования.
+export const tankSellPrice = (tank) => Math.round(((tank && tank.cost) || 0) * 0.5)
+export const canSell = (tank) => {
+  if (!tank || !isOwned(tank.id) || tank.premium || tank.id === profile.selectedTank) return false
+  const nat = nationOf(tank.id)
+  return profile.owned.some((id) => id !== tank.id && nationOf(id) === nat && ((TANK_BY_ID[id] || {}).tier || 0) > tank.tier)
+}
+export async function sellTank(tank) {
+  if (!canSell(tank)) return false
+  if (econOn()) {
+    const r = await apiSellTank(tank.id).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
+  profile.owned = profile.owned.filter((id) => id !== tank.id)
+  profile.credits += tankSellPrice(tank)
   return true
 }
 
