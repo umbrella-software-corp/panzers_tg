@@ -785,8 +785,8 @@ onBeforeUnmount(() => {
          «ПОБЕДА ЧЕРЕЗ N»; теряем — тревожный красный «ОТБЕЙТЕ ТОЧКИ N» -->
     <transition name="wc-pop">
       <div v-if="state.winCount && phase === 'fighting'" class="wincount" :class="{ foe: !state.winCount.mine }">
-        <div class="wc-label pz-display">{{ tr(state.winCount.mine ? 'battle.winHoldMine' : 'battle.winHoldFoe') }}</div>
         <div class="wc-sec pz-pixel">{{ state.winCount.sec }}</div>
+        <div class="wc-label pz-display">{{ tr(state.winCount.mine ? 'battle.winHoldMine' : 'battle.winHoldFoe') }}</div>
       </div>
     </transition>
 
@@ -1486,8 +1486,9 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
   z-index: 7;
   display: flex;
-  align-items: baseline;
-  gap: 7px;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
   pointer-events: none;
   white-space: nowrap;
 }
