@@ -19,6 +19,19 @@ import { claimDaily } from './daily.js'
 import { adminPage } from './admin.js'
 import { trackServer, analyticsEnabled } from './analytics.js'
 import * as econ from './economy.js'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+// ID ТЕКУЩЕЙ СБОРКИ клиента (vite пишет client/dist/build-id.txt). Отдаём в /api/config
+// → клиент сверяет со своим вкомпиленным __BUILD_ID__ и перезагружается, если устарел
+// (залипший бандл в кэше Telegram/браузера). Читаем 1 раз: сервер рестартует на деплое.
+let BUILD_ID = ''
+try {
+  BUILD_ID = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist', 'build-id.txt'), 'utf8').trim()
+} catch {
+  /* нет файла (dev / сборка без плагина) — гейт просто не сработает */
+}
 
 const ADMIN_KEY = process.env.ADMIN_KEY || ''
 
@@ -520,7 +533,7 @@ async function handleApi(req, res) {
   if (req.url === '/api/config' && req.method === 'GET') {
     // econAuthority — флаг серверно-авторитетной экономики; клиент по нему роутит
     // покупки/награды на сервер (а не считает локально). По умолчанию OFF.
-    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig(), feedback: feedbackConfig(), econAuthority: await econ.econAuthority(), pushBonusTokens: PUSH_BONUS_TOKENS })
+    return json(res, 200, { tournaments: !!(await getSetting('tournamentsOn', false)), channel: channelConfig(), feedback: feedbackConfig(), econAuthority: await econ.econAuthority(), pushBonusTokens: PUSH_BONUS_TOKENS, buildId: BUILD_ID })
   }
   if (req.url === '/api/profile' && req.method === 'POST') {
     const body = await readBody(req)

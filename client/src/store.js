@@ -53,6 +53,20 @@ export function setBattleMode(mode) {
 export function setReverseSteer(mode) {
   profile.reverseSteer = mode === 'direct' ? 'direct' : 'follow'
 }
+// VERSION-GATE (#23 «у меня старая экономика/версия»): сервер на НОВОМ билде, а у нас
+// вкомпилен СТАРЫЙ __BUILD_ID__ (залип бандл в кэше Telegram/браузера) → разово
+// перезагружаемся за свежим. Зовётся на бутстрапе (loadConfig в App.vue) — не в бою,
+// работа не теряется. Анти-цикл: помним buildId, для которого уже релоадили (если релоад
+// не вытащил новый бандл из кэша — второй раз не дёргаем, пробуем в след. сессии).
+function maybeReloadForNewBuild(serverBuildId) {
+  if (!serverBuildId || typeof __BUILD_ID__ === 'undefined') return
+  if (serverBuildId === __BUILD_ID__) return
+  let already = null
+  try { already = sessionStorage.getItem('pz_reloaded_for') } catch { /* приватный режим */ }
+  if (already === serverBuildId) return
+  try { sessionStorage.setItem('pz_reloaded_for', serverBuildId) } catch { /* приватный режим */ }
+  try { location.reload() } catch { /* нет window — ок */ }
+}
 export async function loadConfig() {
   try {
     const c = await apiConfig()
@@ -61,6 +75,7 @@ export async function loadConfig() {
     if (c.feedback) serverConfig.feedback = c.feedback
     serverConfig.econAuthority = !!c.econAuthority
     if (typeof c.pushBonusTokens === 'number') serverConfig.pushBonusTokens = c.pushBonusTokens
+    maybeReloadForNewBuild(c.buildId)
   } catch {
     /* офлайн — оставляем дефолт */
   }
