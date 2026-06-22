@@ -543,13 +543,13 @@ export function tankModelUrl(id, nation) {
   return TANK_MODELS[id] || NATION_MODEL_URL[nation] || '/models/t90_opt.glb'
 }
 // МОДЕЛИ «ЗАДОМ»: доворот +180° для GLB, смоделированных стволом в −Z.
-// 2026-06-22: набор ОЧИЩЕН. Детерминированный репро (точный трансформ боя
-// _normalizeModel + holder.rotation.y=π/2−hull, и трансформ ангара Tank3DView
-// faceY+flipY) на ВСЕХ 16 моделях показал: у всех перёд уже на +Z. Прежний авто-детект
-// (/_idcheck.html, эвристика выступа ствола) systematically ПЕРЕ-флипал 14 моделей →
-// они ехали ЗАДОМ в бою и показывали ЗАД в ангаре (фидбек «все танки задним ходом»).
-// Пустой набор = верно везде. Реально «задний» GLB в будущем → добавить его basename сюда.
-export const MODEL_FLIP = new Set([])
+// 2026-06-22: набор ПЕРЕСОБРАН. Прежний авто-детект (/_idcheck.html, эвристика выступа
+// ствола) был НЕНАДЁЖЕН — ПЕРЕ-флипал 12 моделей (ехали задом в бою + кажут зад в ангаре,
+// фидбек «все танки задним ходом»). Детерминир. репро (точные трансформы боя
+// NetGame3D._normalizeModel+holder.rotation.y=π/2−hull и ангара Tank3DView faceY+flipY,
+// стрелка движения/камеры) на ВСЕХ 16: перёд на +Z у всех КРОМЕ stu и tgr2 — у этих двух
+// GLB реально стволом в −Z, флип нужен. Менять только сверяясь с репро, не эвристикой.
+export const MODEL_FLIP = new Set(['stu', 'tgr2'])
 export function modelNeedsFlip(url) {
   const m = /([^/]+)_opt\.glb/.exec(url || '')
   return m ? MODEL_FLIP.has(m[1]) : false
