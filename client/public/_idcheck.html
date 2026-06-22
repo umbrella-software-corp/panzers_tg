@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ориентация моделей — выступ ствола</title>
+  <style>
+    html,body{margin:0;height:100%;background:#10140f;overflow:hidden;font-family:system-ui,sans-serif}
+    #c{display:block;width:100vw;height:100vh}
+    .lab{position:fixed;transform:translateX(-50%);font-size:12px;font-weight:800;text-shadow:0 1px 4px #000;pointer-events:none;z-index:5;white-space:nowrap}
+    #status{position:fixed;left:10px;top:8px;color:#9aa6b2;font-size:13px;z-index:5;background:rgba(0,0,0,.5);padding:3px 7px;border-radius:5px}
+    #flips{position:fixed;left:10px;bottom:8px;color:#ff8a5a;font-size:13px;font-weight:700;z-index:5;background:rgba(0,0,0,.6);padding:5px 9px;border-radius:6px;max-width:96vw}
+  </style>
+</head>
+<body>
+  <div id="status">загрузка…</div>
+  <div id="flips">FLIP: …</div>
+  <canvas id="c"></canvas>
+  <script type="importmap">{ "imports": {
+    "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+  <script type="module">
+    import * as THREE from 'three'
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+    import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
+    const MODELS = ['t26','bt7','t34','t3485','kv1','is2','t72','t90','t80u','t14','t28','t54',
+      'pz2','pz3','pz4','pnt','tgr','tgr2','maus','pz4h','tank2','tank3','leo1','leo2a7','kf51']
+    const COLS = 5, SP = 6
+    const canvas=document.getElementById('c')
+    const renderer=new THREE.WebGLRenderer({canvas,antialias:true})
+    renderer.setPixelRatio(Math.min(2,devicePixelRatio||1)); renderer.outputColorSpace=THREE.SRGBColorSpace
+    const scene=new THREE.Scene(); scene.background=new THREE.Color(0x10140f)
+    scene.add(new THREE.HemisphereLight(0xdce8f5,0x40402f,1.4))
+    const key=new THREE.DirectionalLight(0xfff1d6,1.6); key.position.set(4,12,3); scene.add(key)
+    const rows=Math.ceil(MODELS.length/COLS)
+    const gw=(COLS-1)*SP, gh=(rows-1)*SP
+    // 3/4-вид: камера спереди-сверху-сбоку. up по умолчанию. +Z = «вперёд» (к нам/вниз).
+    const cam=new THREE.PerspectiveCamera(34, innerWidth/innerHeight, 0.5, 400)
+    function camPos(){ cam.position.set(gw*0.15, Math.max(gw,gh)*0.95+18, Math.max(gw,gh)*0.95+18); cam.lookAt(0,0,2) }
+    const loader=new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder)
+    const cellPos=(i)=>{ const r=Math.floor(i/COLS), c=i%COLS; return [ -gw/2 + c*SP, -gh/2 + r*SP ] }
+    function norm(m){
+      const b=new THREE.Box3().setFromObject(m), s=new THREE.Vector3(), c=new THREE.Vector3()
+      b.getSize(s); b.getCenter(c)
+      m.position.x-=c.x; m.position.z-=c.z; m.position.y-=b.min.y
+      m.scale.setScalar(4.2/(Math.max(s.x,s.z)||1))
+      const w=new THREE.Group(); w.add(m)
+      if (s.x>s.z) w.rotation.y=-Math.PI/2
+      return w
+    }
+    // ЭВРИСТИКА: ствол лежит на ЦЕНТР. оси и выступает за корпус. Считаем, на сколько
+    // центральные верты (|x| малый) выходят за «тело» (|x| большой) на +Z и на −Z.
+    // Где выступ больше — там ствол = перёд. Работает и для коротких пушек.
+    function frontStatus(wrap){
+      wrap.updateMatrixWorld(true)
+      const v=new THREE.Vector3(); let maxAbsX=0; const P=[]
+      wrap.traverse(o=>{ if(o.isMesh&&o.geometry&&o.geometry.attributes.position){ const p=o.geometry.attributes.position; for(let i=0;i<p.count;i+=5){ v.fromBufferAttribute(p,i); o.localToWorld(v); P.push(v.x,v.y,v.z); if(Math.abs(v.x)>maxAbsX)maxAbsX=Math.abs(v.x) } } })
+      const cenT=maxAbsX*0.22, bodyT=maxAbsX*0.5
+      let cMaxZ=-1e9,cMinZ=1e9,bMaxZ=-1e9,bMinZ=1e9
+      for(let i=0;i<P.length;i+=3){ const x=P[i],z=P[i+2]; const ax=Math.abs(x)
+        if(ax<=cenT){ if(z>cMaxZ)cMaxZ=z; if(z<cMinZ)cMinZ=z }
+        if(ax>=bodyT){ if(z>bMaxZ)bMaxZ=z; if(z<bMinZ)bMinZ=z } }
+      const protPos=cMaxZ-bMaxZ, protNeg=bMinZ-cMinZ
+      return { flip: protNeg>protPos, pos:+protPos.toFixed(2), neg:+protNeg.toFixed(2) }
+    }
+    const flips=[]; const dbg=[]; let done=0
+    function finish(){ document.getElementById('flips').textContent = 'FLIP ('+flips.length+'): '+(flips.join(', ')||'нет') }
+    MODELS.forEach((k,i)=>{
+      const [px,pz]=cellPos(i)
+      const lab=document.createElement('div'); lab.className='lab'; lab.id='lab'+i; lab.textContent=k; lab.style.color='#888'; document.body.appendChild(lab)
+      // зелёная стрелка «вперёд» (+Z) у клетки
+      const ar=new THREE.Mesh(new THREE.ConeGeometry(0.35,1.1,12), new THREE.MeshBasicMaterial({color:0x33ff66}))
+      ar.rotation.x=Math.PI/2; ar.position.set(px,0.6,pz+3.1); scene.add(ar)
+      loader.load('/models/'+k+'_opt.glb',(gl)=>{
+        const g=norm(gl.scene); g.position.x=px; g.position.z=pz; scene.add(g)
+        const r=frontStatus(g)
+        const l=document.getElementById('lab'+i)
+        l.textContent = k + (r.flip?' FLIP':' OK')
+        l.style.color = r.flip ? '#ff5a4a' : '#46e08a'
+        if(r.flip) flips.push(k); dbg.push(k+':'+r.pos+'/'+r.neg)
+        done++; document.getElementById('status').textContent=`готово ${done}/${MODELS.length}`; finish()
+        window.__DBG=dbg.join(' ')
+      },undefined,()=>{ const l=document.getElementById('lab'+i); if(l){l.textContent=k+' ✗'; l.style.color='#ff6a5a'} })
+    })
+    function place(){ MODELS.forEach((k,i)=>{ const [px,pz]=cellPos(i); const l=document.getElementById('lab'+i); if(!l)return; const v=new THREE.Vector3(px,4.2,pz).project(cam); l.style.left=((v.x*0.5+0.5)*innerWidth)+'px'; l.style.top=((-v.y*0.5+0.5)*innerHeight)+'px' }) }
+    function resize(){ renderer.setSize(innerWidth,innerHeight); cam.aspect=innerWidth/innerHeight; cam.updateProjectionMatrix(); camPos() }
+    addEventListener('resize',()=>{ resize(); place() }); resize()
+    function loop(){ requestAnimationFrame(loop); place(); renderer.render(scene,cam) }
+    loop()
+  </script>
+</body>
+</html>
