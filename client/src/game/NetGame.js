@@ -72,8 +72,9 @@ export class NetGame {
     this.keys = { fwd: false, back: false, left: false, right: false }
     this.paused = false
     // схема заднего хода (Battle.vue ставит из profile.reverseSteer): true — инвертируем
-    // руль на реверсе, корма идёт по джойстику; false — без инверсии (старое управление)
-    this.invertReverseSteer = true
+    // руль на реверсе, корма идёт по джойстику; false — без инверсии. Дефолт false:
+    // 'direct' интуитивнее, инверсия путала (#28). Реальное значение — из профиля.
+    this.invertReverseSteer = false
     this._lastSent = { throttle: 0, steer: 0, at: 0 }
     this.specCam = null // после гибели — свободная камера наблюдения по карте
 

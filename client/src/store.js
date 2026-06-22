@@ -46,9 +46,10 @@ export function setBattleMode(mode) {
   profile.battleMode = mode === 'annihilation' ? 'annihilation' : 'capture'
 }
 // схема управления задним ходом (персистится в профиле, читается в Battle.vue →
-// NetGame.invertReverseSteer): 'follow' — руль инвертируется на реверсе, корма идёт
-// по джойстику (фикс по тикету @anch_max, дефолт); 'direct' — без инверсии, как было
-// раньше / как поворот на переднем ходу. Кто-то привык к старому — даём выбор.
+// NetGame.invertReverseSteer): 'direct' — без инверсии (ДЕФОЛТ): руль одинаков на
+// переднем/заднем ходу, налево = перёд влево; 'follow' — руль инвертируется на реверсе,
+// корма идёт по джойстику (по тикету @anch_max). Дефолт сменён на 'direct' (#28 «крутится
+// сам»); кто привык к инверсии — включает 'follow' тумблером.
 export function setReverseSteer(mode) {
   profile.reverseSteer = mode === 'direct' ? 'direct' : 'follow'
 }
@@ -197,7 +198,12 @@ if (!profile.tasks || typeof profile.tasks !== 'object') profile.tasks = { date:
 if (typeof profile.skin !== 'string') profile.skin = 'std'
 if (typeof profile.premiumUntil !== 'number') profile.premiumUntil = 0 // премиум активен, пока > Date.now()
 if (profile.battleMode !== 'annihilation') profile.battleMode = 'capture' // режим боя: захват точек / на уничтожение
-if (profile.reverseSteer !== 'direct') profile.reverseSteer = 'follow' // схема заднего хода: руль по джойстику (дефолт) / без инверсии
+// схема заднего хода. Дефолт 'direct' — руль НЕ инвертируется (налево = перёд влево всегда,
+// интуитивно). Прежний дефолт 'follow' (инверсия на реверсе) путал (#28: «налево — танк
+// направо, крутится сам»). РАЗОВАЯ миграция всех на 'direct' (флаг reverseSteerV2); тумблер
+// оставлен — кто хочет инверсию (@anch_max), включит, и выбор сохранится после миграции.
+if (!profile.reverseSteerV2) { profile.reverseSteer = 'direct'; profile.reverseSteerV2 = true }
+else if (profile.reverseSteer !== 'follow' && profile.reverseSteer !== 'direct') profile.reverseSteer = 'direct'
 // тур по ангару показываем один раз самому новому игроку; уже игравшим — нет
 if (typeof profile.onboarded !== 'boolean') profile.onboarded = (profile.stats?.battles || 0) > 0
 // тренировочный первый бой (соло + замороженные боты, гайд «едь/целься/стреляй»)
