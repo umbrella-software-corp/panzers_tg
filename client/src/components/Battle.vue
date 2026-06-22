@@ -69,6 +69,7 @@ const mapName = computed(() => tr('game.maps.' + (MAP_BY_ID[isNet ? props.net.ma
 const state = shallowRef({
   kills: 0,
   deaths: 0,
+  ping: null,
   shots: 0,
   hits: 0,
   accuracy: 0,
@@ -118,6 +119,11 @@ const displayScore = computed(() =>
     : `${state.value.allyScore}:${state.value.enemyScore}`,
 )
 const hpFrac = computed(() => state.value.playerHp / state.value.playerMaxHp)
+// цвет чипа пинга: ≤80мс хорошо · ≤160 средне · выше плохо
+const pingClass = computed(() => {
+  const p = state.value.ping
+  return p == null ? '' : p <= 80 ? 'good' : p <= 160 ? 'mid' : 'bad'
+})
 const hpColor = computed(() => (hpFrac.value > 0.6 ? 'var(--green)' : hpFrac.value > 0.3 ? 'var(--amber)' : 'var(--red)'))
 // засвет игрока, 3 состояния: РАСКРЫТ (сам себя выдал выстрелом) → ЗАСВЕЧЕН (враг
 // видит по обзору) → СКРЫТ (в тумане). Выстрел приоритетнее — он самый срочный.
@@ -734,9 +740,14 @@ onBeforeUnmount(() => {
           <PzIcon name="pause" :size="18" />
         </button>
 
-        <!-- карточка матча: таймер + живые экипажи (синие/красные) + тонкая HP -->
+        <!-- карточка матча: таймер + пинг + живые экипажи (синие/красные) + тонкая HP -->
         <div class="matchcard">
-          <span class="pz-display timer" :class="{ low: state.matchTime <= 60 }">⏱ {{ fmtTime(state.matchTime) }}</span>
+          <div class="trow">
+            <span class="pz-display timer" :class="{ low: state.matchTime <= 60 }">⏱ {{ fmtTime(state.matchTime) }}</span>
+            <span v-if="isNet && state.ping != null" class="pingchip pz-display" :class="pingClass" :title="tr('battle.tipPing')">
+              <i class="pdot"></i>{{ state.ping }}<small>ms</small>
+            </span>
+          </div>
           <div class="alive">
             <span class="dmnds"><i v-for="i in 7" :key="'a' + i" :class="{ on: i <= state.alliesAlive }" class="d ally"></i></span>
             <span v-if="!annihilation" class="pz-pixel sc"><b class="ally">{{ state.allyScore }}</b>:<b class="enemy">{{ state.enemyScore }}</b></span>
@@ -1171,6 +1182,41 @@ onBeforeUnmount(() => {
 .matchcard .timer.low {
   color: var(--red);
   animation: pz-blink 1s linear infinite;
+}
+/* чип пинга (онлайн): точка + RTT, цвет по качеству связи */
+.trow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pingchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #46e08a;
+}
+.pingchip small {
+  font-size: 8px;
+  opacity: 0.65;
+}
+.pingchip .pdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+}
+.pingchip.good {
+  color: #46e08a;
+}
+.pingchip.mid {
+  color: var(--amber);
+}
+.pingchip.bad {
+  color: var(--red);
 }
 .alive {
   display: flex;

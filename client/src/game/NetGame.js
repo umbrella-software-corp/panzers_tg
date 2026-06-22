@@ -1836,6 +1836,7 @@ export class NetGame {
       blocked: this.blockedShells, // ЧИСЛО отражённых снарядов (задача дня «заблокируй N»)
       blockedDmg: you.blocked || 0, // УРОН, спасённый бронёй (сервер: sim.js u.blocked) — для медали «wall»
       deaths: this.deaths,
+      ping: this.client ? this.client.ping : null, // RTT мс (онлайн); null = офлайн/ещё не измерен
       revealed: !!(you && you.revealed), // засвечен ли я врагом сейчас (чип «скрыт/виден»)
       firedReveal: !!(you && you.firedReveal), // РАСКРЫТ собственным выстрелом (чип, кольцо)
       deathInfo: this._deathInfo || null, // кем и откуда меня убили (экран смерти)

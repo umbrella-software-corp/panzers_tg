@@ -52,6 +52,8 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
       roomId: null, // для реконнекта: куда возвращаться
       youUnit: null, // свой юнит (возврат именно за него)
       rkey: null, // токен возврата в этот бой
+      ping: null, // RTT в мс (ping↔pong, сервер эхо-понгит ts); null = ещё не измерен
+      _pingTimer: null,
       stateQueue: [], // ВСЕ принятые снапшоты (NetGame сливает очередь каждый кадр);
       // на мобиле снапшоты приходят бурстами — одиночный lastState терял промежуточные
       onMessage: null, // подписка NetGame на время боя
@@ -60,6 +62,7 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
         if (client.ws && client.ws.readyState === 1) client.ws.send(JSON.stringify(msg))
       },
       close() {
+        if (client._pingTimer) { clearInterval(client._pingTimer); client._pingTimer = null }
         try {
           client.ws && client.ws.close()
         } catch {
@@ -89,6 +92,7 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
           sock.onmessage = (e) => {
             let m
             try { m = JSON.parse(e.data) } catch { return }
+            if (m.type === 'pong') { if (typeof m.ts === 'number') client.ping = Math.max(0, Math.round(Date.now() - m.ts)); return }
             if (m.type === 'rejoin-fail') {
               if (done) return
               done = true
@@ -138,6 +142,8 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
     ws.onopen = () => {
       log('ws открыт →', WS_URL)
       client.send({ type: 'join', name, tankId, tier, tint, skin, stats, battles, uid }) // uid — best-effort tg-id для аналитики
+      // пинг: RTT раз в 2с. client.send шлёт через АКТИВНЫЙ сокет → переживает реконнект.
+      if (!client._pingTimer) client._pingTimer = setInterval(() => client.send({ type: 'ping', ts: Date.now() }), 2000)
     }
     ws.onmessage = (e) => {
       let msg
@@ -146,6 +152,7 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
       } catch {
         return
       }
+      if (msg.type === 'pong') { if (typeof msg.ts === 'number') client.ping = Math.max(0, Math.round(Date.now() - msg.ts)); return }
       if (msg.type === 'state') {
         client.stateN = (client.stateN || 0) + 1
         client.lastState = msg // последний — для мгновенного показа мира при подписке NetGame
