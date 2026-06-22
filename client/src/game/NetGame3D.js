@@ -620,10 +620,18 @@ export class NetGame3D extends NetGame {
       shx = (Math.random() * 2 - 1) * s; shz = (Math.random() * 2 - 1) * s
       this._shake *= 0.8
     } else this._shake = 0
-    this.camera.position.set(ox - fx * dist + shx, height, oy - fz * dist + shz)
-    this.camera.lookAt(ox + fx * ahead, 0, oy + fz * ahead)
-    this.sunTarget.position.set(ox, 0, oy)
-    this.sun.position.set(ox + 350, 600, oy + 200)
+    // МЁРТВ — свободное наблюдение: камера на specCam (джойстик водит по карте, как в 2D
+    // _panSpectator), фиксированный курс (не вертится за мёртвым танком), без тряски.
+    // Фидбек тикет #26 «при смерти крутиться нельзя» — раньше 3D игнорил specCam.
+    const spec = dead && this.specCam
+    const cx = spec ? this.specCam.x : ox
+    const cy = spec ? this.specCam.y : oy
+    const cfx = spec ? 0 : fx, cfz = spec ? 1 : fz
+    const csx = spec ? 0 : shx, csz = spec ? 0 : shz
+    this.camera.position.set(cx - cfx * dist + csx, height, cy - cfz * dist + csz)
+    this.camera.lookAt(cx + cfx * ahead, 0, cy + cfz * ahead)
+    this.sunTarget.position.set(cx, 0, cy)
+    this.sun.position.set(cx + 350, 600, cy + 200)
 
     this.renderer.render(this.scene, this.camera)
     this._drawOverlay(units, own)
