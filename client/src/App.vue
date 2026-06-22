@@ -276,6 +276,7 @@ watch(
 )
 function play() {
   cameFromBattle.value = false // ушёл в новый бой — пост-боевой баннер сбрасываем
+  rewardBanked = false // новый бой — снимаем гард начисления награды
   training.value = false // обычный бой из ангара — не тренировка
   track('play_clicked', {
     from_screen: screen.value,
@@ -363,8 +364,19 @@ function bankBattle(reward) {
     setTimeout(() => applyPendingGrants(), 1500)
   }
 }
-function exitBattle(reward) {
+// награда боя начисляется ОДИН раз: либо на конце боя (Battle @ended — даже если игрок
+// закрыл апп на итогах), либо по тапу выход/реванш (фолбэк). Гард от двойного начисления.
+let rewardBanked = false
+function bankOnce(reward) {
+  if (rewardBanked) return
+  rewardBanked = true
   bankBattle(reward)
+}
+function onBattleEnded(reward) {
+  bankOnce(reward) // бой закончился → начисляем СРАЗУ, не дожидаясь тапа
+}
+function exitBattle(reward) {
+  bankOnce(reward)
   netMatch.value = null
   track('battle_exit_to_hangar', {
     had_reward: !!reward,
@@ -386,7 +398,7 @@ function rematch(reward) {
     kills: reward?.kills || 0,
     survived: !!reward?.survived,
   })
-  bankBattle(reward)
+  bankOnce(reward)
   // каждый «ЕЩЁ БОЙ» — через ПОИСК нового боя (как первый раз): попытка найти
   // живых/друзей, затем добор ботами. Не кидаем мгновенно в офлайн-бой.
   netMatch.value = null
@@ -401,7 +413,7 @@ function rematch(reward) {
   <Shop v-else-if="screen === 'shop'" @go="go" />
   <Rating v-else-if="screen === 'rating'" @go="go" />
   <Matchmaking v-else-if="screen === 'matchmaking'" :map-id="draw.mapId" :side="draw.side" :training="training" @battle="deploy" @cancel="cancelMatchmaking" />
-  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :training="!!netMatch && !!netMatch.training" @exit="exitBattle" @rematch="rematch" />
+  <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :training="!!netMatch && !!netMatch.training" @exit="exitBattle" @rematch="rematch" @ended="onBattleEnded" />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" @claimed="onDailyClaimed" />
 

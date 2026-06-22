@@ -24,7 +24,7 @@ const props = defineProps({
   net: { type: Object, default: null }, // онлайн-матч: { client, mapId, side, youUnit, tickHz, mode }
   training: { type: Boolean, default: false }, // тренировочный первый бой: враги заморожены, поверх — гайд
 })
-const emit = defineEmits(['exit', 'rematch'])
+const emit = defineEmits(['exit', 'rematch', 'ended'])
 
 const stage = ref(null)
 const minimap = ref(null)
@@ -411,6 +411,10 @@ game.onState = (s) => {
     if (!statsCounted) {
       statsCounted = true
       addBattleResult(s.result, s.kills, { score: displayScore.value, tank: tankName.value, damage: s.damageDealt, spot: s.spotted || 0 })
+      // НАГРАДА начисляется ЗДЕСЬ, на конце боя (а не по тапу «выход/реванш») — иначе
+      // закрыл апп на экране итогов = награда показана, но НЕ зачислена (#26 «дано 2к,
+      // добавилось ничего»). App.bankOnce() защищает от двойного начисления при тапе.
+      emit('ended', reward.value)
     }
   }
 }
