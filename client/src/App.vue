@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, markRaw } from 'vue'
-import { setBackButton, startParam, tgUserId, requestWriteAccess, tgConfirm, openSupport, waitForInitData } from './tg.js'
+import { setBackButton, startParam, tgUserId, requestWriteAccess, tgConfirm, openSupport, waitForInitData, tgInitData } from './tg.js'
 import { apiReferred, apiPushAllow } from './api.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
@@ -87,8 +87,11 @@ onMounted(async () => {
   // КРИТИЧНО: дождаться initData ПЕРЕД первым синком — иначе bootSync уйдёт гостем
   // (профиль под g_<random>, «не залогинился», в админке по tgId не найти). Фикс @Z_86_V.
   await waitForInitData()
+  // Диагностика авторизации @Z_86_V: SDK-поле initData пусто (медленный/блокнутый CDN-скрипт).
+  // sdk_empty=есть хеш-фолбэк → синк всё равно идёт под tg_<id> (спасены); no_initdata=даже
+  // хеша нет → реально гость. tgInitData() уже учитывает хеш, поэтому через него и сверяем.
   if (window.Telegram && window.Telegram.WebApp && !window.Telegram.WebApp.initData && tgUserId())
-    track('auth_no_initdata_in_tg', { tg_id: tgUserId() }) // в Telegram, но initData пуст → синк гостем
+    track('auth_sdk_empty_hash_fallback', { tg_id: tgUserId(), recovered: !!tgInitData() })
   await bootSync() // синк + фоновый ретрай; пока не синканёмся — на сервер НЕ пишем (анти-клоббер)
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)

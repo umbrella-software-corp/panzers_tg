@@ -1,7 +1,7 @@
 // Клиент серверного API: профиль + платежи Stars.
 // Авторизация: подписанный Telegram initData; вне Telegram — dev-гость
 // со стабильным id в localStorage.
-import { startParam } from './tg.js'
+import { startParam, tgInitData } from './tg.js'
 
 const BASE = import.meta.env.VITE_API_URL || `${location.protocol}//${location.hostname}:8080`
 
@@ -16,7 +16,10 @@ function guestId() {
 
 function headers() {
   const h = { 'Content-Type': 'application/json' }
-  const initData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData
+  // initData: из SDK, иначе из raw launch-хеша (tgWebAppData) — на медленном/старом
+  // клиенте CDN-скрипт SDK может не успеть, и без хеш-фолбэка юзер сваливался в гостя
+  // (g_<random>) и «не в Telegram», хотя реально залогинен. Сервер всё равно проверяет HMAC.
+  const initData = tgInitData()
   if (initData) h['x-init-data'] = initData
   else {
     h['x-guest-id'] = guestId()

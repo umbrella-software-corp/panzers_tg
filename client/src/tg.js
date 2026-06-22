@@ -5,14 +5,28 @@
 // Личность игрока из Telegram: ник профиля. Вне Telegram → null.
 // Имя — first_name (как показывает Telegram), запасной вариант — @username.
 export function tgUser() {
-  const u =
+  let u =
     window.Telegram &&
     window.Telegram.WebApp &&
     window.Telegram.WebApp.initDataUnsafe &&
     window.Telegram.WebApp.initDataUnsafe.user
+  // Фолбэк: SDK ещё не подгрузил initDataUnsafe → достаём user из raw launch-хеша,
+  // чтобы tgUserId() (uid в бою, аналитика) не был null на медленном/старом клиенте.
+  if (!u) u = userFromHash()
   if (!u) return null
   const name = String(u.first_name || u.username || '').trim()
   return name ? { id: u.id, name } : null
+}
+
+function userFromHash() {
+  try {
+    const raw = tgInitData()
+    if (!raw) return null
+    const userJson = new URLSearchParams(raw).get('user')
+    return userJson ? JSON.parse(userJson) : null
+  } catch {
+    return null
+  }
 }
 
 // Дождаться, пока Telegram populated RAW initData (он бывает доступен чуть позже самого
@@ -20,16 +34,30 @@ export function tgUser() {
 // api.headers() свалится в ГОСТЯ (x-guest-id → профиль под g_<random>, а не tg_<id>) —
 // «будто не залогинился», в админке по tgId не найти, прогресс не привязан к ТГ.
 // Ждём ТОЛЬКО если мы в Telegram; вне Telegram — сразу выходим (честный гость/дев).
+// СЫРОЙ initData для авторизации: из SDK, иначе из raw launch-хеша (tgWebAppData),
+// захваченного в index.html ДО telegram-web-app.js. На медленном/старом клиенте (iPhone 8,
+// прокси) CDN-скрипт может не успеть/не дойти → SDK-поле пусто, а хеш есть сразу → спасает.
+export function tgInitData() {
+  const sdk = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData
+  if (sdk) return sdk
+  try {
+    const hash = (window.__PZ_TG_HASH || window.location.hash || '').replace(/^#/, '')
+    return new URLSearchParams(hash).get('tgWebAppData') || ''
+  } catch {
+    return ''
+  }
+}
+
 export async function waitForInitData(timeoutMs = 2500) {
-  const tg = window.Telegram && window.Telegram.WebApp
-  if (!tg) return false // не в Telegram
-  if (tg.initData) return true
+  if (tgInitData()) return true // SDK или хеш — уже есть, ждать нечего
+  const inTg = !!(window.Telegram && window.Telegram.WebApp) || String(window.__PZ_TG_HASH || '').includes('tgWebAppData')
+  if (!inTg) return false // не в Telegram — сразу гость/дев
   const t0 = Date.now()
   while (Date.now() - t0 < timeoutMs) {
     await new Promise((r) => setTimeout(r, 50))
-    if (tg.initData) return true
+    if (tgInitData()) return true
   }
-  return !!tg.initData
+  return !!tgInitData()
 }
 
 // id текущего игрока в Telegram (число) — для реферальных/взводных deep-link'ов
