@@ -26,10 +26,11 @@ const withClass = (tk) =>
   })
 
 export const NATIONS = [{ id: 'ussr' }, { id: 'ger' }, { id: 'usa' }].map((n) => defLoc(n, { label: (o) => `game.nations.${o.id}` }))
-// ВРЕМЕННО СКРЫТЫЕ нации: у США пока нет 3D-моделей танков (рендерились бы фоллбэком-
-// Abrams) → прячем ветку из выбора (переключатель наций / выбор 2-го танка / карусель
-// ангара). Чисто display-уровень: вернуть = очистить массив. Танки в данных остаются.
-export const HIDDEN_NATIONS = ['usa']
+// ВРЕМЕННО СКРЫТЫЕ нации (display-уровень: переключатель наций / выбор 2-го танка /
+// карусель ангара). Танки в данных остаются. США раскрыта 2026-06-22: основная линия
+// 1-10 + премы ram/sper получили свои 3D-модели (см. TANK_MODELS). 7 «доп»-танков США
+// (EXTRA_TANKS) пока без моделей, но в UI не показываются (extraOfNation не вызывается).
+export const HIDDEN_NATIONS = []
 export const isHiddenNation = (id) => HIDDEN_NATIONS.includes(id)
 export const visibleNations = () => NATIONS.filter((n) => !HIDDEN_NATIONS.includes(n.id))
 // скрытые нации показываем «заглушкой» (🔒 скоро), чтобы ветка не «пропадала молча»
@@ -511,7 +512,7 @@ export const CLAN_EMBLEM_BY_ID = Object.fromEntries(CLAN_EMBLEMS.map((e) => [e.i
 // исторические — реальное содержимое GLB: tank2 = Abrams, tank3 = Leopard 2.
 // Танки БЕЗ своей модели рендерятся фоллбэком по нации. Порт из tanks_mini_3d.
 export const TANK_MODELS = {
-  t90: '/models/t90_opt.glb', abr: '/models/tank2_opt.glb', leo2: '/models/tank3_opt.glb',
+  t90: '/models/t90_opt.glb', abr: '/models/abr_opt.glb', leo2: '/models/tank3_opt.glb',
   t34: '/models/t34_opt.glb', t3485: '/models/t3485_opt.glb', t80u: '/models/t80u_opt.glb',
   t14: '/models/t14_opt.glb', tgr: '/models/tgr_opt.glb', tgr2: '/models/tgr2_opt.glb',
   is2: '/models/is2_opt.glb', kv1: '/models/kv1_opt.glb', t26: '/models/t26_opt.glb',
@@ -520,6 +521,11 @@ export const TANK_MODELS = {
   pnt: '/models/pnt_opt.glb', maus: '/models/maus_opt.glb', pz4: '/models/pz4_opt.glb',
   leo1: '/models/leo1_opt.glb', leo2a7: '/models/leo2a7_opt.glb', kf51: '/models/kf51_opt.glb',
   pz4h: '/models/pz4h_opt.glb',
+  // США: реальные 3D-модели (256 JPEG + KHR_mesh_quantization, ~0.8 МБ как остальные)
+  m2l: '/models/m2l_opt.glb', stu: '/models/stu_opt.glb', sher: '/models/sher_opt.glb',
+  e8: '/models/e8_opt.glb', per: '/models/per_opt.glb', sper: '/models/sper_opt.glb',
+  m48: '/models/m48_opt.glb', m60: '/models/m60_opt.glb', ram: '/models/ram_opt.glb',
+  m1a2: '/models/m1a2_opt.glb', abrx: '/models/abrx_opt.glb', // abr → abr_opt.glb (выше)
 }
 // фоллбэк по нации: СССР → Т-90, США → Abrams, Германия → Leopard 2
 export const NATION_MODEL_URL = { ussr: '/models/t90_opt.glb', usa: '/models/tank2_opt.glb', ger: '/models/tank3_opt.glb' }
@@ -543,6 +549,7 @@ export function tankModelUrl(id, nation) {
 export const MODEL_FLIP = new Set([
   't28', 'pnt', 'tgr', 'tgr2', 'pz4', 'pz4h', 'maus',
   'tank2', 'tank3', 'leo1', 'leo2a7', 'kf51',
+  'm2l', 'stu', // США: ствол смоделирован в −Z (M2 Light, Stuart) → доворот +180°
 ])
 export function modelNeedsFlip(url) {
   const m = /([^/]+)_opt\.glb/.exec(url || '')
@@ -555,6 +562,9 @@ const TANK_LENGTH_M = {
   t72: 6.67, t90: 6.86, t80u: 7.0, t14: 8.7, t28: 7.44, t54: 6.04,
   pz2: 4.81, pz3: 5.52, pz4: 5.89, pnt: 6.87, tgr: 6.32, tgr2: 7.38,
   leo1: 7.09, leo2: 7.72, leo2a7: 7.7, kf51: 7.2, maus: 10.2, abr: 7.93,
+  // США (длина корпуса без пушки, м)
+  m2l: 4.43, stu: 4.53, sher: 5.89, e8: 6.0, per: 6.33, sper: 6.35,
+  m48: 6.42, m60: 6.95, ram: 5.64, m1a2: 7.93, abrx: 7.93,
 }
 const SIZE_BY_CLASS = { light: 0.8, medium: 1, heavy: 1.22 }
 export function tankSizeScale(id) {
