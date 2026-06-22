@@ -542,15 +542,14 @@ export const hasTankModel = (id) => !!TANK_MODELS[id]
 export function tankModelUrl(id, nation) {
   return TANK_MODELS[id] || NATION_MODEL_URL[nation] || '/models/t90_opt.glb'
 }
-// МОДЕЛИ «ЗАДОМ»: часть GLB смоделирована стволом в −Z (норм. кладёт длину к Z, но
-// перёд оказывается сзади) → в бою такой танк «едет задом». Им нужен доворот +180°.
-// Список определён авто-детектом (тонкий конец = ствол): /_idcheck.html. Ключ — basename
-// файла модели (флип — свойство файла, не tankId; фоллбэк-модели тоже учтены).
-export const MODEL_FLIP = new Set([
-  't28', 'pnt', 'tgr', 'tgr2', 'pz4', 'pz4h', 'maus',
-  'tank2', 'tank3', 'leo1', 'leo2a7', 'kf51',
-  'm2l', 'stu', // США: ствол смоделирован в −Z (M2 Light, Stuart) → доворот +180°
-])
+// МОДЕЛИ «ЗАДОМ»: доворот +180° для GLB, смоделированных стволом в −Z.
+// 2026-06-22: набор ОЧИЩЕН. Детерминированный репро (точный трансформ боя
+// _normalizeModel + holder.rotation.y=π/2−hull, и трансформ ангара Tank3DView
+// faceY+flipY) на ВСЕХ 16 моделях показал: у всех перёд уже на +Z. Прежний авто-детект
+// (/_idcheck.html, эвристика выступа ствола) systematically ПЕРЕ-флипал 14 моделей →
+// они ехали ЗАДОМ в бою и показывали ЗАД в ангаре (фидбек «все танки задним ходом»).
+// Пустой набор = верно везде. Реально «задний» GLB в будущем → добавить его basename сюда.
+export const MODEL_FLIP = new Set([])
 export function modelNeedsFlip(url) {
   const m = /([^/]+)_opt\.glb/.exec(url || '')
   return m ? MODEL_FLIP.has(m[1]) : false
