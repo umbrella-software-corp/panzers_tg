@@ -18,7 +18,13 @@ EMAIL=blagov94@gmail.com
 cd "$DIR"
 
 echo "== 1/6 свежий код =="
-git pull --ff-only || true
+# Жёсткая синхронизация на origin/main вместо merge: ПЕРЕЖИВАЕТ untracked-конфликты
+# (дев-стенды вроде client/public/_*.html), на которых `git pull` отваливался с "would be
+# overwritten, Aborting", а скрипт молча шёл дальше и СОБИРАЛ СТАРЫЙ КОД (инцидент 22.06 —
+# бандл не менялся). server/.env и server/data гитигнорятся → НЕ затрагиваются.
+git fetch origin --quiet
+git reset --hard origin/main
+echo "  HEAD: $(git rev-parse --short HEAD) — $(git log -1 --format=%s | head -c 60)"
 
 echo "== 2/6 окружение (один раз) =="
 command -v node >/dev/null || (curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs)
