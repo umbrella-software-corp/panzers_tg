@@ -40,6 +40,11 @@ export default {
     // стартовый сплэш (App.vue)
     bootSub: 'preparing the garage…',
     bootFoot: 'early access · build in active development',
+    // экран ошибки авторизации (App.vue) — не пускаем в сломанный ангар, даём повтор
+    authErrTitle: 'Sign-in failed',
+    authErrBody: 'Couldn’t verify your Telegram login — progress won’t be saved. This is usually a slow or restricted connection (VPN/proxy). Tap retry.',
+    authErrRetrying: 'Signing you in…',
+    authErrStill: 'Still no luck. Check your connection (try without VPN/proxy) and retry.',
     // валюты с числом (множественное число)
     creditsN: ({ n }) => `${n} credits`,
     tokensN: ({ n }) => `${n} ${n === 1 ? 'token' : 'tokens'}`,
@@ -79,6 +84,10 @@ export default {
     adminGiftClaim: 'Круто, спасибо!',
     bootSub: 'готовим ангар…',
     bootFoot: 'ранний доступ · билд в активной разработке',
+    authErrTitle: 'Не удалось войти',
+    authErrBody: 'Не получилось подтвердить вход через Telegram — прогресс не сохранится. Обычно это медленное или ограниченное соединение (VPN/прокси). Нажми «Повторить».',
+    authErrRetrying: 'Входим…',
+    authErrStill: 'Пока не вышло. Проверь соединение (попробуй без VPN/прокси) и повтори.',
     creditsN: ({ n }) => {
       const m10 = n % 10
       const m100 = n % 100

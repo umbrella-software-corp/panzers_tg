@@ -33,7 +33,13 @@ function headers() {
 
 async function call(path, opts = {}) {
   const res = await fetch(BASE + path, { ...opts, headers: { ...headers(), ...(opts.headers || {}) } })
-  if (!res.ok) throw new Error(`api ${path}: ${res.status}`)
+  if (!res.ok) {
+    // .status — чтобы вызывающий отличил 401 (провал авторизации → гейт «ошибка входа»)
+    // от сетевого сбоя/5xx (играем на кэше, фоновый ретрай). См. store.authRejected.
+    const e = new Error(`api ${path}: ${res.status}`)
+    e.status = res.status
+    throw e
+  }
   return res.json()
 }
 

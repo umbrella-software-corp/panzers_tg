@@ -8,7 +8,7 @@ export default {
     // премиум-аккаунт
     premiumHead: 'PREMIUM ACCOUNT',
     premiumTitle: 'PREMIUM · 7 DAYS',
-    premiumDesc: '+15% to crew XP, vehicle tree and credits for every battle',
+    premiumDesc: '+50% to crew XP, vehicle tree and credits for every battle',
     premiumActive: ({ n }) => `ACTIVE · ${n} DAYS LEFT`,
     premiumLabel: 'Premium · 7 days',
     // премиум-техника
@@ -57,7 +57,7 @@ export default {
     title: 'МАГАЗИН',
     premiumHead: 'ПРЕМИУМ-АККАУНТ',
     premiumTitle: 'ПРЕМИУМ · 7 ДНЕЙ',
-    premiumDesc: '+15% к опыту экипажа, ветке техники и кредитам за каждый бой',
+    premiumDesc: '+50% к опыту экипажа, ветке техники и кредитам за каждый бой',
     premiumActive: ({ n }) => `АКТИВЕН · ОСТАЛОСЬ ${n} ДН.`,
     premiumLabel: 'Премиум · 7 дней',
     premTanksHead: 'ПРЕМИУМ-ТЕХНИКА · ЗА TG STARS',

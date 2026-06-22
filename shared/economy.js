@@ -114,7 +114,7 @@ export function battleMedalXp(b) {
   }
   return xp
 }
-export const PREMIUM_BONUS = 0.15 // премиум-аккаунт: +15% к кредитам/опыту
+export const PREMIUM_BONUS = 0.5 // премиум-аккаунт: +50% к кредитам/опыту (бенчмарк Blitz, тикет #29)
 export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemEvery: 10, gems: 10 }
 
 // ---------- воинские звания (по серверному числу боёв srvBattles) ----------

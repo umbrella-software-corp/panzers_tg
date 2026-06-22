@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, markRaw } from 'vue'
-import { setBackButton, startParam, tgUserId, requestWriteAccess, tgConfirm, openSupport, waitForInitData, tgInitData } from './tg.js'
+import { setBackButton, startParam, tgUserId, requestWriteAccess, tgConfirm, openSupport, waitForInitData, tgInitData, isFromTelegram } from './tg.js'
 import { apiReferred, apiPushAllow } from './api.js'
 import Hangar from './components/Hangar.vue'
 import Tree from './components/Tree.vue'
@@ -13,7 +13,7 @@ import DailyReward from './components/DailyReward.vue'
 import ChannelSheet from './components/ChannelSheet.vue'
 import Onboarding from './components/Onboarding.vue'
 import SecondTankChoice from './components/SecondTankChoice.vue'
-import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus } from './store.js'
+import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus, serverSynced, authRejected } from './store.js'
 import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
 import { preloadCritical, preloadRest } from './game/preload.js'
@@ -42,6 +42,14 @@ const daily = ref(false)
 const channelPopup = ref(false) // окно «подпишись на канал → собирай взвод → бонус» после 2-3 боя
 const booting = ref(true) // стартовый сплэш-лоадер (БЕТА) — держим, пока тянем профиль
 const bootProgress = ref(0) // прогресс прогрева критичных ассетов 0..1 (бар на сплэше)
+// гейт «ошибка входа»: в Telegram, но авторизация не прошла (нет/протух initData → 401).
+// Не пускаем в ангар (играл бы на кэше без сохранения, в админке не виден), даём «Повторить».
+const authGate = ref(false)
+const authBusy = ref(false) // идёт повторная попытка (лоадер на кнопке)
+const authTried = ref(false) // была хотя бы одна неудачная ручная попытка → текст «всё ещё не вышло»
+const finishBoot = () => (booting.value = false) // снять сплэш (вызывается из boot и предохранителем)
+let bootT0 = 0 // метка старта boot (для минимальной выдержки сплэша)
+let bootCrit = null // промис прогрева критичных ассетов (ангар) — дожидаемся перед уходом со сплэша
 
 // Дейлик показываем максимум один раз за сессию и НЕ на первом входе новичка:
 // при 0 боёв вход не перехватываем — попап всплывёт при возврате в ангар после
@@ -77,13 +85,12 @@ function maybeShowDaily() {
   daily.value = true
 }
 onMounted(async () => {
-  const t0 = Date.now()
-  const finishBoot = () => (booting.value = false)
+  bootT0 = Date.now()
   setTimeout(finishBoot, 6000) // предохранитель: не зависаем на сплэше при медленной сети
   // ПРОГРЕВ АССЕТОВ: сплэш больше не крутится вхолостую — параллельно с синком тянем
   // критичные спрайты (ангар) в кэш и показываем прогресс баром. Остальное (бой/карты/
   // фоны) догреваем фоном после сплэша — к «В БОЙ» уже готово (см. game/preload.js).
-  const crit = preloadCritical(profile, (p) => (bootProgress.value = p))
+  bootCrit = preloadCritical(profile, (p) => (bootProgress.value = p))
   // КРИТИЧНО: дождаться initData ПЕРЕД первым синком — иначе bootSync уйдёт гостем
   // (профиль под g_<random>, «не залогинился», в админке по tgId не найти). Фикс @Z_86_V.
   await waitForInitData()
@@ -93,6 +100,25 @@ onMounted(async () => {
   if (window.Telegram && window.Telegram.WebApp && !window.Telegram.WebApp.initData && tgUserId())
     track('auth_sdk_empty_hash_fallback', { tg_id: tgUserId(), recovered: !!tgInitData() })
   await bootSync() // синк + фоновый ретрай; пока не синканёмся — на сервер НЕ пишем (анти-клоббер)
+  // ГЕЙТ ВХОДА: мы в Telegram, но синк не прошёл ИЗ-ЗА авторизации (нет подписанного initData
+  // ИЛИ сервер вернул 401). Не пускаем в ангар — иначе игрок «играет», а прогресс не сохраняется
+  // и в админке его нет (см. @Z_86_V). Сетевой сбой при ВАЛИДНОМ initData сюда НЕ попадает
+  // (authRejected=false) → там прежнее мягкое поведение (кэш + фоновый ретрай).
+  if (isFromTelegram() && !serverSynced.value && (!tgInitData() || authRejected.value)) {
+    track('auth_gate_shown', { tg_id: tgUserId() || null, has_initdata: !!tgInitData(), rejected: authRejected.value })
+    authGate.value = true
+    booting.value = false // снять сплэш, показать экран ошибки (он рисуется поверх)
+    return // дальнейший boot (аналитика/прогрев/тур) делаем только после успешного входа
+  }
+  await continueBoot()
+})
+
+// продолжение boot ПОСЛЕ успешной авторизации — вынесено, чтобы вызвать и из onMounted,
+// и из retryAuth (после починки входа): аналитика, обработчики взвода, дип-линк, прогрев.
+let bootContinued = false
+async function continueBoot() {
+  if (bootContinued) return // идемпотентно: и onMounted, и retryAuth, и вотчер ниже могут позвать
+  bootContinued = true
   applyTgName() // серверный профиль мог вернуть старое имя — обновляем ником TG
   loadConfig() // флаг турниров и пр. (не блокируем старт)
   // профиль загружен — связываем юзера и шлём срез прогрессии в Amplitude
@@ -129,10 +155,42 @@ onMounted(async () => {
   // ДЕРЖИМ сплэш, пока реально не прогреты визуалы первого экрана (фон ангара + спрайты
   // твоих танков) — иначе юзер ловит «полусобранный» ангар. Предохранитель 6с (выше)
   // страхует от зависания на флейки-сети; preloadCritical всегда резолвится (ошибки глушит).
-  await crit.catch(() => {})
+  await bootCrit.catch(() => {})
   preloadRest(profile) // остальное (бой/карты/фоны) — в фоне, не блокирует уход со сплэша
   // сплэш держим минимум ~750мс, чтобы не моргал на быстром старте
-  setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - t0)))
+  setTimeout(finishBoot, Math.max(0, 900 - (Date.now() - bootT0)))
+}
+
+// Повтор входа (кнопка на гейте). SDK мог догрузиться / сеть ожить → перечитываем initData
+// и синкаемся. Успех → снимаем гейт и доигрываем boot. Неуспех → подсказка «проверь связь».
+// initData достаём из памяти (window.__PZ_TG_HASH тоже в памяти) — поэтому НЕ reload (тот мог
+// бы потерять уже вычищенный SDK-хеш из URL и залочить вход навсегда).
+async function retryAuth() {
+  if (authBusy.value) return
+  authBusy.value = true
+  authTried.value = false
+  await waitForInitData()
+  await bootSync()
+  authBusy.value = false
+  if (serverSynced.value) {
+    track('auth_gate_recovered', { tg_id: tgUserId() || null })
+    authGate.value = false
+    bootT0 = Date.now()
+    await continueBoot()
+  } else {
+    authTried.value = true // покажем «всё ещё не вышло, проверь соединение»
+  }
+}
+
+// Страховка: если вход починился сам (фоновый ретрай bootSync догнал сеть/initData),
+// снимаем гейт и доигрываем boot — без участия пользователя.
+watch(serverSynced, (ok) => {
+  if (ok && authGate.value && !bootContinued) {
+    track('auth_gate_recovered', { tg_id: tgUserId() || null, auto: true })
+    authGate.value = false
+    bootT0 = Date.now()
+    continueBoot()
+  }
 })
 
 // разбор start_param из пригласительной ссылки. ref_<id> — засчитать реферера на
@@ -327,7 +385,7 @@ function bankBattle(reward) {
     premium_bonus: isPremium() ? PREMIUM_BONUS : 0,
     prem_tank: premTank,
   })
-  // премиум-аккаунт (+15%) и премиум-танк (+5%) к кредитам и опыту — стакаются
+  // премиум-аккаунт (+50%) и премиум-танк (+5%) к кредитам и опыту — стакаются
   let m = 1
   if (isPremium()) m += PREMIUM_BONUS
   if (premTank) m += PREM_TANK.creditMult
@@ -465,6 +523,24 @@ function rematch(reward) {
       <div class="boot-foot">{{ t('common.bootFoot') }}</div>
     </div>
   </transition>
+
+  <!-- ГЕЙТ ВХОДА: в Telegram, но авторизация не прошла (нет/протух initData). Не пускаем
+       в ангар (играл бы без сохранения) — экран ошибки + «Повторить» (см. retryAuth). -->
+  <Teleport to="body">
+    <transition name="boot-fade">
+      <div v-if="authGate" class="auth-ovl">
+        <div class="auth-card pz-plate">
+          <div class="auth-emo">🔌</div>
+          <div class="pz-display auth-ttl">{{ t('common.authErrTitle') }}</div>
+          <div class="auth-body">{{ authBusy ? t('common.authErrRetrying') : authTried ? t('common.authErrStill') : t('common.authErrBody') }}</div>
+          <button class="pz-cta auth-btn" :disabled="authBusy" @click="retryAuth">
+            <span v-if="authBusy" class="auth-spin"></span>
+            <span v-else>{{ t('common.retry') }}</span>
+          </button>
+        </div>
+      </div>
+    </transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -506,6 +582,67 @@ function rematch(reward) {
 }
 .gift-row {
   font-size: 19px;
+}
+/* гейт входа — сплошной фон (полностью перекрывает ангар, юзер не доберётся до «В БОЙ») */
+.auth-ovl {
+  position: fixed;
+  inset: 0;
+  z-index: 400; /* выше всего, включая подарок (300) и сплэш (100) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: #090b08;
+  background-image: radial-gradient(120% 75% at 50% 30%, rgba(48, 60, 36, 0.5), transparent 68%);
+}
+.auth-card {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+  padding: 26px 22px;
+  border: 1px solid var(--amber);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 14px 50px rgba(0, 0, 0, 0.55);
+}
+.auth-emo {
+  font-size: 44px;
+  line-height: 1;
+}
+.auth-ttl {
+  font-size: 18px;
+  color: var(--amber);
+  margin-top: 10px;
+  letter-spacing: 0.04em;
+}
+.auth-body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-dim, #b9bdb0);
+  margin: 14px 0 20px;
+}
+.auth-btn {
+  width: 100%;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.auth-btn[disabled] {
+  opacity: 0.7;
+}
+.auth-spin {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid rgba(0, 0, 0, 0.25);
+  border-top-color: rgba(0, 0, 0, 0.7);
+  animation: b0rot 0.8s linear infinite;
+}
+@keyframes b0rot {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .bootsplash {
   position: fixed;

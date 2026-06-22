@@ -48,6 +48,20 @@ export function tgInitData() {
   }
 }
 
+// Запущены ли мы реально из Telegram (а не дев/браузер)? Сигнал: известная платформа
+// WebApp ИЛИ в launch-хеше были tgWebApp*-параметры. Нужен, чтобы гейт «ошибка входа»
+// показывался ТОЛЬКО телеграм-юзерам (вне TG отсутствие initData — это норм гость/дев).
+export function isFromTelegram() {
+  try {
+    const wa = window.Telegram && window.Telegram.WebApp
+    if (wa && wa.platform && wa.platform !== 'unknown') return true
+    if (String(window.__PZ_TG_HASH || '').includes('tgWebApp')) return true
+  } catch {
+    /* нет window — дев */
+  }
+  return false
+}
+
 export async function waitForInitData(timeoutMs = 2500) {
   if (tgInitData()) return true // SDK или хеш — уже есть, ждать нечего
   const inTg = !!(window.Telegram && window.Telegram.WebApp) || String(window.__PZ_TG_HASH || '').includes('tgWebAppData')

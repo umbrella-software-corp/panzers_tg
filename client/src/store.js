@@ -245,6 +245,10 @@ applyTgName()
 // → настоящий прогресс затирается дефолтами НАВСЕГДА. localStorage пишем всегда (он
 // пер-аккаунт и безопасен), а пуш на сервер гейтим успешным синком.
 export const serverSynced = ref(false)
+// сервер ЯВНО отверг авторизацию (401: пустой/протухший/невалидный initData), а не сетевой
+// сбой. App.vue по этому флагу решает показать гейт «ошибка входа» (а не тихо играть на
+// кэше без сохранения). Сбрасывается в true→false при успешном синке.
+export const authRejected = ref(false)
 
 // ОФФ-интервал (флаг econAuthority ВЫКЛ): защита от потери прогресса на мобиле, когда
 // сейв не доехал до сервера (Telegram убил webview), а на реоткрытии серверный (старый)
@@ -347,6 +351,7 @@ export async function applyPendingGrants() {
 export async function syncProfile() {
   try {
     const res = await apiLoadProfile()
+    authRejected.value = false // дошли до сервера и он принял — авторизация ок
     if (res && res.profile) {
       const { _updatedAt, ...rest } = res.profile
       const srvAt = +_updatedAt || 0
@@ -423,8 +428,11 @@ export async function syncProfile() {
       serverSynced.value = true
     }
     return true
-  } catch {
-    return false // сервер недоступен — играем на локальном кеше, на сервер НЕ пишем
+  } catch (e) {
+    // 401 = авторизация отвергнута (нет/протух initData) → сигналим гейту. Прочее (сеть/5xx)
+    // — играем на локальном кеше, на сервер НЕ пишем, фоновый ретрай (НЕ показываем гейт).
+    if (e && e.status === 401) authRejected.value = true
+    return false
   }
 }
 
@@ -604,8 +612,9 @@ export async function upgradeModule(tankId, modId) {
   return true
 }
 
-// ---------- премиум-аккаунт (Stars): +15% к опыту экипажа/ветки и кредитам ----------
-export const PREMIUM_BONUS = 0.15
+// ---------- премиум-аккаунт (Stars): +50% к опыту экипажа/ветки и кредитам ----------
+// ⚠️ ЗЕРКАЛО shared/economy.js PREMIUM_BONUS — менять синхронно (сервер начисляет по той же).
+export const PREMIUM_BONUS = 0.5
 export const isPremium = () => profile.premiumUntil > Date.now()
 // сколько дней премиума осталось (для бейджа); 0 — нет
 export const premiumDaysLeft = () => Math.max(0, Math.ceil((profile.premiumUntil - Date.now()) / 86400000))
