@@ -235,6 +235,8 @@ export class BattleSim {
       stuckT: 0,
       avoidT: 0,
       avoidDir: 1,
+      reverseT: 0, // анти-застревание: сдаём задним ходом, чтобы вылезти из угла/стены
+      stuckN: 0, // сколько раз подряд застряли — для эскалации обхода
       _blockT: -1, // тик последнего события «выстрел заблокирован»
     }
   }
@@ -446,7 +448,16 @@ export class BattleSim {
       }
     }
 
-    if (target) {
+    if (b.reverseT > 0) {
+      // АНТИ-ЗАСТРЕВАНИЕ: пока reverseT — пятимся ЗАДНИМ ХОДОМ + доворот вбок (avoidDir),
+      // чтобы вылезти из угла/у стены (#28 «боты стоят и крутятся на месте»). Одного
+      // поворота в тупике мало — нужен откат. После — обычный ИИ (цель/точка).
+      b.reverseT -= dt
+      b.hull += b.botTurn * dt * b.avoidDir
+      b.x -= Math.cos(b.hull) * b.botSpeed * REVERSE_MULT * dt
+      b.y -= Math.sin(b.hull) * b.botSpeed * REVERSE_MULT * dt
+      wantMove = true
+    } else if (target) {
       const ang = Math.atan2(target.y - b.y, target.x - b.x)
       if (capGoal) {
         // ЗАЩИТА ТОЧКИ: едем к своей позиции у круга; НА точке — держим место, но
@@ -612,11 +623,15 @@ export class BattleSim {
     if (b.avoidT > 0) b.avoidT -= dt
     const moved = Math.hypot(b.x - px, b.y - py)
     if (wantMove && moved < b.botSpeed * dt * 0.25) b.stuckT += dt
-    else b.stuckT = 0
+    else { b.stuckT = 0; if (moved > b.botSpeed * dt * 0.5) b.stuckN = 0 } // едем нормально — сброс эскалации
     if (b.stuckT > 0.5) {
       b.stuckT = 0
-      b.avoidT = 0.9
-      b.avoidDir = Math.random() < 0.5 ? -1 : 1
+      b.stuckN++
+      b.avoidT = 1.0
+      b.reverseT = 0.5 // вылезаем ЗАДНИМ ХОДОМ — одного поворота в углу мало (#28)
+      // направление обхода ДЕТЕРМИНИРОВАННОЕ (раньше random → дёрг влево-вправо = «кручусь
+      // на месте»); при ПОВТОРНОМ застревании пробуем другую сторону (прошлый обход не помог)
+      b.avoidDir = (b.id % 2 ? 1 : -1) * (b.stuckN % 2 ? 1 : -1)
     }
   }
 
