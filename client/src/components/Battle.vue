@@ -1476,70 +1476,38 @@ onBeforeUnmount(() => {
   border-color: var(--red);
 }
 
-/* отсчёт удержания всех точек до победы — крупный баннер по центру сверху */
+/* отсчёт удержания точек до победы — компактно СВЕРХУ, просто цифры (фидбек #26:
+   «бесит таймер на середине экрана»). Цвет = смысл: янтарь — мы побеждаем, красный —
+   теряем точки. Без центрового баннера, рамок и пульсаций. */
 .wincount {
   position: absolute;
-  top: 23%;
+  top: calc(var(--safe-top) + 40px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 7;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 10px 24px;
-  border-radius: 14px;
-  background: rgba(8, 12, 6, 0.82);
-  border: 2px solid var(--amber);
-  box-shadow:
-    0 8px 26px rgba(0, 0, 0, 0.55),
-    0 0 0 4px rgba(0, 0, 0, 0.22);
-  text-align: center;
+  align-items: baseline;
+  gap: 7px;
   pointer-events: none;
   white-space: nowrap;
 }
-.wincount.foe {
-  border-color: var(--red);
-  animation: wc-alarm 0.9s ease-in-out infinite;
-}
 .wc-label {
-  font-size: 11px;
-  letter-spacing: 0.16em;
+  font-size: 10px;
+  letter-spacing: 0.14em;
   color: var(--amber);
+  opacity: 0.85;
 }
 .wincount.foe .wc-label {
   color: var(--red);
 }
 .wc-sec {
-  font-size: 30px;
+  font-size: 26px;
   line-height: 1;
-  color: #fff;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
-  animation: wc-pulse 1s ease-in-out infinite;
+  color: var(--amber);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
 }
-@keyframes wc-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.12);
-    opacity: 0.82;
-  }
-}
-@keyframes wc-alarm {
-  0%,
-  100% {
-    box-shadow:
-      0 8px 26px rgba(0, 0, 0, 0.55),
-      0 0 0 4px rgba(193, 39, 39, 0.18);
-  }
-  50% {
-    box-shadow:
-      0 8px 26px rgba(0, 0, 0, 0.55),
-      0 0 0 7px rgba(193, 39, 39, 0.42);
-  }
+.wincount.foe .wc-sec {
+  color: var(--red);
 }
 .wc-pop-enter-active {
   transition:
