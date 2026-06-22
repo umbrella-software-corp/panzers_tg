@@ -527,13 +527,14 @@ game.onShot = (r) => {
   }
   if (r.type === 'hit') {
     haptic('medium') // пробитие — отдача попадания
-    showToast('hit', tr('battle.penetration'))
+    // показываем ЧИСЛО урона рядом с причиной — отвечает на «то 60 то 600, от чего зависит»
+    showToast('hit', r.dmg ? `${tr('battle.penetration')} · ${r.dmg}` : tr('battle.penetration'))
   } else if (r.type === 'ricochet') {
     haptic('light') // снаряд лизнул броню — лёгкий тик
-    showToast('miss', tr('battle.ricochet'))
+    showToast('miss', tr('battle.ricochet')) // рикошет = 0 урона, число не нужно
   } else if (r.type === 'nopen') {
     haptic('light') // попал, но не пробил — лёгкий тик
-    showToast('miss', tr('battle.nopen'))
+    showToast('miss', r.dmg ? `${tr('battle.nopen')} · ${r.dmg}` : tr('battle.nopen'))
   } else if (r.type === 'miss') {
     const txt =
       r.reason === 'far'

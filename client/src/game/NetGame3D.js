@@ -8,6 +8,7 @@
 // База — наш продовый NetGame (2D-движок): снапшот-протокол и API базы байт-совместимы
 // с NetGameCore форка, поэтому 3D-рендер садится прямо на него (NetGameCore не портируем).
 import { NetGame } from './NetGame.js'
+import { t } from '../i18n.js' // локализация меток плавающего урона (рикошет/броня)
 import { tankModelUrl, tankSizeScale, PROP_MODELS, modelNeedsFlip, CAMO_BY_ID } from './meta.js'
 import { drawCamoPattern } from './camo.js' // процедурный камо-узор (как в ангаре)
 import { MAP_SIZE } from './config.js'
@@ -990,6 +991,28 @@ export class NetGame3D extends NetGame {
       ctx.fillStyle = '#eef2f6'; ctx.lineWidth = 2.5 * dpr; ctx.strokeStyle = '#000'
       const ht = isYou ? `${hp}/${u.maxHp || hp}` : `${hp}`
       ctx.strokeText(ht, sx, sy + 2 * dpr); ctx.fillText(ht, sx, sy + 2 * dpr)
+    }
+    // ПЛАВАЮЩИЕ ЦИФРЫ УРОНА (combat text) по моим выстрелам — всплывают над целью, гаснут.
+    // Делают разброс урона прозрачным: пробитие = число, непробитие = число+«БРОНЯ», рикошет.
+    const fl = this.floaters
+    if (fl && fl.length) {
+      for (const f of fl) {
+        v.set(f.x, 70, f.y).project(this.camera)
+        if (v.z > 1) continue
+        const fx = (v.x * 0.5 + 0.5) * W
+        const k = Math.min(1, f.age / 1.1)
+        const fy = (-v.y * 0.5 + 0.5) * H - 16 * dpr - k * 44 * dpr // всплывает вверх по мере старения
+        const alpha = f.age < 0.1 ? f.age / 0.1 : 1 - Math.max(0, (f.age - 0.6) / 0.5) // въезд + угасание
+        ctx.globalAlpha = Math.max(0, Math.min(1, alpha))
+        let txt, col, size
+        if (f.outcome === 'ricochet') { txt = t('battle.ricochet'); col = '#7fd6ff'; size = 13 }
+        else if (f.outcome === 'nopen') { txt = `${f.dmg} · ${t('battle.armorShort')}`; col = '#c7cdd6'; size = 13 }
+        else { txt = `${f.dmg}`; col = f.killed ? '#ffd54a' : '#fff0c4'; size = f.killed ? 23 : 18 }
+        ctx.font = `${size * dpr}px 'Russo One', sans-serif`
+        ctx.lineWidth = 3 * dpr; ctx.strokeStyle = '#000'; ctx.strokeText(txt, fx, fy)
+        ctx.fillStyle = col; ctx.fillText(txt, fx, fy)
+      }
+      ctx.globalAlpha = 1
     }
   }
 

@@ -82,6 +82,10 @@ export class NetGame {
     this.shells = []
     this.booms = []
     this.muzzles = []
+    // плавающие цифры урона (combat text): по МОИМ выстрелам — над целью. Делают разброс
+    // урона прозрачным («то 60 то 600»): видно число + причину (пробитие/непробитие/рикошет).
+    // Данные ведёт базовый NetGame, рисуют оба рендера (2D — нет; 3D — _drawOverlay).
+    this.floaters = []
     this.flash = new Map() // unitId -> сек подсветки попадания
     this.hurtFlash = 0
     this.sweepFrozen = null
@@ -307,15 +311,20 @@ export class NetGame {
         ricochet: ev.outcome === 'ricochet', // срикошетит: искра + полетит дальше под углом
       })
       if (mine) {
-        // outcome брони: 'ricochet'/'nopen' → свой фидбек, иначе hit/miss
-        this.onShot({ type: ev.outcome || (ev.hit ? 'hit' : 'miss'), reason: 'line' })
+        // outcome брони: 'ricochet'/'nopen' → свой фидбек, иначе hit/miss. dmg/killed →
+        // тост показывает ЧИСЛО урона рядом с причиной (прозрачность разброса «60 vs 600»).
+        this.onShot({ type: ev.outcome || (ev.hit ? 'hit' : 'miss'), reason: 'line', dmg: ev.dmg || 0, killed: !!ev.killed })
         this._fxSelfShot = true // лёгкая отдача камеры на свой выстрел (читает NetGame3D)
-        if (ev.hit && ev.target && ev.dmg) {
+        if (ev.hit && ev.target) {
           const t = this._units.get(ev.target)
-          const entry = this.damageLog.get(ev.target) || { name: t ? t.name : '—', tankId: t ? t.tankId : null, dmg: 0, killed: false }
-          entry.dmg += ev.dmg
-          entry.killed = entry.killed || !!ev.killed
-          this.damageLog.set(ev.target, entry)
+          // плавающая цифра над целью: пробитие — число, непробитие — число+«броня», рикошет — «РИКОШЕТ»
+          if (t) this.floaters.push({ x: t.x, y: t.y, dmg: ev.dmg || 0, outcome: ev.outcome || null, killed: !!ev.killed, age: 0 })
+          if (ev.dmg) {
+            const entry = this.damageLog.get(ev.target) || { name: t ? t.name : '—', tankId: t ? t.tankId : null, dmg: 0, killed: false }
+            entry.dmg += ev.dmg
+            entry.killed = entry.killed || !!ev.killed
+            this.damageLog.set(ev.target, entry)
+          }
         }
       } else if (ev.outcome && ev.target === this.youUnit) {
         // вражеский снаряд отскочил от МОЕЙ брони → «РИКОШЕТ ОТ БРОНИ»/«БРОНЯ НЕ ПРОБИТА»
@@ -1002,6 +1011,10 @@ export class NetGame {
     if (ricoTails.length) this.shells.push(...ricoTails) // срикошетившие «хвосты» — отдельными трассерами
     for (const bm of this.booms) bm.age += dt
     this.booms = this.booms.filter((bm) => bm.age <= (bm.big ? 0.7 : 0.45))
+    if (this.floaters.length) {
+      for (const f of this.floaters) f.age += dt
+      this.floaters = this.floaters.filter((f) => f.age <= 1.1) // живут ~1.1с (всплывают + гаснут)
+    }
     for (const m of this.muzzles) m.age += dt
     this.muzzles = this.muzzles.filter((m) => m.age <= 0.09)
     for (const [id, v] of this.flash) {

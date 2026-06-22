@@ -33,6 +33,7 @@ export default {
     penetration: 'PENETRATION',
     ricochet: 'RICOCHET',
     nopen: 'NO PENETRATION',
+    armorShort: 'ARMOR', // короткая метка для плавающей цифры урона (непробитие)
     missFar: 'TOO FAR',
     missSector: 'OUT OF SECTOR',
     missLos: 'NO SIGHT',
@@ -107,6 +108,7 @@ export default {
     penetration: 'ПРОБИТИЕ',
     ricochet: 'РИКОШЕТ',
     nopen: 'НЕ ПРОБИЛ',
+    armorShort: 'БРОНЯ', // короткая метка для плавающей цифры урона (непробитие)
     missFar: 'ДАЛЕКО',
     missSector: 'ВНЕ СЕКТОРА',
     missLos: 'НЕТ ОБЗОРА',
