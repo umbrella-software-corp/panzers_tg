@@ -264,7 +264,10 @@ const clearDirtyIf = (rev) => { if (dirtyRev === rev) lcSet(DIRTY_KEY, '0') }
 const rememberSrvAt = (at) => { if (at) lcSet(SRVAT_KEY, String(at)) }
 // поля «локального прогресса» — их при preferLocal возвращаем поверх старого серверного.
 // НЕ включаем серверно-ведомые (referrals/premiumUntil/daily/tasks/pendingGrants/srv*).
-const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'freeXp', 'stats', 'tankStats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef']
+const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'freeXp', 'stats', 'tankStats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef',
+  // одноразовые клиентские флаги прохождения: тоже защищаем от клоббера на гонке синка
+  // (иначе тур/тренировка/выбор 2-го танка «переоткрываются» — #26 «плашка не убирается»)
+  'onboarded', 'trainingDone', 'secondTankChosen']
 
 // локальный кеш — мгновенно; на сервер — с дебаунсом (офлайн не мешает игре)
 let pushTimer = null
