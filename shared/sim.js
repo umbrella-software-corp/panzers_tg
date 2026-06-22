@@ -484,6 +484,12 @@ export class BattleSim {
         // укрытие ищем, только пока ствол не готов и мы НЕ в отступлении (раненый просто уходит)
         const cover = b.fireCd > 0 && b.hp >= retreatHp ? this._nearestBush(b.x, b.y, 220) : null
         const inCover = cover && Math.hypot(b.x - cover.x, b.y - cover.y) <= cover.r
+        // видим ЧЕЛОВЕКА, грейс прошёл, но стрелять нельзя — он нас ещё не засветил
+        // (инвариант честности). Не висим пассивно на дистанции → ПОДЖИМАЕМ, чтобы
+        // засветиться и завязать честный бой (#28 «бот ходит за мной и не стреляет»).
+        // В грейс новичка НЕ давим (флаг false) — честный первый бой сохраняется.
+        const blindToHuman =
+          target.human && this.t >= ai.graceSec && !(this._spotted[target.team] && this._spotted[target.team].has(b.id))
         let steerA
         if (cover) steerA = Math.atan2(cover.y - b.y, cover.x - b.x) // на перезарядке — ныряем в куст
         else steerA = ang + (bestD > ai.idealRange ? 0.5 : 0.14) * flank // фланговый заход; у дистанции боя — ствол на цель
@@ -492,6 +498,7 @@ export class BattleSim {
         b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
         let move = 0
         if (!brave && b.hp < retreatHp) move = -1 // ранен — отходим
+        else if (blindToHuman && bestD > ai.idealRange * 0.5) move = 1 // не засвечен у человека → поджимаем (засветиться и стрелять), а не камп на дистанции
         else if (inCover) move = 0 // в кусте — пережидаем перезарядку (выйдем стрелять, когда ствол готов)
         else if (cover) move = 1 // едем в укрытие
         else if (bestD > ai.idealRange * 1.1) move = 1 // далеко — сближаемся (с флангом)
