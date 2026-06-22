@@ -54,6 +54,18 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
       rkey: null, // токен возврата в этот бой
       ping: null, // RTT в мс (ping↔pong, сервер эхо-понгит ts); null = ещё не измерен
       _pingTimer: null,
+      _pingBuf: [], // окно последних RTT; показываем МИНИМУМ — фильтр лага главного потока
+      // обработка pong: в 3D-бою main-thread занят рендером и обработка pong задерживается
+      // → одиночный RTT раздут (меряем сеть + лаг рендера). Берём минимум за окно (8 проб)
+      // — он отражает РЕАЛЬНУЮ сеть (момент, когда поток был свободен). Не занижает честно
+      // высокий пинг (если сеть реально плохая — все пробы высокие, min тоже высокий).
+      _onPong(ts) {
+        if (typeof ts !== 'number') return
+        const rtt = Math.max(0, Date.now() - ts)
+        client._pingBuf.push(rtt)
+        if (client._pingBuf.length > 8) client._pingBuf.shift()
+        client.ping = Math.round(Math.min(...client._pingBuf))
+      },
       stateQueue: [], // ВСЕ принятые снапшоты (NetGame сливает очередь каждый кадр);
       // на мобиле снапшоты приходят бурстами — одиночный lastState терял промежуточные
       onMessage: null, // подписка NetGame на время боя
@@ -92,7 +104,7 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
           sock.onmessage = (e) => {
             let m
             try { m = JSON.parse(e.data) } catch { return }
-            if (m.type === 'pong') { if (typeof m.ts === 'number') client.ping = Math.max(0, Math.round(Date.now() - m.ts)); return }
+            if (m.type === 'pong') { client._onPong(m.ts); return }
             if (m.type === 'rejoin-fail') {
               if (done) return
               done = true
@@ -142,8 +154,8 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
     ws.onopen = () => {
       log('ws открыт →', WS_URL)
       client.send({ type: 'join', name, tankId, tier, tint, skin, stats, battles, uid }) // uid — best-effort tg-id для аналитики
-      // пинг: RTT раз в 2с. client.send шлёт через АКТИВНЫЙ сокет → переживает реконнект.
-      if (!client._pingTimer) client._pingTimer = setInterval(() => client.send({ type: 'ping', ts: Date.now() }), 2000)
+      // пинг: RTT раз в 1с (чаще → окно мин-фильтра набирается быстрее). Через АКТИВНЫЙ сокет.
+      if (!client._pingTimer) client._pingTimer = setInterval(() => client.send({ type: 'ping', ts: Date.now() }), 1000)
     }
     ws.onmessage = (e) => {
       let msg
@@ -152,7 +164,7 @@ export function connectMatch({ name, tankId, tier, tint, skin, stats, battles, p
       } catch {
         return
       }
-      if (msg.type === 'pong') { if (typeof msg.ts === 'number') client.ping = Math.max(0, Math.round(Date.now() - msg.ts)); return }
+      if (msg.type === 'pong') { client._onPong(msg.ts); return }
       if (msg.type === 'state') {
         client.stateN = (client.stateN || 0) + 1
         client.lastState = msg // последний — для мгновенного показа мира при подписке NetGame
