@@ -437,11 +437,18 @@ export class NetGame {
       this._pred = null
       return
     }
-    if (!this._pred || Math.hypot(this._pred.x - srv.x, this._pred.y - srv.y) > 100) {
-      this._pred = { x: srv.x, y: srv.y, hull: srv.hull, speed: srv.speed || 0 } // старт/снап
+    const drift = this._pred ? Math.hypot(this._pred.x - srv.x, this._pred.y - srv.y) : Infinity
+    // СНАП только при ГРУБОМ десинке (>300px: телепорт/большой лаг-спайк). На высоком пинге
+    // (491ms!) предикт штатно убегает на 100-200px вперёд сервера — раньше это вызывало
+    // ПОСТОЯННЫЕ снапы → «жмёшь не едет (сброс скорости), потом фигарит/крутится (телепорт
+    // курса)» (фидбек Katrin). Теперь до 300px тянем к серверу ПЛАВНО.
+    if (!this._pred || drift > 300) {
+      this._pred = { x: srv.x, y: srv.y, hull: srv.hull, speed: srv.speed || 0 }
       return
     }
-    const corr = 0.04 // мягкая коррекция дрейфа к серверу (без рывков)
+    // коррекция дрейфа к серверу: чем дальше разъехались, тем сильнее тянем (но плавно,
+    // без рывка). Скорость/курс ПРЕДИКТИМ от локального ввода ниже → отклик мгновенный.
+    const corr = Math.min(0.3, 0.04 + drift / 800)
     this._pred.x += (srv.x - this._pred.x) * corr
     this._pred.y += (srv.y - this._pred.y) * corr
     let dh = (srv.hull - this._pred.hull) % (Math.PI * 2)
