@@ -15,6 +15,23 @@ export function tgUser() {
   return name ? { id: u.id, name } : null
 }
 
+// Дождаться, пока Telegram populated RAW initData (он бывает доступен чуть позже самого
+// WebApp). КРИТИЧНО: если первый авторизованный запрос (bootSync) уйдёт с пустым initData,
+// api.headers() свалится в ГОСТЯ (x-guest-id → профиль под g_<random>, а не tg_<id>) —
+// «будто не залогинился», в админке по tgId не найти, прогресс не привязан к ТГ.
+// Ждём ТОЛЬКО если мы в Telegram; вне Telegram — сразу выходим (честный гость/дев).
+export async function waitForInitData(timeoutMs = 2500) {
+  const tg = window.Telegram && window.Telegram.WebApp
+  if (!tg) return false // не в Telegram
+  if (tg.initData) return true
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 50))
+    if (tg.initData) return true
+  }
+  return !!tg.initData
+}
+
 // id текущего игрока в Telegram (число) — для реферальных/взводных deep-link'ов
 export function tgUserId() {
   const u = tgUser()
