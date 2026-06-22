@@ -290,9 +290,13 @@ export class BattleSim {
       if (this._lineBlocked(u.x, u.y, e.x, e.y)) continue
       if (this._shotBlockedByTank(u, e)) continue // живой танк на линии — снаряд не проходит насквозь
       const err = Math.abs(angleDiff(ang, lineAngle))
+      // допуск += угловой РАЗМЕР цели: вблизи танк закрывает большой угол, а err меряет
+      // угол до ЦЕНТРА → в УПОР «мимо», хотя целишь в корпус (фидбек #29 «вплотную пишет
+      // мимо»). asin(R/dist): в упор ~π/2 (почти не промахнёшься), вдаль ~0 (без изменений).
+      const aimR = Math.asin(Math.min(1, TANK_RADIUS / Math.max(1, dist)))
       // снаряд летит по прямой → бьёт БЛИЖАЙШЕГО на линии (а не «ровнее по углу»
       // дальнего). Иначе «стреляю по первому, попадаю по тем, кто сзади».
-      if (err <= tol && (!best || dist < best.dist)) best = { e, err, dist }
+      if (err <= tol + aimR && (!best || dist < best.dist)) best = { e, err, dist }
     }
 
     let killed = false

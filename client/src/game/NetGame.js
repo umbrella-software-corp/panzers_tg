@@ -1136,7 +1136,10 @@ export class NetGame {
           target = { x: u.x, y: u.y, ang }
         }
       }
-      const onLine = !!target && Math.abs(this._angDiff(target.ang, lineA)) <= this.cls.tolerance
+      // допуск «захвата» += угловой размер цели (как на сервере, фидбек #29): в упор танк
+      // закрывает большой угол → кнопка ОГОНЬ зеленеет, индикатор сходится с попаданием.
+      const aimR = target ? Math.asin(Math.min(1, TANK_RADIUS / Math.max(1, targetD))) : 0
+      const onLine = !!target && Math.abs(this._angDiff(target.ang, lineA)) <= this.cls.tolerance + aimR
       const locked = ready && onLine
       this._aimLock = locked // в HUD: подсветка кнопки ОГОНЬ
 
