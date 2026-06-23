@@ -1267,7 +1267,14 @@ function scheduleStart(room) {
   // (WAIT_MS). Берём БЛИЖАЙШИЙ дедлайн (поздний вход не двигает соло-старт назад).
   const solo = room.humans[0]
   const newbie = !solo.party && (solo.battles | 0) < INSTANT_BATTLE_BELOW
-  const wait = newbie ? NEWBIE_WAIT_MS : WAIT_MS
+  // РАНДОМ времени поиска: было ровно WAIT_MS (всегда ~8с — игрок видит, что подбор
+  // «фейково-ровный», #29 @Z_86_V «сделать более рандомным»). Життерим ОДИН раз на
+  // комнату (±, ~5.5–11с вокруг 8с), чтобы каждый поиск ощущался как живой подбор, а
+  // не таймер. Новичку оставляем быстрый старт (NEWBIE_WAIT_MS) — лёгкий джиттер.
+  if (!room.soloWait) {
+    room.soloWait = newbie ? Math.round(NEWBIE_WAIT_MS * (0.85 + Math.random() * 0.35)) : Math.round(WAIT_MS * (0.7 + Math.random() * 0.65))
+  }
+  const wait = room.soloWait
   const deadline = Date.now() + wait
   if (room.waitTimer && room.deadline && room.deadline <= deadline) return // уже назначен более ранний старт
   clearTimeout(room.waitTimer)
