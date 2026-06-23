@@ -41,6 +41,40 @@ const TANK_LEN = 78 // длина модели танка в пикселях к
 const TRACER_COLOR = 0xffe08a // ВСЕ снаряды одного цвета (тёплый жёлтый) — без «звёздных войн»
 const hashId = (s) => { let h = 0; s = String(s || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h) }
 
+// === АТМОСФЕРА КАРТЫ ===
+// Раньше у ВСЕХ карт были одни мрачно-оливковые небо/туман (0x141a12) — зима, пустыня,
+// лес выглядели на одно лицо. Теперь у каждой карты свой «воздух»: цвет зенита (top),
+// дымка у горизонта = цвет тумана (haze), цвет/сила солнца (sun/sunI), полусфера-заливка
+// (hemiSky/hemiGround/hemiI) и дистанция тумана (near/far в долях mapSize). Карты нет в
+// таблице → палитра выводится из theme.ground (moodFor), чтобы новая карта не была чёрной.
+const MOOD = {
+  polygon:    { top: 0x9fc6e8, haze: 0xccd6b2, sun: 0xfff2d2, sunI: 1.95, hemiSky: 0xbcd6f0, hemiGround: 0x6a6f3a, hemiI: 0.95, near: 0.55, far: 1.05 },
+  city:       { top: 0x8aa0b6, haze: 0xaab3be, sun: 0xf4f0e6, sunI: 1.55, hemiSky: 0xb0bccc, hemiGround: 0x585d63, hemiI: 1.0,  near: 0.45, far: 0.95 },
+  lakes:      { top: 0x8fc6ea, haze: 0xc4d4b2, sun: 0xfff1cf, sunI: 2.0,  hemiSky: 0xb8d8ee, hemiGround: 0x647046, hemiI: 1.0,  near: 0.55, far: 1.05 },
+  forest:     { top: 0x8ab6cc, haze: 0xa6b88e, sun: 0xf6f0d0, sunI: 1.6,  hemiSky: 0xa9c6c0, hemiGround: 0x3f4a26, hemiI: 0.9,  near: 0.45, far: 0.9 },
+  heights:    { top: 0xb6cbe2, haze: 0xd6c69e, sun: 0xfff0c8, sunI: 2.05, hemiSky: 0xcdd8e8, hemiGround: 0x6e5a36, hemiI: 1.0,  near: 0.55, far: 1.05 },
+  desert:     { top: 0xe6c88c, haze: 0xeed9a8, sun: 0xffe6ad, sunI: 2.25, hemiSky: 0xf0dcb0, hemiGround: 0x9a7c4a, hemiI: 1.1,  near: 0.6,  far: 1.1 },
+  ruins:      { top: 0x9aa0a0, haze: 0xbcb29a, sun: 0xf2e6cc, sunI: 1.55, hemiSky: 0xbdc0bd, hemiGround: 0x5c564a, hemiI: 0.95, near: 0.42, far: 0.9 },
+  crossing:   { top: 0x8fc4e6, haze: 0xbcc69a, sun: 0xfff1cf, sunI: 1.95, hemiSky: 0xb4d2ea, hemiGround: 0x60683e, hemiI: 1.0,  near: 0.55, far: 1.05 },
+  meadow:     { top: 0x9fcdec, haze: 0xdde0a6, sun: 0xfff4d6, sunI: 2.1,  hemiSky: 0xc2def2, hemiGround: 0x7a7e4a, hemiI: 1.05, near: 0.6,  far: 1.1 },
+  eisenstadt: { top: 0x8e9aa6, haze: 0xb6afa2, sun: 0xf4ece0, sunI: 1.55, hemiSky: 0xb0bac4, hemiGround: 0x5a564e, hemiI: 1.0,  near: 0.42, far: 0.9 },
+  winter:     { top: 0xbcd2e6, haze: 0xe0eaf3, sun: 0xf4f8ff, sunI: 1.75, hemiSky: 0xd2e2f0, hemiGround: 0x9aa6b2, hemiI: 1.2,  near: 0.5,  far: 1.0 },
+}
+// смешать два hex-цвета (t=0 → a, t=1 → b)
+function mixHex(a, b, t) {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255, br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255
+  return ((Math.round(ar + (br - ar) * t) << 16) | (Math.round(ag + (bg - ag) * t) << 8) | Math.round(ab + (bb - ab) * t)) >>> 0
+}
+// палитра для карты вне таблицы: тёплое солнце + небо, выведенное из цвета земли (светлее+к голубому)
+function moodFor(map) {
+  if (map && MOOD[map.id]) return MOOD[map.id]
+  const g = ((map && map.theme && map.theme.ground) != null) ? map.theme.ground : 0x8a8f5a
+  const r = (g >> 16) & 255, gr = (g >> 8) & 255, b = g & 255
+  const haze = ((Math.min(255, r + 40) << 16) | (Math.min(255, gr + 44) << 8) | Math.min(255, b + 70)) >>> 0
+  const top = ((Math.min(255, r + 30) << 16) | (Math.min(255, gr + 70) << 8) | 255) >>> 0
+  return { top, haze, sun: 0xfff1d2, sunI: 1.9, hemiSky: top, hemiGround: g, hemiI: 1.0, near: 0.5, far: 1.0 }
+}
+
 // общий кэш загруженных сцен моделей (раз на сессию). Позволяет preload3D() прогреть
 // three.js + модели ВО ВРЕМЯ матчмейкинга, чтобы вход в бой был без фриза-загрузки.
 let modelScenesPromise = null
@@ -134,15 +168,17 @@ export class NetGame3D extends NetGame {
     this.overlay = ov; this.octx = ov.getContext('2d'); this._dpr = odpr
 
     const scene = new THREE.Scene()
-    const sky = 0x141a12
-    scene.background = new THREE.Color(sky)
-    scene.fog = new THREE.Fog(sky, this.mapSize * 0.42, this.mapSize * 0.85)
+    // АТМОСФЕРА: у каждой карты своё настроение (см. MOOD). Туман уходит в цвет дымки
+    // у горизонта (haze) — мир «растворяется в воздухе», а не обрывается в чёрное.
+    const mood = moodFor(this.map); this.mood = mood
+    scene.background = new THREE.Color(mood.haze)
+    scene.fog = new THREE.Fog(mood.haze, this.mapSize * mood.near, this.mapSize * mood.far)
     this.scene = scene
 
-    this.camera = new THREE.PerspectiveCamera(46, W / H, 1, this.mapSize * 3)
+    this.camera = new THREE.PerspectiveCamera(46, W / H, 1, this.mapSize * 4)
 
-    scene.add(new THREE.HemisphereLight(0xcfe0f0, 0x45482f, 1.05))
-    const sun = new THREE.DirectionalLight(0xfff1d6, 1.7)
+    scene.add(new THREE.HemisphereLight(mood.hemiSky, mood.hemiGround, mood.hemiI))
+    const sun = new THREE.DirectionalLight(mood.sun, mood.sunI)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
     const sh = sun.shadow.camera
@@ -151,12 +187,15 @@ export class NetGame3D extends NetGame {
     scene.add(sun); this.sun = sun
     this.sunTarget = new THREE.Object3D(); scene.add(this.sunTarget); sun.target = this.sunTarget
 
-    this._buildGround()
+    this._buildSky(mood) // градиентный купол неба (горизонт→зенит) — даёт глубину и горизонт
+    this._buildGround(mood)
     this._buildStatic()
-    // ВРЕМЕННО ОТКЛЮЧЕНО (по просьбе): GLB-окружение убрано, оставлены геометрические
-    // примитивы из _buildStatic (камни-икосаэдры, ящики-боксы, кусты-сферы). Чтобы
-    // вернуть GLB-модели окружения — раскомментировать строку ниже.
-    // loadPropScenes().then((scenes) => { if (this.scene) this._load3DProps(scenes) }).catch((e) => console.warn('[3d] пропы не загрузились', e))
+    // GLB-ОКРУЖЕНИЕ (камни/ящики→модели + декор-скаттер бочки/ежи/руины) — только на
+    // MED/HIGH: на LOW остаются дешёвые примитивы из _buildStatic. На широкую раскатку
+    // их отключали ради перфа слабых телефонов — гейт по качеству возвращает их безопасно.
+    if (this._quality >= 1) {
+      loadPropScenes().then((scenes) => { if (this.scene) this._load3DProps(scenes) }).catch((e) => console.warn('[3d] пропы не загрузились', e))
+    }
 
     // эффекты: трассеры-стрики снаряда (объёмные меши) + GPU-партиклы (three.quarks)
     // для вспышек/взрывов/искр/дыма — см. _initParticles. fxGroup/sparkGroup оставлены
@@ -292,19 +331,68 @@ export class NetGame3D extends NetGame {
   }
 
   // --- статика мира ---
-  _buildGround() {
+  // КУПОЛ НЕБА: большая сфера-наизнанку с вертикальным градиентом дымка→зенит. Даёт
+  // настоящий горизонт и «воздух» (раньше фон был плоским цветом). Туман у горизонта
+  // того же цвета (haze) → земля бесшовно растворяется в небе. Дёшево: 1 меш, без теней.
+  _buildSky(mood) {
+    const geo = new THREE.SphereGeometry(this.mapSize * 1.6, 32, 16)
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: {
+        top: { value: new THREE.Color(mood.top) },
+        bot: { value: new THREE.Color(mood.haze) },
+        off: { value: this.mapSize * 0.04 }, exp: { value: 0.8 },
+      },
+      vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform float off; uniform float exp; varying vec3 vP; void main(){ float h = normalize(vP + vec3(0.0, off, 0.0)).y; gl_FragColor = vec4(mix(bot, top, pow(max(h, 0.0), exp)), 1.0); }',
+    })
+    const sky = new THREE.Mesh(geo, mat)
+    sky.position.set(this.mapSize / 2, 0, this.mapSize / 2); sky.frustumCulled = false
+    this.scene.add(sky)
+  }
+
+  _buildGround(mood) {
     const th = this.map.theme || {}
     const geo = new THREE.PlaneGeometry(this.mapSize, this.mapSize)
-    const mat = new THREE.MeshStandardMaterial({ color: th.ground || 0x4f5a2c, roughness: 1 })
+    // карт-текстуру подложим, когда догрузится (ниже); до этого — цвет темы как фоллбэк
+    const mat = new THREE.MeshStandardMaterial({ color: th.ground || 0x4f5a2c, roughness: 0.96, metalness: 0 })
     const g = new THREE.Mesh(geo, mat)
     g.rotation.x = -Math.PI / 2
     g.position.set(this.mapSize / 2, 0, this.mapSize / 2)
     g.receiveShadow = true
     this.scene.add(g)
-    const grid = new THREE.GridHelper(this.mapSize, 28, 0x39431f, 0x39431f)
-    grid.material.opacity = 0.12; grid.material.transparent = true
-    grid.position.set(this.mapSize / 2, 0.5, this.mapSize / 2)
-    this.scene.add(grid)
+    this.groundMat = mat
+    // КАРТ-СПЕЦИФИЧНАЯ ЗЕМЛЯ: та же /sprites/maps/<id>/ground.png, что в 2D — тайлится по
+    // RepeatWrapping с тем же зерном (groundScale как tileScale у 2D TilingSprite). Раньше
+    // в 3D земля была плоским цветом — теперь реальная фактура грунта/снега/песка/брусчатки.
+    const url = this.map && this.map.id ? `/sprites/maps/${this.map.id}/ground.png` : null
+    if (url) {
+      new THREE.TextureLoader().load(url, (tex) => {
+        if (!this.scene || this.groundMat !== mat) return
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+        const iw = (tex.image && tex.image.width) || 512
+        const rep = Math.max(1, this.mapSize / (iw * (th.groundScale || 0.55)))
+        tex.repeat.set(rep, rep)
+        try { tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy()) } catch { /* нет аниз. */ }
+        mat.map = tex; mat.color.setHex(0xffffff); mat.needsUpdate = true // текстура своей расцветки — не тинтуем
+      }, undefined, () => { /* нет файла — остаётся цвет темы */ })
+    }
+    // ОВЕРЛЕЙ ТЕМЫ (асфальт города / СНЕГ зимы / тёмная подложка леса) — как в 2D: заливка
+    // поверх земли. Без него зима/город в 3D были неотличимы от поля. Полупрозрачный план.
+    if (th.overlay != null && th.overlayAlpha) {
+      const om = new THREE.Mesh(new THREE.PlaneGeometry(this.mapSize, this.mapSize),
+        new THREE.MeshBasicMaterial({ color: th.overlay, transparent: true, opacity: th.overlayAlpha, depthWrite: false }))
+      om.rotation.x = -Math.PI / 2; om.position.set(this.mapSize / 2, 0.6, this.mapSize / 2); om.renderOrder = 1
+      this.scene.add(om)
+    }
+    // Координатная сетка — еле заметная, только на MED/HIGH (на LOW убираем). Тон — из темы.
+    if (this._quality >= 1) {
+      const grid = new THREE.GridHelper(this.mapSize, 24, th.grid || 0x39431f, th.grid || 0x39431f)
+      grid.material.opacity = 0.05; grid.material.transparent = true; grid.material.depthWrite = false
+      grid.position.set(this.mapSize / 2, 0.9, this.mapSize / 2)
+      this.scene.add(grid)
+    }
   }
 
   _buildStatic() {
@@ -312,8 +400,11 @@ export class NetGame3D extends NetGame {
     const bushMat = new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 1, flatShading: true })
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x6b5436, roughness: 0.9 })
     const hillMat = new THREE.MeshStandardMaterial({ color: 0x47502a, roughness: 1 })
-    const waterMat = new THREE.MeshStandardMaterial({ color: 0x236a86, roughness: 0.3, metalness: 0.1, transparent: true, opacity: 0.9 })
+    // вода: ярче/насыщеннее + лёгкий «блеск» (metalness) и слабое свечение — читается как
+    // живая вода, а не плоский синий диск. Каждый водоём клонирует материал (своя фаза ряби).
+    const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f93b6, roughness: 0.16, metalness: 0.4, transparent: true, opacity: 0.88, emissive: 0x07323f, emissiveIntensity: 0.35 })
     this.bushMeshes = []
+    this.waterMeshes = [] // рябь: лёгкое мерцание свечения/уровня в _draw
     this._obstSwap = [] // примитивы препятствий, которые заменим на GLB когда догрузятся
     for (const o of this.obstacles) {
       let m
@@ -324,16 +415,29 @@ export class NetGame3D extends NetGame {
       else if (o.kind === 'bush') { m = new THREE.Mesh(new THREE.SphereGeometry(o.r, 10, 8), bushMat.clone()); m.material.transparent = true; m.scale.y = 0.7; m.position.set(o.x, o.r * 0.5, o.y); this.bushMeshes.push({ prim: m, fadeMats: [m.material], x: o.x, y: o.y, r: o.r }); this._obstSwap.push({ o, prim: m }) }
       else if (o.kind === 'box') { m = new THREE.Mesh(new THREE.BoxGeometry(o.r * 1.6, o.r * 1.4, o.r * 1.6), boxMat); m.position.set(o.x, o.r * 0.7, o.y); this._obstSwap.push({ o, prim: m }) }
       else if (o.kind === 'hill') { m = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 1.05, o.r * 0.35, 24), hillMat); m.position.set(o.x, o.r * 0.17, o.y) }
-      else if (o.kind === 'water') { m = new THREE.Mesh(new THREE.CircleGeometry(o.r, 28), waterMat); m.rotation.x = -Math.PI / 2; m.position.set(o.x, 1, o.y) }
+      else if (o.kind === 'water') { m = new THREE.Mesh(new THREE.CircleGeometry(o.r, 36), waterMat.clone()); m.rotation.x = -Math.PI / 2; m.position.set(o.x, 1.2, o.y); m._ph = (hashId(`${o.x}:${o.y}`) % 100) / 16; this.waterMeshes.push(m) }
       if (m) { if (o.kind !== 'water') { m.castShadow = true; m.receiveShadow = true } this.scene.add(m) }
     }
-    // здания — 3D-коробки
-    const bMat = new THREE.MeshStandardMaterial({ color: 0x6b7178, roughness: 0.85 })
+    // здания — корпус (тон ПОД КАРТУ: песчаник/снег/камень, а не один серый бокс) +
+    // тёмная плита-крыша с карнизом (силуэт, тень — читается как здание, не куб).
+    const th = this.map.theme || {}
+    const mix = (a, b, t) => { const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255, br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255; return ((Math.round(ar + (br - ar) * t) << 16) | (Math.round(ag + (bg - ag) * t) << 8) | Math.round(ab + (bb - ab) * t)) >>> 0 }
+    const wallCol = mix(0x747a80, th.ground || 0x747a80, 0.42)
+    const bMat = new THREE.MeshStandardMaterial({ color: wallCol, roughness: 0.9 })
+    const roofMat = new THREE.MeshStandardMaterial({ color: mix(wallCol, 0x000000, 0.42), roughness: 0.95 })
+    // урбан-карты: крупные «кварталы» заменим GLB-домом (когда пропы догрузятся), тонкие
+    // баррикады остаются коробкой. _wallSwap держит бокс+крышу, чтобы спрятать под дом.
+    const urban = ['city', 'eisenstadt', 'ruins'].includes(this.map.id)
+    this._wallSwap = []
     for (const w of this.walls) {
       const Hh = Math.max(40, Math.min(Math.min(w.hw, w.hh) * 1.3, 120))
       const b = new THREE.Mesh(new THREE.BoxGeometry(w.hw * 2, Hh, w.hh * 2), bMat)
       b.position.set(w.cx, Hh / 2, w.cy); b.castShadow = true; b.receiveShadow = true
       this.scene.add(b)
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w.hw * 2 + 8, 8, w.hh * 2 + 8), roofMat)
+      roof.position.set(w.cx, Hh + 4, w.cy); roof.castShadow = true; roof.receiveShadow = true
+      this.scene.add(roof)
+      if (urban && Math.min(w.hw, w.hh) >= 45) this._wallSwap.push({ w, box: b, roof })
     }
     // базы — жирные кольца + столб света на земле
     for (const base of this.bases) {
@@ -363,22 +467,62 @@ export class NetGame3D extends NetGame {
     return wrap
   }
 
+  // умножить цвет всех материалов пропа на hex (тинт под карту). Текстура GLB обычно
+  // белая под маской — мультипликатив сохраняет детализацию, но сдвигает оттенок.
+  _tintProp(wrap, hex) {
+    const c = new THREE.Color(hex)
+    wrap.traverse((o) => {
+      if (!o.isMesh || !o.material) return
+      const apply = (mm) => { mm = mm.clone(); if (mm.color) mm.color.multiply(c); return mm }
+      o.material = Array.isArray(o.material) ? o.material.map(apply) : apply(o.material)
+    })
+  }
+
   // вызывается когда GLB-пропы догрузились: меняем примитивы препятствий на модели
   // и раскидываем тематический декор. Если модель не пришла — остаётся примитив.
   _load3DProps(scenes) {
     if (!this.scene || !scenes) return
+    const th = this.map.theme || {}
     // GLB вместо примитивов: КАМНИ→rock, ЯЩИКИ→crate (хорошо читаются сверху; кусты
     // оставляем примитивами). Декор-укрытия (o.prop) — рисуем свою GLB-модель, масштаб
     // под радиус коллизии (≈2×r), чтобы вид совпадал с тем, обо что упираешься.
     for (const { o, prim } of this._obstSwap) {
-      const key = o.prop ? o.prop : (o.kind === 'rock' || o.kind === 'block') ? 'rock' : o.kind === 'box' ? 'crate' : null
+      const key = o.prop ? o.prop : (o.kind === 'rock' || o.kind === 'block') ? 'boulder' : o.kind === 'box' ? 'crate' : null
       const sc = key && scenes[key]
       if (!sc) continue
-      const fitR = o.prop ? 2.2 : key === 'crate' ? 1.8 : 2.0
+      const fitR = o.prop ? 2.2 : key === 'crate' ? 1.8 : 2.1
       const wrap = this._normalizeProp(sc, { fit: o.r * fitR })
+      // ВАЛУН тинтуем под землю карты (текстура светлая) — снег→белый, песок→песочный,
+      // лес→серо-зелёный. Лёгкий тинт, чтобы камень не выбивался из палитры.
+      if (key === 'boulder') this._tintProp(wrap, mixHex(0xc0bcae, th.ground || 0xb0b0a8, 0.7))
       wrap.position.set(o.x, 0, o.y)
       wrap.rotation.y = (hashId(`${o.x}:${o.y}`) % 360) * Math.PI / 180
       if (prim) prim.visible = false
+      this.scene.add(wrap)
+    }
+    // УРБАН-ДОМА: крупные кварталы → GLB-дом (укрытие = здание, честно). Масштаб по следу
+    // стены; бокс+крышу прячем. Поворот квантуем по 90° (дом «лицом» к осям улиц).
+    if (this._wallSwap && scenes.house) {
+      for (const { w, box, roof } of this._wallSwap) {
+        const wrap = this._normalizeProp(scenes.house, { fit: Math.max(w.hw, w.hh) * 2 * 1.12 })
+        wrap.position.set(w.cx, 0, w.cy)
+        wrap.rotation.y = (hashId(`${w.cx}:${w.cy}`) % 4) * (Math.PI / 2)
+        box.visible = false; roof.visible = false
+        this.scene.add(wrap)
+      }
+    }
+    // ОКРУЖЕНИЕ-ЗАДНИК (ВИЗУАЛ, без коллизий): деревья у кустов и по опушке на природных
+    // картах, горы по краю на скальных. Sim/2D их не видят — баланс/засвет не трогаем.
+    for (const s of this._sceneryProps()) {
+      const sc = scenes[s.prop]
+      if (!sc) continue
+      const wrap = this._normalizeProp(sc, { h: s.h })
+      // ПЕРФ: фон-окружение НЕ отбрасывает тени (только принимает) — выкидывает их из
+      // shadow-pass. Тяжёлый кадр раздувал ЗАМЕР пинга (pong обрабатывается на занятом
+      // main-thread, см. net.js _onPong) — это снижает и стоимость кадра, и «пинг».
+      wrap.traverse((o) => { if (o.isMesh) o.castShadow = false })
+      wrap.position.set(s.x, 0, s.y)
+      wrap.rotation.y = s.rot
       this.scene.add(wrap)
     }
     // ДЕКОР-СКАТТЕР (только 3D-визуал, БЕЗ коллизий): бочки/ежи/руины/мешки по военным
@@ -400,6 +544,55 @@ export class NetGame3D extends NetGame {
     const c = this.mapSize / 2
     const sc = this.mapSize / MAP_SIZE
     return decorObstacles(this.map).map((d) => ({ x: c + d.dx * sc, y: c + d.dy * sc, r: d.r, prop: d.prop }))
+  }
+
+  // ОКРУЖЕНИЕ-ЗАДНИК (ВИЗУАЛ, БЕЗ КОЛЛИЗИЙ): деревья у кустов + по опушке на природных
+  // картах; горы по краю на скальных. ЧЕСТНОСТЬ: ставим у реального укрытия (кусты) и по
+  // краю поля — НЕ в центре, чтобы не выглядело фейк-укрытием (засвет/баланс не трогаем).
+  // Детерминированно по id карты (стабильно у всех клиентов). Только MED/HIGH (см. гейт).
+  _sceneryProps() {
+    if (!this.map) return []
+    const id = this.map.id
+    const half = this.mapSize / 2, cx = half, cy = half
+    let seed = (hashId(id) ^ 0x9e3779b9) >>> 0
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
+    const out = []
+    const bad = (x, y, r) => {
+      for (const b of this.bases) if (Math.hypot(x - b.x, y - b.y) < b.r + r + 60) return true
+      for (const k in this.capPos) { const p = this.capPos[k]; if (Math.hypot(x - p.x, y - p.y) < p.r + r + 50) return true }
+      return false
+    }
+    const NATURE = ['polygon', 'forest', 'lakes', 'meadow', 'crossing']
+    const ROCKY = ['heights', 'desert']
+    if (NATURE.includes(id)) {
+      // деревья у кустов (куст = реальное укрытие → лес «густеет» честно)
+      for (const o of this.obstacles) {
+        if (o.kind !== 'bush') continue
+        const a = rand() * Math.PI * 2, d = o.r * (0.85 + rand() * 0.45)
+        out.push({ x: o.x + Math.cos(a) * d, y: o.y + Math.sin(a) * d, prop: 'tree', h: 150 + rand() * 80, rot: rand() * Math.PI * 2 })
+      }
+      // опушка: кольцо деревьев по краю карты (явный задник, не центр)
+      const ring = 12
+      for (let i = 0; i < ring; i++) {
+        const a = (i / ring) * Math.PI * 2 + rand() * 0.35
+        const rr = half * (0.8 + rand() * 0.14)
+        const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr
+        if (bad(x, y, 90)) continue
+        out.push({ x, y, prop: 'tree', h: 150 + rand() * 90, rot: rand() * Math.PI * 2 })
+      }
+    }
+    if (ROCKY.includes(id)) {
+      // горы по краю — крупный задник (визуал)
+      const N = 7
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2 + rand() * 0.25
+        const rr = half * (0.84 + rand() * 0.12)
+        const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr
+        if (bad(x, y, 220)) continue
+        out.push({ x, y, prop: 'mtn', h: 300 + rand() * 200, rot: rand() * Math.PI * 2 })
+      }
+    }
+    return out
   }
 
   // плоское кольцо на земле (видимое, в отличие от 1px-линии)
@@ -590,6 +783,16 @@ export class NetGame3D extends NetGame {
       const p = Math.max(0, Math.min(1, cap.p || 0))
       c.fill.material.color.setHex(capper)
       c.fill.scale.setScalar(p > 0.01 ? p : 0.001)
+    }
+
+    // ВОДА: лёгкая «рябь» — мерцание свечения + микро-колебание уровня (каждый водоём
+    // в своей фазе). Дёшево (несколько мешей), но вода перестаёт быть мёртвым диском.
+    if (this.waterMeshes && this.waterMeshes.length) {
+      const tw = performance.now() * 0.001
+      for (const w of this.waterMeshes) {
+        w.material.emissiveIntensity = 0.3 + 0.18 * Math.sin(tw * 1.6 + w._ph)
+        w.position.y = 1.2 + 0.6 * Math.sin(tw * 0.9 + w._ph * 1.7)
+      }
     }
 
     this._drawAim(own, vis, oh, ox, oy)

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>glb — вьювер пропов</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #20242a; overflow: hidden; font-family: system-ui, sans-serif; }
+    #stage { position: fixed; inset: 0; }
+    #lbl { position: fixed; top: 8px; left: 8px; z-index: 5; font: 12px monospace; color: #cfe8ff; background: rgba(0,0,0,.5); padding: 3px 8px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <!-- DEV-ОНЛИ вьювер одного GLB: /glb.html?f=/_gen/tree.glb -->
+  <div id="stage"></div>
+  <div id="lbl"></div>
+  <script type="module" src="/src/dev/glb.js"></script>
+</body>
+</html>
