@@ -3,7 +3,7 @@
 // (уже локализовано в meta), подставляется в строки-функции/плейсхолдеры.
 export default {
   en: {
-    title: 'TECH TREE',
+    title: 'GARAGE',
     // строка под названием узла: класс · ур. N
     classTier: ({ cls, tier }) => `${cls} · tier ${tier}`,
     topModules: ({ n, total }) => `top modules ${n}/${total}`,
@@ -40,14 +40,15 @@ export default {
     ownedHint: 'Research all top modules to unlock the next vehicle in the branch.',
     installed: 'Installed ★',
     locked: 'locked',
-    pickInHangar: 'Select in garage',
+    pickInHangar: 'SELECT',
+    camo: 'Camo',
     // CTA исследования
     meetConditions: 'MEET THE CONDITIONS ABOVE',
     need: 'NEED',
     research: ({ cost }) => `RESEARCH · ${cost}`,
   },
   ru: {
-    title: 'РАЗВИТИЕ',
+    title: 'АНГАР',
     classTier: ({ cls, tier }) => `${cls} · ур. ${tier}`,
     topModules: ({ n, total }) => `топ-модули ${n}/${total}`,
     available: 'Доступен к исследованию',
@@ -77,7 +78,8 @@ export default {
     ownedHint: 'Изучи все топ-модули, чтобы открыть следующую машину ветки.',
     installed: 'Установлен ★',
     locked: 'закрыто',
-    pickInHangar: 'Выбрать в ангаре',
+    pickInHangar: 'ВЫБРАТЬ',
+    camo: 'Камуфляж',
     meetConditions: 'ВЫПОЛНИ УСЛОВИЯ ВЫШЕ',
     need: 'НУЖНО',
     research: ({ cost }) => `ИССЛЕДОВАТЬ · ${cost}`,
