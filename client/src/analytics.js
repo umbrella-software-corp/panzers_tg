@@ -6,9 +6,24 @@ import { startParam, tgUserId } from './tg.js'
 
 let ready = false
 let pendingUserId = null
+let firstInteractiveTracked = false
+let hangarInteractiveTracked = false
+let refEntryDetectedTracked = false
+let refEntryShownTracked = false
+let latestScreen = null
+let interactiveObserver = null
+let interactiveWaiters = []
 
 function tg() {
   return typeof window !== 'undefined' ? window.Telegram?.WebApp : null
+}
+
+function buildId() {
+  try {
+    return typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : null
+  } catch {
+    return null
+  }
 }
 
 // источник трафика из start_param: только безобидный тег (ref/sq — отдельная ветка),
@@ -31,12 +46,17 @@ function startParamKind(sp) {
   return 'source'
 }
 
+function currentStartParamKind() {
+  return startParamKind(startParam())
+}
+
 function commonProps(extra = {}) {
   const webapp = tg()
   const sp = startParam()
   return {
     app: 'panzers_tg',
     env: import.meta.env.MODE || 'production',
+    build_id: buildId(),
     platform: webapp ? 'telegram' : 'browser',
     tg_platform: webapp?.platform || 'unknown',
     user_type: tgUserId() ? 'telegram' : 'guest',
@@ -46,6 +66,154 @@ function commonProps(extra = {}) {
     // «фермы»): тег на КАЖДОМ событии сессии входа, чтобы вычитать ферму из воронки
     incentivized: startParamKind(sp) === 'ref',
     ...extra,
+  }
+}
+
+function blockingOverlayPresent() {
+  if (typeof document === 'undefined') return false
+  return !!(
+    document.getElementById('boot0') ||
+    document.querySelector('.bootsplash') ||
+    document.querySelector('.auth-ovl') ||
+    document.visibilityState === 'hidden'
+  )
+}
+
+function appInteractiveNow() {
+  if (typeof document === 'undefined') return true
+  return !blockingOverlayPresent()
+}
+
+function flushInteractiveWaiters() {
+  if (!appInteractiveNow()) return
+  const waiters = interactiveWaiters.splice(0)
+  for (const run of waiters) run()
+}
+
+function ensureInteractiveWatch() {
+  if (typeof document === 'undefined' || !document.body || interactiveObserver) return
+  try {
+    interactiveObserver = new MutationObserver(flushInteractiveWaiters)
+    interactiveObserver.observe(document.body, { childList: true, subtree: true })
+    document.addEventListener('visibilitychange', flushInteractiveWaiters)
+    window.addEventListener('pageshow', flushInteractiveWaiters)
+  } catch {
+    /* MutationObserver может быть недоступен в старом webview — останется timeout ниже */
+  }
+}
+
+// Некоторые события компонентов монтируются под boot/auth оверлеями. Для воронок первой
+// сессии нужен момент, когда игрок реально увидел интерактивный экран, а не когда Vue
+// смонтировал Hangar под сплэшем.
+function afterInteractive(fn) {
+  if (typeof document === 'undefined') return fn()
+  let done = false
+  const run = () => {
+    if (done) return
+    done = true
+    fn()
+  }
+  if (appInteractiveNow()) return setTimeout(run, 0)
+  interactiveWaiters.push(run)
+  ensureInteractiveWatch()
+  // Не теряем событие навсегда, если старый клиент не дал MutationObserver/visibility.
+  setTimeout(() => {
+    const i = interactiveWaiters.indexOf(run)
+    if (i >= 0) interactiveWaiters.splice(i, 1)
+    run()
+  }, 15000)
+}
+
+function enrichProps(eventType, props = {}) {
+  const out = { ...props }
+  if (eventType === 'battle_exit_clicked' && out.exit_context === undefined) {
+    if (out.before_finish === true) out.exit_context = out.player_alive === false ? 'early_after_death' : 'early_alive'
+    else if (out.result_known) out.exit_context = 'after_finish_or_results'
+    else out.exit_context = 'unknown'
+  }
+  return out
+}
+
+function trackRaw(eventType, props = {}) {
+  if (!ready || !eventType) return
+  amplitude.track(eventType, commonProps(props))
+}
+
+function trackFirstInteractive(screenHint, props = {}) {
+  if (firstInteractiveTracked) return
+  afterInteractive(() => {
+    if (firstInteractiveTracked) return
+    firstInteractiveTracked = true
+    const screen = latestScreen || screenHint || props.screen || null
+    trackRaw('first_interactive_screen_shown', {
+      screen,
+      prev_screen: props.prev_screen || null,
+      battles_count: props.battles_count ?? null,
+      training_auto: !!props.training_auto,
+      source_event: props.source_event || null,
+    })
+  })
+}
+
+function trackHangarInteractive(props = {}) {
+  if (hangarInteractiveTracked) return
+  afterInteractive(() => {
+    if (hangarInteractiveTracked) return
+    hangarInteractiveTracked = true
+    trackRaw('hangar_interactive_viewed', {
+      selected_tank: props.selected_tank || null,
+      tank_tier: props.tank_tier || null,
+      tank_class: props.tank_class || null,
+      battle_mode: props.battle_mode || null,
+      battles_count: props.battles_count ?? null,
+      party_present: !!props.party_present,
+    })
+  })
+}
+
+function trackRefEntryShown(screenHint, props = {}) {
+  if (refEntryShownTracked || currentStartParamKind() !== 'ref') return
+  afterInteractive(() => {
+    if (refEntryShownTracked) return
+    refEntryShownTracked = true
+    trackRaw('ref_entry_shown', {
+      screen: latestScreen || screenHint || props.screen || null,
+      battles_count: props.battles_count ?? null,
+      training_auto: !!props.training_auto,
+    })
+  })
+}
+
+function trackDerivedEvents(eventType, props = {}) {
+  if (eventType === 'screen_viewed') {
+    latestScreen = props.screen || latestScreen
+    trackFirstInteractive(props.screen, { ...props, source_event: 'screen_viewed' })
+    trackRefEntryShown(props.screen, props)
+  }
+
+  if (eventType === 'app_opened' && currentStartParamKind() === 'ref' && !refEntryDetectedTracked) {
+    refEntryDetectedTracked = true
+    trackRaw('ref_entry_detected', {
+      has_initdata: !!props.has_initdata,
+      sdk_initdata_present: !!props.sdk_initdata_present,
+      locale: props.locale || null,
+    })
+  }
+
+  if (eventType === 'hangar_viewed') {
+    trackFirstInteractive('hangar', { ...props, source_event: 'hangar_viewed' })
+    trackHangarInteractive(props)
+    trackRefEntryShown('hangar', props)
+  }
+
+  if (eventType === 'training_first_launch') {
+    trackFirstInteractive('matchmaking', { ...props, training_auto: true, source_event: 'training_first_launch' })
+    trackRefEntryShown('matchmaking', { ...props, training_auto: true })
+  }
+
+  if (eventType === 'matchmaking_started') {
+    trackFirstInteractive('matchmaking', { ...props, source_event: 'matchmaking_started' })
+    trackRefEntryShown('matchmaking', props)
   }
 }
 
@@ -92,6 +260,7 @@ export function initAnalytics() {
       } catch {
         /* no-op */
       }
+      flushInteractiveWaiters()
     }
   })
   // pagehide — последний надёжный сигнал перед выгрузкой (iOS Safari/вебвью)
@@ -131,7 +300,9 @@ export function identifyAcquisition() {
 
 export function track(eventType, props = {}) {
   if (!ready || !eventType) return
-  amplitude.track(eventType, commonProps(props))
+  const out = enrichProps(eventType, props)
+  trackRaw(eventType, out)
+  trackDerivedEvents(eventType, out)
 }
 
 export function trackScreen(screen, prevScreen) {
