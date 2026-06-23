@@ -101,6 +101,13 @@ function reqIp(req) {
 }
 
 export function recordAuthFailure(req) {
+  // ВЫСОКОЧАСТОТНЫЕ некритичные эндпоинты: presence-хартбит (/api/ping, каждые 40с) и
+  // поллинг онлайна (/api/online) у гостя 401-ятся ПОСТОЯННО — это не «не залогинен», а
+  // ожидаемый шум. Не пишем и не логируем: иначе на потоке гостей синхронный console.warn
+  // в stderr блокирует event-loop → лаг во ВСЕХ боях (на том же loop висит WS). Вход меряем
+  // по /api/profile и /api/econ/*, где отказ реально означает «не залогинен».
+  const url = String(req.url || '').split('?')[0]
+  if (url === '/api/ping' || url === '/api/online') return null
   const initData = String(req.headers['x-init-data'] || '')
   const guestId = String(req.headers['x-guest-id'] || '')
   // только реальные клиенты (есть хоть какой-то auth-сигнал) — отсекаем сканеры/боты
@@ -139,17 +146,18 @@ export function recordAuthFailure(req) {
     ua: String(req.headers['user-agent'] || '').slice(0, 200),
     ip,
   }
-  // в кольцо — только не зафлуженные (1/мин на ip+причину); в pm2-лог пишем всегда
+  // и кольцо, и pm2-лог — только НЕ зафлуженные (1/мин на ip+причину). Синхронный
+  // console.warn на КАЖДЫЙ 401 под потоком гостей блокировал event-loop → лаг в боях.
   if (!throttled) {
     AUTH_FAILS.push(rec)
     if (AUTH_FAILS.length > AUTH_FAILS_MAX) AUTH_FAILS.shift()
     // подчистка карты дедупа, чтобы не росла бесконечно (старше окна — не нужны)
     if (AUTH_FAIL_SEEN.size > 2000) for (const [k, ts] of AUTH_FAIL_SEEN) if (now - ts > AUTH_FAIL_THROTTLE_MS) AUTH_FAIL_SEEN.delete(k)
-  }
-  try {
-    console.warn('[auth-fail]', rec.reason, 'tg=' + tgId, 'len=' + initData.length, 'age=' + rec.authAgeSec, 'ip=' + ip, 'ua=' + rec.ua.slice(0, 60))
-  } catch {
-    /* нет console — ок */
+    try {
+      console.warn('[auth-fail]', rec.reason, 'tg=' + tgId, 'len=' + initData.length, 'age=' + rec.authAgeSec, 'ip=' + ip, 'ua=' + rec.ua.slice(0, 60))
+    } catch {
+      /* нет console — ок */
+    }
   }
   return rec
 }
