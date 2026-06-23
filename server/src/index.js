@@ -656,6 +656,14 @@ async function handleApi(req, res) {
     if (await econ.econAuthority()) Object.assign(merged, econ.econPreserve(prev, body.profile))
     return await saveProfile(user.uid, merged)
     })
+    // БЭКСТОП РЕФЕРАЛА из ПОДПИСАННОГО start_param (#29 @Z_86_V «приглашение друзей»):
+    // клиентский /api/referred зависит от тайминга initData на медленных телефонах и от
+    // того, дошёл ли клиент до handleStartParam (при гейте входа — нет) → реферал терялся.
+    // start_param из подписи доступен на КАЖДОМ авторизованном запросе и подделать нельзя.
+    // Вне лока выше (registerReferral берёт тот же лок) + fire-and-forget (не тормозим ответ).
+    // Идемпотентно: referredBy привязывается один раз, повторные вызовы — no-op.
+    const refM = /^ref_(\d{3,})$/.exec(user.startParam || '')
+    if (refM) registerReferral(user, refM[1]).catch(() => {})
     // updatedAt — версия записи (серверные часы); клиент хранит её и на реоткрытии
     // сверяет: продвинулся ли сервер с тех пор (другое устройство) или нет.
     return json(res, 200, { ok: true, updatedAt: typeof savedAt === 'number' ? savedAt : 0 })
