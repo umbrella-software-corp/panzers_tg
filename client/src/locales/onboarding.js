@@ -1,4 +1,4 @@
-// Тур по ангару для самого первого входа: 3 шага-коачмарка (танк → режим → В БОЙ).
+// Тур по главной для самого первого входа: 4 шага-коачмарка (танк → ⇄ Ангар → режим → В БОЙ).
 // steps — массив { title, body, cta } в порядке STEPS компонента; читается по индексу.
 export default {
   en: {
@@ -15,14 +15,19 @@ export default {
     // подарок «выбери второй танк» после первого боя
     secondTank: {
       title: 'Choose your second tank',
-      sub: 'On us — for your first battle. You can unlock the rest later in the Tech Tree.',
+      sub: 'On us — for your first battle. You can unlock the rest later in the Garage.',
       cta: ({ name }) => `Unlock ${name}`,
       free: 'FREE',
     },
     steps: [
       {
         title: 'This is your tank',
-        body: 'Your battle vehicle. Below — all your vehicles: scroll, pick, unlock new ones in the Tech Tree.',
+        body: 'Your battle vehicle — you take it into battle.',
+        cta: 'Next ▸',
+      },
+      {
+        title: 'Change tank & camo',
+        body: 'Tap «⇄ Garage» — all your vehicles, upgrades and camos live there.',
         cta: 'Next ▸',
       },
       {
@@ -50,14 +55,19 @@ export default {
     // подарок «выбери второй танк» после первого боя
     secondTank: {
       title: 'Выбери второй танк',
-      sub: 'Дарим за первый бой. Остальные откроешь позже в «Развитии».',
+      sub: 'Дарим за первый бой. Остальные откроешь позже в «Ангаре».',
       cta: ({ name }) => `Открыть ${name}`,
       free: 'БЕСПЛАТНО',
     },
     steps: [
       {
         title: 'Это твой танк',
-        body: 'Твоя боевая машина. Внизу — вся техника: листай, выбирай, открывай новую в «Развитии».',
+        body: 'Твоя боевая машина — с ней едешь в бой.',
+        cta: 'Дальше ▸',
+      },
+      {
+        title: 'Сменить танк и камуфляж',
+        body: 'Жми «⇄ Ангар» — там вся твоя техника, прокачка и камуфляжи.',
         cta: 'Дальше ▸',
       },
       {

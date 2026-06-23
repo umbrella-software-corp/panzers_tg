@@ -350,7 +350,7 @@ onMounted(() => {
     <!-- КОМПАКТНЫЙ ТУЛБАР В ОДНУ СТРОКУ: «⇄ Ангар» (там танки+камуфляж) + ТТХ/Задачи/Взвод.
          Чистый экран — основное это танк и «В БОЙ». -->
     <div class="hangar-tools">
-      <button class="toolpill toolpill--go" @click="emit('go', 'tree')">⇄ {{ t('nav.tree') }}</button>
+      <button class="toolpill toolpill--go" data-tut="garage" @click="emit('go', 'tree')">⇄ {{ t('nav.tree') }}</button>
       <button class="toolpill" :class="{ on: ttx }" @click="track('ttx_opened', { tank_id: tank.id, open_to: !ttx }); ttx = !ttx">{{ t('hangar.ttx') }}</button>
       <button v-if="!firstSession" class="toolpill" @click="openTasksSheet"><span class="tp-rel">{{ t('hangar.tasks') }}<i v-if="tasksClaimable() > 0" class="task-dot"></i></span></button>
       <button v-if="!firstSession" class="toolpill" @click="openSquadSheet" :class="{ on: inParty }">{{ t('hangar.platoon') }}</button>

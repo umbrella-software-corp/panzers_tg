@@ -4,7 +4,10 @@ import '../style.css'
 import { createApp, h, ref } from 'vue'
 import Hangar from '../components/Hangar.vue'
 import Tree from '../components/Tree.vue'
+import Onboarding from '../components/Onboarding.vue'
 import { profile } from '../store.js'
+
+const showOnb = new URLSearchParams(location.search).has('onb')
 
 // засеять «не первую сессию»: показываются ЗАДАЧИ/ВЗВОД-пилюли и пр.
 if (!profile.stats) profile.stats = {}
@@ -19,10 +22,13 @@ const screen = ref('hangar')
 const SCREENS = { hangar: Hangar, tree: Tree }
 const Root = {
   setup() {
-    return () => h(SCREENS[screen.value] || Hangar, {
-      onGo: (s) => { screen.value = s },
-      onPlay: () => console.log('В БОЙ →', profile.selectedTank),
-    })
+    return () => [
+      h(SCREENS[screen.value] || Hangar, {
+        onGo: (s) => { screen.value = s },
+        onPlay: () => console.log('В БОЙ →', profile.selectedTank),
+      }),
+      showOnb && screen.value === 'hangar' ? h(Onboarding, { onPlay: () => {}, onSkip: () => {} }) : null,
+    ]
   },
 }
 createApp(Root).mount('#app')
