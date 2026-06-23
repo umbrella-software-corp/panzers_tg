@@ -17,6 +17,9 @@ profile.stats.kills = 80
 profile.credits = 6000000
 profile.tokens = 10100
 profile.premiumUntil = Date.now() + 17 * 86400000
+// несколько своих танков (СССР линия + прем t28 + немец tgr) — проверка ленты быстрого выбора
+profile.owned = ['t26', 'bt7', 't34', 'kv1', 't28', 'tgr']
+profile.selectedTank = 't34'
 
 const screen = ref('hangar')
 const SCREENS = { hangar: Hangar, tree: Tree }

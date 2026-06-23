@@ -147,6 +147,21 @@ async function openOrUnlock() {
 
 const tank = computed(() => TANK_BY_ID[profile.selectedTank] || tanksOfNation(profile.nation)[0])
 
+// БЫСТРЫЙ ВЫБОР ТАНКА на Главной (без захода в «Ангар») — лента своих машин, тап =
+// выбрал (@Weddaaaa, и на премах). Свои ВИДИМЫЕ танки по тиру↓ (премы включены).
+const quickTanks = computed(() =>
+  (profile.owned || [])
+    .map((id) => TANK_BY_ID[id])
+    .filter((tk) => tk && !isHiddenNation(nationOf(tk.id)))
+    .sort((a, b) => b.tier - a.tier || String(a.name).localeCompare(String(b.name))),
+)
+function quickPick(id) {
+  if (id === profile.selectedTank) return
+  haptic('select')
+  selectTank(id)
+  track('hangar_quick_pick', { tank_id: id })
+}
+
 // ТТХ с учётом прокачки: дизайн-стата × модуль × экипаж (как в loadoutStats).
 // base — исходное, value — с прокачкой; шторка рисует прирост, а не статику.
 const STAT_MOD = { dmg: 'gun', hp: 'tur', spd: 'eng', mnv: 'trk', view: 'rad' }
@@ -347,6 +362,16 @@ onMounted(() => {
       <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 2px">{{ t('game.classes.' + tank.classId) }} · {{ nationLabel }} · {{ t('hangar.crew', { n: crewLevel() }) }}</div>
     </div>
 
+    <!-- БЫСТРЫЙ ВЫБОР ТАНКА: лента своих машин, тап = выбрал (без захода в «Ангар»).
+         Камуфляж/прокачка/покупка — по-прежнему на вкладке «⇄ Ангар». -->
+    <div v-if="quickTanks.length > 1" class="quickpick">
+      <button v-for="qt in quickTanks" :key="qt.id" class="qp-cell" :class="{ on: qt.id === profile.selectedTank }" :title="qt.name" @click="quickPick(qt.id)">
+        <TankImg :tank-id="qt.id" :size="42" />
+        <span v-if="qt.premium" class="qp-prem">★</span>
+        <span class="qp-tier pz-pixel">{{ qt.tier }}</span>
+      </button>
+    </div>
+
     <!-- КОМПАКТНЫЙ ТУЛБАР В ОДНУ СТРОКУ: «⇄ Ангар» (там танки+камуфляж) + ТТХ/Задачи/Взвод.
          Чистый экран — основное это танк и «В БОЙ». -->
     <div class="hangar-tools">
@@ -448,6 +473,52 @@ onMounted(() => {
   cursor: pointer;
 }
 .toolpill.on { color: var(--amber); border-color: var(--amber); background: rgba(242, 165, 12, 0.12); }
+/* лента быстрого выбора танка (горизонтальный скролл) */
+.quickpick {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px 14px 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.quickpick::-webkit-scrollbar { display: none; }
+.qp-cell {
+  position: relative;
+  flex-shrink: 0;
+  width: 50px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+.qp-cell.on {
+  border-color: var(--amber);
+  background: rgba(242, 165, 12, 0.14);
+  box-shadow: 0 0 9px rgba(242, 165, 12, 0.4);
+}
+.qp-cell.on:active, .qp-cell:active { transform: scale(0.94); }
+.qp-tier {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  font-size: 7px;
+  color: var(--ink-dim);
+}
+.qp-prem {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--amber);
+}
 /* «⇄ Ангар» — заметная (там танки + камуфляж) */
 .toolpill--go { color: var(--amber); border-color: rgba(242, 165, 12, 0.55); background: rgba(242, 165, 12, 0.1); }
 .toolpill--go:active { transform: scale(0.95); }
