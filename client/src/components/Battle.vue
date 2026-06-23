@@ -865,6 +865,11 @@ onBeforeUnmount(() => {
 
     <!-- зона движения: джойстик появляется под пальцем. После гибели джойстик
          водит камеру наблюдения по карте (огонь скрыт, движок панорамирует) -->
+    <!-- @touchmove.prevent: едешь НАЗАД = тянешь джойстик ВНИЗ. На старом iOS-Telegram
+         (iPhone 8, @Z_86_V) свайп пальцем вниз = нативный жест «свернуть мини-апп», а
+         disableVerticalSwipes (Bot API 7.7) там no-op. CSS touch-action:none нативный
+         жест НЕ глушит — а preventDefault на touchmove доходит. Pointer-события джойстика
+         это НЕ отменяет (touchmove.preventDefault ≠ отмена pointermove). -->
     <div
       v-show="phase === 'fighting' && !paused"
       class="movezone"
@@ -872,6 +877,7 @@ onBeforeUnmount(() => {
       @pointermove="joyMove"
       @pointerup="joyEnd"
       @pointercancel="joyEnd"
+      @touchmove.prevent
     >
       <!-- статичная подсказка джойстика, пока палец не на экране -->
       <div v-if="!joyVisible" class="joy-hint">
