@@ -345,12 +345,12 @@ onMounted(() => {
         <span v-if="tank.premium" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">{{ t('hangar.premBadge') }}</span>
       </div>
       <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 2px">{{ t('game.classes.' + tank.classId) }} · {{ nationLabel }} · {{ t('hangar.crew', { n: crewLevel() }) }}</div>
-      <button class="change-hint" @click="emit('go', 'tree')">⇄ {{ t('nav.tree') }}</button>
     </div>
 
-    <!-- КОМПАКТНЫЙ ТУЛБАР: вторичное спрятано (чистый экран — только танк и «В БОЙ»).
-         Камуфляж и смена танка переехали на вкладку «Ангар». -->
+    <!-- КОМПАКТНЫЙ ТУЛБАР В ОДНУ СТРОКУ: «⇄ Ангар» (там танки+камуфляж) + ТТХ/Задачи/Взвод.
+         Чистый экран — основное это танк и «В БОЙ». -->
     <div class="hangar-tools">
+      <button class="toolpill toolpill--go" @click="emit('go', 'tree')">⇄ {{ t('nav.tree') }}</button>
       <button class="toolpill" :class="{ on: ttx }" @click="track('ttx_opened', { tank_id: tank.id, open_to: !ttx }); ttx = !ttx">{{ t('hangar.ttx') }}</button>
       <button v-if="!firstSession" class="toolpill" @click="openTasksSheet"><span class="tp-rel">{{ t('hangar.tasks') }}<i v-if="tasksClaimable() > 0" class="task-dot"></i></span></button>
       <button v-if="!firstSession" class="toolpill" @click="openSquadSheet" :class="{ on: inParty }">{{ t('hangar.platoon') }}</button>
@@ -428,20 +428,6 @@ onMounted(() => {
   background: linear-gradient(0deg, rgba(8, 9, 6, 0.6), transparent);
 }
 .hangar-cta .playbtn { width: 100%; }
-/* подсказка-чип «сменить танк → Ангар» (выбор машины/камо живёт на вкладке Ангар) */
-.change-hint {
-  margin-top: 7px;
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  color: var(--ink-dim);
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--line-strong);
-  border-radius: 20px;
-  padding: 5px 14px;
-  cursor: pointer;
-}
-.change-hint:active { color: var(--amber); border-color: var(--amber); transform: scale(0.95); }
 /* компактный тулбар вторичных действий */
 .hangar-tools {
   display: flex;
@@ -462,6 +448,9 @@ onMounted(() => {
   cursor: pointer;
 }
 .toolpill.on { color: var(--amber); border-color: var(--amber); background: rgba(242, 165, 12, 0.12); }
+/* «⇄ Ангар» — заметная (там танки + камуфляж) */
+.toolpill--go { color: var(--amber); border-color: rgba(242, 165, 12, 0.55); background: rgba(242, 165, 12, 0.1); }
+.toolpill--go:active { transform: scale(0.95); }
 .tp-rel { position: relative; display: inline-flex; }
 .tp-rel .task-dot { position: absolute; top: -4px; right: -7px; }
 /* сегмент выбора режима (тонкий, вместо двух больших кнопок) */

@@ -2,7 +2,7 @@
 // Прокачка (порт TreeScreen): вертикальная ветка нации с пунктирной осью,
 // исследование танков (пред. куплен + его топ-модули 5/5), док выбранной
 // машины — табы 5 слотов модулей × 3 уровня, апгрейд за кредиты.
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
   profile,
   setNation,
@@ -133,9 +133,12 @@ async function buyPrem(t) {
     shake()
   }
 }
-// пришли из ангара по «ОТКРЫТЬ ТАНК» (выбран закрытый) → сразу раскрываем его
-// чеклист; иначе обычный просмотр ветки без выбора
-const sel = ref(profile.selectedTank && !isOwned(profile.selectedTank) ? profile.selectedTank : null)
+// Вход в Ангар сразу раскрывает панель ТЕКУЩЕГО танка (там камуфляж + Выбрать) —
+// иначе игроки не находили камо. Закрытый танк → чеклист открытия (как раньше).
+const sel = ref(profile.selectedTank || null)
+const dockEl = ref(null)
+// проскроллить панель танка в видимую зону (она внизу скролла — без этого её не видно)
+function scrollToDock() { nextTick(() => { try { dockEl.value && dockEl.value.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {} }) }
 const modTab = ref('gun')
 const flash = ref(false)
 const selected = computed(() => tanks.value.find((t) => t.id === sel.value))
@@ -194,6 +197,7 @@ function toggle(t) {
   })
   sel.value = sel.value === t.id ? null : t.id
   modTab.value = 'gun'
+  if (sel.value) scrollToDock()
 }
 function shake() {
   flash.value = true
@@ -276,6 +280,7 @@ onMounted(() => {
     owned_tanks_count: profile.owned?.length || 0,
     credits: profile.credits || 0,
   })
+  if (sel.value) scrollToDock() // вход → панель текущего танка (камо + Выбрать) в зоне видимости
 })
 // раскрыли чеклист некупленной машины — что нужно для исследования
 watch(selected, (t) => {
@@ -400,7 +405,7 @@ watch(selected, (t) => {
     </div>
 
     <!-- ===== док выбранной машины ===== -->
-    <div v-if="selected" :key="selected.id" class="pz-plate dock">
+    <div v-if="selected" :key="selected.id" ref="dockEl" class="pz-plate dock">
       <button class="dock-close" :aria-label="tr('common.close')" :title="tr('common.close')" @click="sel = null">✕</button>
       <div style="display: flex; gap: 12px; align-items: center; padding-right: 28px">
         <TankImg :tank-id="selected.id" :size="48" :style="{ filter: isOwned(selected.id) ? 'none' : 'grayscale(0.9) brightness(0.6)', flexShrink: 0 }" />
@@ -413,6 +418,29 @@ watch(selected, (t) => {
       </div>
 
       <template v-if="isOwned(selected.id)">
+        <!-- КАМУФЛЯЖ наверху панели (раньше был под модулями — игроки не находили) -->
+        <template v-if="!selected.premium">
+          <div class="dock-camo-h pz-pixel">🎨 {{ tr('tree.camo') }}</div>
+          <div class="camo-dots pz-noscroll">
+            <button
+              v-for="c in CAMOS"
+              :key="c.id || 'std'"
+              class="camo-cell"
+              :class="{ on: dockCamo === c.id, locked: !camoUnlocked(selected.id, c.id) }"
+              :title="c.name"
+              @click="pickCamoTree(c.id)"
+            >
+              <TankImg :tank-id="selected.id" :camo="c.id" :size="38" :rotate="180" />
+              <span v-if="!camoUnlocked(selected.id, c.id)" class="camo-price pz-pixel"><PzIcon name="token" :size="8" /> {{ c.cost }}</span>
+              <span class="camo-lbl">{{ c.short }}</span>
+            </button>
+          </div>
+          <div v-if="camoPreview" class="camo-buy">
+            <span class="camo-buy-name pz-display">{{ (CAMO_BY_ID[camoPreview] || {}).name }}</span>
+            <button class="pz-cta camo-buy-btn" @click="buyCamoTree">{{ tr('hangar.buy') }} <PzIcon name="token" :size="11" /> {{ (CAMO_BY_ID[camoPreview] || {}).cost }}</button>
+          </div>
+        </template>
+
         <!-- табы слотов модулей -->
         <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px">
           <button
@@ -475,29 +503,6 @@ watch(selected, (t) => {
             <span v-else class="pz-chip" style="color: var(--ink-faint); font-size: 10.5px"><PzIcon name="lock" :size="10" /> {{ tr('tree.locked') }}</span>
           </div>
         </div>
-
-        <!-- камуфляж выбранной машины (выбираешь прямо здесь — по просьбе) -->
-        <template v-if="!selected.premium">
-          <div class="dock-camo-h pz-pixel">{{ tr('tree.camo') }}</div>
-          <div class="camo-dots pz-noscroll">
-            <button
-              v-for="c in CAMOS"
-              :key="c.id || 'std'"
-              class="camo-cell"
-              :class="{ on: dockCamo === c.id, locked: !camoUnlocked(selected.id, c.id) }"
-              :title="c.name"
-              @click="pickCamoTree(c.id)"
-            >
-              <TankImg :tank-id="selected.id" :camo="c.id" :size="38" :rotate="180" />
-              <span v-if="!camoUnlocked(selected.id, c.id)" class="camo-price pz-pixel"><PzIcon name="token" :size="8" /> {{ c.cost }}</span>
-              <span class="camo-lbl">{{ c.short }}</span>
-            </button>
-          </div>
-          <div v-if="camoPreview" class="camo-buy">
-            <span class="camo-buy-name pz-display">{{ (CAMO_BY_ID[camoPreview] || {}).name }}</span>
-            <button class="pz-cta camo-buy-btn" @click="buyCamoTree">{{ tr('hangar.buy') }} <PzIcon name="token" :size="11" /> {{ (CAMO_BY_ID[camoPreview] || {}).cost }}</button>
-          </div>
-        </template>
 
         <!-- ВЫБРАТЬ: ставит танк выбранным и возвращает на главную → там «В БОЙ» -->
         <button class="pz-cta pz-cta--hazard pick-btn" @click="pickInHangar">{{ tr('tree.pickInHangar') }}</button>
@@ -671,7 +676,7 @@ watch(selected, (t) => {
   animation: pz-slide-up 0.25s ease;
 }
 /* выбор камуфляжа прямо в Ангаре (перенесён с главной) */
-.dock-camo-h { font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em; margin-bottom: -4px; }
+.dock-camo-h { font-size: 8px; color: var(--amber); letter-spacing: 0.12em; }
 .camo-dots { display: flex; align-items: center; gap: 7px; overflow-x: auto; }
 .camo-cell {
   position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
