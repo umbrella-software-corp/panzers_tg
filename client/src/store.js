@@ -338,6 +338,9 @@ if (typeof document !== 'undefined') {
 // (App.vue следит за grantReveal). Для веб-юзеров, кому бот не может написать, это
 // единственный способ узнать о подарке.
 export const grantReveal = ref(null)
+// ДОНАТ-КРЕЙТ: массив выкаченных наград [{nation,type,tank?,tier?,camo?,crystals?,credits?}]
+// из grants-apply — Shop показывает ревил-анимацию и обнуляет. Серверный ролл, авторитетно.
+export const crateReveal = ref(null)
 export async function applyPendingGrants() {
   const pend = Array.isArray(profile.pendingGrants) ? profile.pendingGrants : []
   // Под авторитетностью награды за бой (кредиты/опыт) сервер кладёт в pendingGrants, о
@@ -352,11 +355,19 @@ export async function applyPendingGrants() {
       profile.tokens = r.tokens || 0
       if (typeof r.goldAmmo === 'number') profile.goldAmmo = r.goldAmmo // золотые снаряды (награда дня)
       if (Array.isArray(r.owned)) profile.owned = r.owned
+      if (r.cratePity && typeof r.cratePity === 'object') profile.cratePity = r.cratePity // pity-счётчик крейтов — серверный (для UI «N до гаранта»)
       if (econOn() && r.branchXp && typeof r.branchXp === 'object') profile.branchXp = r.branchXp // опыт ветки — серверный (под ON)
       if (econOn() && typeof r.freeXp === 'number') profile.freeXp = r.freeXp // свободный опыт — серверный (под ON)
       profile.pendingGrants = Array.isArray(r.pendingGrants) ? r.pendingGrants : []
       const g = r.got
       if (r.applied && g && (g.credits || g.tokens || (g.tanks && g.tanks.length))) grantReveal.value = g
+      // ДОНАТ-КРЕЙТ: камо добавляем АДДИТИВНО (не затираем локальный camoOwned — при OFF
+      // он мог уйти вперёд сервера), owned/tokens/credits уже адаптированы выше авторитетно.
+      if (Array.isArray(r.crates) && r.crates.length) {
+        if (!Array.isArray(profile.camoOwned)) profile.camoOwned = []
+        for (const cr of r.crates) if (cr && cr.camo && !profile.camoOwned.includes(cr.camo)) profile.camoOwned.push(cr.camo)
+        crateReveal.value = r.crates // Shop покажет ревил-анимацию и обнулит
+      }
     }
   } catch {
     /* не вышло — очередь на сервере цела, заберём на следующем синке */

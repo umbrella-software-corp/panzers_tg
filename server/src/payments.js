@@ -26,6 +26,12 @@ export const PRODUCTS = {
   pt_maus: { title: 'Maus · премиум-танк', stars: 199, tank: 'maus' },
   pt_ram: { title: 'Ram II · премиум-танк', stars: 79, tank: 'ram' },
   pt_sper: { title: 'Super Pershing · премиум-танк', stars: 199, tank: 'sper' },
+  // ДОНАТ-КРЕЙТЫ (крутка за ⭐): ролл по нации делается в /api/grants-apply
+  // (econ.rollNationCrate, честные шансы+pity). grantProduct кладёт kind:'crate' в
+  // очередь — деньги списаны, награда выкатывается авторитетно. stars = econ.CRATE_STARS.
+  crate_ussr: { title: 'Ящик СССР · крутка', stars: 20, crate: 'ussr' },
+  crate_ger: { title: 'Ящик Германии · крутка', stars: 20, crate: 'ger' },
+  crate_usa: { title: 'Ящик США · крутка', stars: 20, crate: 'usa' },
 }
 
 // позывной с клиента: режем управляющие символы, тримим, 3..16 символов.
@@ -97,6 +103,12 @@ export async function grantProduct(uid, productId, extra = {}) {
     if (grant.credits || grant.tokens || grant.tanks.length) {
       if (!Array.isArray(profile.pendingGrants)) profile.pendingGrants = []
       profile.pendingGrants.push({ id: 'pay.' + Date.now() + '.' + ++grantSeq, kind: 'purchase', charge: extra.charge || null, ...grant, at: Date.now() })
+    }
+    // ДОНАТ-КРЕЙТ: ставим заявку на ролл — выполнится авторитетно в /api/grants-apply
+    // (econ.rollNationCrate под локом профиля), клиент адаптирует результат + ревил.
+    if (p.crate) {
+      if (!Array.isArray(profile.pendingGrants)) profile.pendingGrants = []
+      profile.pendingGrants.push({ id: 'crate.' + Date.now() + '.' + ++grantSeq, kind: 'crate', nation: p.crate, charge: extra.charge || null, at: Date.now() })
     }
     if (p.premiumDays) {
       // продлеваем от текущего конца премиума (или от сейчас, если истёк)
