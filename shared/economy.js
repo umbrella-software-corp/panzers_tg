@@ -141,12 +141,19 @@ export const MEDALS = [
   { id: 'scout', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200, xp: 150 } },
   { id: 'survivor', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150, xp: 100 } },
   { id: 'triumph', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3, xp: 400 } },
+  { id: 'kingslayer', kind: 'battle', metric: 'kills', need: 7, reward: { credits: 900, tokens: 4, xp: 500 } },
+  { id: 'devastator', kind: 'battle', metric: 'damage', need: 15000, reward: { credits: 600, tokens: 2, xp: 400 } },
+  { id: 'bastion', kind: 'battle', metric: 'blockedDmg', need: 4000, reward: { credits: 500, tokens: 2, xp: 350 } },
+  { id: 'pathfinder', kind: 'battle', metric: 'lightKills', need: 4, reward: { credits: 350, tokens: 1, xp: 250 } },
   { id: 'recruit', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
   { id: 'veteran', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
   { id: 'guards', kind: 'career', metric: 'battles', need: 500, reward: { credits: 1500, tokens: 5 } },
   { id: 'hunter', kind: 'career', metric: 'kills', need: 100, reward: { credits: 600, tokens: 2 } },
   { id: 'ace', kind: 'career', metric: 'kills', need: 1000, reward: { credits: 2000, tokens: 8 } },
   { id: 'legend', kind: 'career', metric: 'rating', need: 1500, reward: { credits: 1500, tokens: 5 } },
+  { id: 'executioner', kind: 'career', metric: 'kills', need: 300, reward: { credits: 1000, tokens: 3 } },
+  { id: 'marshal', kind: 'career', metric: 'battles', need: 1000, reward: { credits: 3000, tokens: 10 } },
+  { id: 'grandmaster', kind: 'career', metric: 'rating', need: 1800, reward: { credits: 2500, tokens: 8 } },
 ]
 export const MEDAL_BY_ID = Object.fromEntries(MEDALS.map((m) => [m.id, m]))
 // медали за ОДИН бой по его итогам b={kills,damage,blockedDmg,lightKills,survived,victory}

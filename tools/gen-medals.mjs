@@ -30,6 +30,14 @@ const MEDALS = {
   hunter: 'silver tank hunter medal, crossed cannons over a tank silhouette',
   ace: 'gold war ace medal, tank silhouette inside a laurel wreath',
   legend: 'gold grand order, royal crown emblem, ornate and lavish',
+  // новые медали
+  kingslayer: 'gold elite kill medal, crossed swords over a skull emblem, crimson ribbon, fierce',
+  devastator: 'gold devastation medal, exploding artillery blast with shockwave emblem, lavish',
+  bastion: 'gold fortress medal, fortified rampart tower behind a heavy shield emblem',
+  pathfinder: 'silver pathfinder medal, compass star over a winding trail emblem',
+  executioner: 'silver executioner medal, crossed axes over a tank silhouette emblem',
+  marshal: 'gold marshal medal, crossed batons in a wreath under a star, lavish',
+  grandmaster: 'gold grandmaster order, royal crown over crossed scepters, very ornate and lavish',
 }
 
 const ids = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(MEDALS)

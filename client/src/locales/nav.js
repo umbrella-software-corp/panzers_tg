@@ -1,15 +1,15 @@
 // Нижняя навигация (BottomNav): ярлыки вкладок Ангар/Развитие/Экипаж/Магазин/Рейтинг.
 export default {
   en: {
-    hangar: 'Garage',
-    tree: 'Tech Tree',
+    hangar: 'Home',
+    tree: 'Garage',
     crew: 'Crew',
     shop: 'Shop',
     rating: 'Rating',
   },
   ru: {
-    hangar: 'Ангар',
-    tree: 'Развитие',
+    hangar: 'Главная',
+    tree: 'Ангар',
     crew: 'Экипаж',
     shop: 'Магазин',
     rating: 'Рейтинг',

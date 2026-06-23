@@ -469,6 +469,11 @@ export const MEDALS = [
   { id: 'scout', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200, xp: 150 } },
   { id: 'survivor', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150, xp: 100 } },
   { id: 'triumph', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3, xp: 400 } },
+  // боевые высшего порядка — стакаются с базовыми за выдающийся бой
+  { id: 'kingslayer', tier: 'gold', glyph: '⚔', kind: 'battle', metric: 'kills', need: 7, reward: { credits: 900, tokens: 4, xp: 500 } },
+  { id: 'devastator', tier: 'gold', glyph: '☄', kind: 'battle', metric: 'damage', need: 15000, reward: { credits: 600, tokens: 2, xp: 400 } },
+  { id: 'bastion', tier: 'gold', glyph: '⛉', kind: 'battle', metric: 'blockedDmg', need: 4000, reward: { credits: 500, tokens: 2, xp: 350 } },
+  { id: 'pathfinder', tier: 'silver', glyph: '⊚', kind: 'battle', metric: 'lightKills', need: 4, reward: { credits: 350, tokens: 1, xp: 250 } },
   // карьерные — рубежи
   { id: 'recruit', tier: 'bronze', glyph: '➀', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
   { id: 'veteran', tier: 'silver', glyph: '➁', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
@@ -476,6 +481,9 @@ export const MEDALS = [
   { id: 'hunter', tier: 'silver', glyph: '⊗', kind: 'career', metric: 'kills', need: 100, reward: { credits: 600, tokens: 2 } },
   { id: 'ace', tier: 'gold', glyph: '✺', kind: 'career', metric: 'kills', need: 1000, reward: { credits: 2000, tokens: 8 } },
   { id: 'legend', tier: 'gold', glyph: '♛', kind: 'career', metric: 'rating', need: 1500, reward: { credits: 1500, tokens: 5 } },
+  { id: 'executioner', tier: 'silver', glyph: '⊕', kind: 'career', metric: 'kills', need: 300, reward: { credits: 1000, tokens: 3 } },
+  { id: 'marshal', tier: 'gold', glyph: '➃', kind: 'career', metric: 'battles', need: 1000, reward: { credits: 3000, tokens: 10 } },
+  { id: 'grandmaster', tier: 'gold', glyph: '♚', kind: 'career', metric: 'rating', need: 1800, reward: { credits: 2500, tokens: 8 } },
 ].map((m) => defLoc(m, { name: (o) => `game.medals.${o.id}.name`, desc: (o) => `game.medals.${o.id}.desc` }))
 export const MEDAL_BY_ID = Object.fromEntries(MEDALS.map((m) => [m.id, m]))
 export const MEDAL_TIER_COLOR = { bronze: '#c08349', silver: '#cfd4da', gold: '#f2a50c' }
@@ -536,6 +544,8 @@ export const PROP_MODELS = {
   wreck: '/models/prop_wreck.glb', deadtree: '/models/prop_deadtree.glb', tower: '/models/prop_tower.glb',
   bunker: '/models/prop_bunker.glb', tent: '/models/prop_tent.glb', tires: '/models/prop_tires.glb',
   ruin: '/models/prop_ruin.glb', barrier: '/models/prop_barrier.glb',
+  // окружение «оживления» карт (сгенерировано: flux→TRELLIS image→3D, оптимизировано)
+  tree: '/models/prop_tree.glb', house: '/models/prop_house.glb', mtn: '/models/prop_mtn.glb', boulder: '/models/prop_boulder.glb',
 }
 export const hasTankModel = (id) => !!TANK_MODELS[id]
 // URL модели для танка: своя → фоллбэк по нации → Т-90

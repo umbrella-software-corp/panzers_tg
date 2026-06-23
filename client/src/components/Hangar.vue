@@ -203,6 +203,24 @@ const tanks = computed(() =>
     .sort((a, b) => b.tier - a.tier || (NATION_ORDER[nationOf(a.id)] ?? 9) - (NATION_ORDER[nationOf(b.id)] ?? 9) || a.name.localeCompare(b.name)),
 )
 const ttx = ref(false)
+const showCamo = ref(false) // камо-сетка спрятана по умолчанию (чистый экран) — тоггл в тулбаре
+// переключение танка стрелками/свайпом вместо карусели (карусель убрана ради чистоты)
+const tankIndex = computed(() => { const i = tanks.value.findIndex((t) => t.id === tank.value.id); return i < 0 ? 0 : i })
+function switchTank(dir) {
+  const list = tanks.value
+  if (list.length < 2) return
+  const i = (tankIndex.value + dir + list.length) % list.length
+  selectTankTracked(list[i])
+}
+// свайп по сцене танка: влево → следующий, вправо → предыдущий
+let _swipeX = null
+function swipeStart(e) { _swipeX = (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX) }
+function swipeEnd(e) {
+  if (_swipeX == null) return
+  const x = (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : e.clientX)
+  const dx = x - _swipeX; _swipeX = null
+  if (Math.abs(dx) > 44) switchTank(dx < 0 ? 1 : -1)
+}
 const fmt = (n) => n.toLocaleString('ru-RU')
 const inParty = computed(() => squad.active || !!party.token) // в лобби взвода или уже в бою с ним
 // друг зашёл по ссылке (squad стал активен) → авто-открываем шторку взвода, чтобы он видел лобби
@@ -273,8 +291,8 @@ onMounted(() => {
         <div class="bay-hazard"></div>
       </div>
 
-      <!-- тень + танк -->
-      <div class="tank-wrap" data-tut="tank">
+      <!-- тень + танк. Тап по танку → Ангар (там меняешь машину и камо) -->
+      <div class="tank-wrap" data-tut="tank" @click="emit('go', 'tree')">
         <div class="tank-shadow"></div>
         <!-- 3D: модель ВЫБРАННОГО танка (любого), мордой к игроку; листание карусели меняет её -->
         <Tank3DView v-if="threeD" :url="heroUrl" :camo="locked ? '' : dispCamo" :seed="heroSeed" :scale="heroScale" class="tank3d-host" :style="locked ? 'filter: brightness(0.82) saturate(0.85)' : ''" />
@@ -292,6 +310,7 @@ onMounted(() => {
       <div style="position: absolute; left: 0; right: 0; top: 0; height: 170px; background: linear-gradient(180deg, rgba(8, 9, 6, 0.88), rgba(8, 9, 6, 0.4) 60%, transparent)"></div>
       <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 320px; background: linear-gradient(0deg, rgba(8, 9, 6, 0.94) 30%, rgba(8, 9, 6, 0.55) 65%, transparent)"></div>
     </div>
+
 
     <!-- ===== chrome ===== -->
     <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
@@ -314,109 +333,33 @@ onMounted(() => {
     <!-- ТУМБЛЕР 2D/3D — плавающий, виден всем; по умолчанию 2D (опт-ин) -->
     <button class="td-toggle pz-display" :class="{ on: threeD }" :title="threeD ? 'Бой в 3D — нажми для 2D' : 'Бой в 2D — нажми для 3D'" @click="toggle3D">{{ threeD ? '3D' : '2D' }}</button>
 
-    <!-- ID-плашка танка -->
-    <div style="margin-top: auto; padding: 0 14px 6px; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px">
-      <div>
-        <div style="display: flex; align-items: baseline; gap: 8px">
-          <span class="pz-display" style="font-size: 30px; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8)">{{ tank.name }}</span>
-          <span class="pz-pixel" style="font-size: 8px; color: var(--amber)">{{ t('hangar.tier', { n: tank.tier }) }}</span>
-          <span v-if="tank.premium" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">{{ t('hangar.premBadge') }}</span>
-        </div>
-        <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 1px">{{ t('game.classes.' + tank.classId) }} · {{ nationLabel }}</div>
+    <!-- СРЕДНЯЯ ЧАСТЬ скроллится; CTA «В БОЙ» + навигация ниже ЗАКРЕПЛЕНЫ (всегда видны).
+         Раньше весь стек прижимался к низу в overflow:hidden-экране → на коротких
+         телефонах низ (В БОЙ/навигация) обрезался и был недостижим («не могу в бой»). -->
+    <div class="hangar-mid pz-noscroll">
+    <!-- ИМЯ ВЫБРАННОГО ТАНКА. Сменить машину/камуфляж — на вкладке «Ангар» (тап по танку/чипу) -->
+    <div style="margin-top: auto; padding: 0 14px 6px; text-align: center">
+      <div style="display: flex; align-items: baseline; justify-content: center; gap: 8px">
+        <span class="pz-display" style="font-size: 32px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85)">{{ tank.name }}</span>
+        <span class="pz-pixel" style="font-size: 8px; color: var(--amber)">{{ t('hangar.tier', { n: tank.tier }) }}</span>
+        <span v-if="tank.premium" class="pz-pixel" style="font-size: 7px; color: #1d1604; background: var(--amber); border-radius: 5px; padding: 2px 5px 1px">{{ t('hangar.premBadge') }}</span>
       </div>
-      <div style="display: flex; gap: 6px; align-items: center">
-        <!-- экипаж: один на все танки, уровень баффает машину; клик — прокачка -->
-        <button class="crew-badge pz-display" :title="t('hangar.openCrew')" @click="emit('go', 'crew')">
-          <span>{{ t('hangar.crew', { n: crewLevel() }) }}</span>
-          <i class="bar"><b :style="{ width: crewProgress() * 100 + '%' }"></b></i>
-        </button>
-        <button class="pz-btn2" style="padding: 8px 12px; font-size: 11.5px" :style="{ borderColor: ttx ? 'var(--amber)' : 'var(--line-strong)', color: ttx ? 'var(--amber)' : 'var(--ink)' }" @click="track('ttx_opened', { tank_id: tank.id, open_to: !ttx }); ttx = !ttx">
-          {{ t('hangar.ttx') }} {{ ttx ? '▾' : '▸' }}
-        </button>
-      </div>
+      <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 2px">{{ t('game.classes.' + tank.classId) }} · {{ nationLabel }} · {{ t('hangar.crew', { n: crewLevel() }) }}</div>
+      <button class="change-hint" @click="emit('go', 'tree')">⇄ {{ t('nav.tree') }}</button>
+    </div>
+
+    <!-- КОМПАКТНЫЙ ТУЛБАР: вторичное спрятано (чистый экран — только танк и «В БОЙ»).
+         Камуфляж и смена танка переехали на вкладку «Ангар». -->
+    <div class="hangar-tools">
+      <button class="toolpill" :class="{ on: ttx }" @click="track('ttx_opened', { tank_id: tank.id, open_to: !ttx }); ttx = !ttx">{{ t('hangar.ttx') }}</button>
+      <button v-if="!firstSession" class="toolpill" @click="openTasksSheet"><span class="tp-rel">{{ t('hangar.tasks') }}<i v-if="tasksClaimable() > 0" class="task-dot"></i></span></button>
+      <button v-if="!firstSession" class="toolpill" @click="openSquadSheet" :class="{ on: inParty }">{{ t('hangar.platoon') }}</button>
     </div>
 
     <!-- ТТХ-шторка -->
     <div v-if="ttx" class="pz-plate" style="margin: 0 14px 8px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; animation: pz-slide-up 0.22s ease">
       <StatRow v-for="s in ttxStats" :key="s.key" :label="s.label" :value="s.value" :base="s.base" :display="s.display" :display-up="s.displayUp" />
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
-    </div>
-
-    <!-- камуфляж: 3 схемы + заводская, на КАЖДЫЙ танк. Превью — сам танк в этом
-         камо; разблокировка за жетоны (заводская бесплатна). Прем-технике камо
-         не положено — у неё свой заводской облик, блок целиком скрыт. -->
-    <template v-if="!tank.premium">
-      <div class="camo-head">
-        <span class="pz-pixel" style="font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em">{{ t('hangar.camo') }}</span>
-      </div>
-      <div class="camo-dots pz-noscroll">
-        <button
-          v-for="c in CAMOS"
-          :key="c.id || 'std'"
-          class="camo-cell"
-          :class="{ on: dispCamo === c.id, locked: !camoUnlocked(tank.id, c.id) }"
-          :disabled="locked"
-          :title="c.name"
-          @click="pickCamo(c.id)"
-        >
-          <TankImg :tank-id="tank.id" :camo="c.id" :size="40" :rotate="180" />
-          <span v-if="!camoUnlocked(tank.id, c.id)" class="camo-price pz-pixel">
-            <PzIcon name="token" :size="8" /> {{ c.cost }}
-          </span>
-          <span class="camo-lbl">{{ c.short }}</span>
-        </button>
-      </div>
-      <!-- примерка запертого камо: купить за жетоны (танк уже показан в нём) -->
-      <div v-if="previewCamo && previewDef" class="camo-buy">
-        <span class="camo-buy-name pz-display">{{ previewDef.name }}</span>
-        <button class="pz-cta camo-buy-btn" @click="buyPreview">
-          {{ t('hangar.buy') }} <PzIcon name="token" :size="11" /> {{ previewDef.cost }}
-        </button>
-      </div>
-    </template>
-
-    <!-- карусель твоих танков (одна на 2D и 3D): выбор меняет и большой рендер, и hero-3D-модель -->
-    <div class="pz-noscroll" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 14px; flex-shrink: 0">
-      <button
-        v-for="t in tanks"
-        :key="t.id"
-        :class="t.id === tank.id ? 'pz-brackets' : ''"
-        :style="{
-          '--bk': 'var(--amber)',
-          flexShrink: 0,
-          width: '76px',
-          padding: '8px 4px 7px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '2px',
-          background: t.id === tank.id ? 'linear-gradient(180deg, rgba(242,165,12,.14), rgba(0,0,0,.5))' : 'rgba(0,0,0,.5)',
-          border: '1px solid ' + (t.id === tank.id ? 'var(--amber)' : 'var(--line-strong)'),
-          borderRadius: '8px',
-          cursor: 'pointer',
-          color: !isOwned(t.id) ? 'var(--ink-faint)' : 'var(--ink)',
-        }"
-        @click="selectTankTracked(t)"
-      >
-        <span class="pz-pixel" style="font-size: 8px" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">{{ t.tier }}</span>
-        <TankImg :tank-id="t.id" :size="42" :style="{ filter: isOwned(t.id) ? 'none' : 'grayscale(0.9) brightness(0.55)' }" />
-        <span class="pz-display" style="font-size: 10px; line-height: 1.05; text-align: center; white-space: normal; word-break: break-word; height: 23px; display: flex; align-items: center; justify-content: center; overflow: hidden">{{ t.name }}</span>
-        <span style="height: 14px; display: flex; align-items: center" :style="{ color: t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)' }">
-          <PzIcon :name="isOwned(t.id) ? 'star' : 'lock'" :size="11" :color="t.id === tank.id ? 'var(--amber)' : 'var(--ink-faint)'" />
-        </span>
-      </button>
-    </div>
-
-    <!-- режим боя -->
-    <div class="modepick" data-tut="mode" style="padding: 6px 14px 0; flex-shrink: 0; display: flex; gap: 6px">
-      <button class="modeopt" :class="{ on: profile.battleMode === 'capture' }" @click="pickMode('capture')">
-        <span class="pz-display mlabel">{{ t('common.modeCapture') }}</span>
-        <span class="msub">{{ t('hangar.modeCaptureSub') }}</span>
-      </button>
-      <button class="modeopt" :class="{ on: profile.battleMode === 'annihilation' }" @click="pickMode('annihilation')">
-        <span class="pz-display mlabel">{{ t('common.modeAnnihilation') }}</span>
-        <span class="msub">{{ t('hangar.modeAnnihilationSub') }}</span>
-      </button>
     </div>
 
     <!-- «нам важно ваше мнение» → написать в саппорт → бонус жетонов -->
@@ -431,37 +374,15 @@ onMounted(() => {
       <span class="chb-cta">▸</span>
     </button>
 
-    <!-- «следующая цель» — хук удержания: явный следующий шаг, тянет «ещё бой» -->
-    <button v-if="goal" class="goal-chip" @click="goGoal(goal)">
-      <span class="goal-lbl pz-pixel">{{ t('hangar.goalLabel') }}</span>
-      <span class="goal-text">{{ nextGoalText(goal) }}</span>
-      <span class="goal-arr">→</span>
-    </button>
+    </div>
+    <!-- /hangar-mid -->
 
-    <!-- статистика ВЫБРАННОГО танка → тап ведёт в полный профиль (Рейтинг) -->
-    <button v-if="!firstSession" class="goal-chip stats-chip" @click="goStats">
-      <span class="goal-lbl pz-pixel">{{ t('hangar.statsLabel') }}</span>
-      <span class="goal-text">{{ tankStatLine }}</span>
-      <span class="goal-arr">→</span>
-    </button>
-
-    <!-- CTA -->
-    <div style="padding: 8px 14px 4px; flex-shrink: 0; display: flex; gap: 8px">
-      <button v-if="!firstSession" class="pz-btn2 squad-btn tasks-btn" @click="openTasksSheet">
-        <span style="position: relative">
-          <PzIcon name="tasks" :size="18" />
-          <i v-if="tasksClaimable() > 0" class="task-dot"></i>
-        </span>
-        {{ t('hangar.tasks') }}
-      </button>
-      <button v-if="!firstSession" class="pz-btn2 squad-btn" @click="openSquadSheet">
-        <span class="dots">
-          <span class="slot you"><PzIcon name="star" :size="7" color="var(--amber)" /></span>
-          <span class="slot" :class="{ filled: inParty }"></span>
-          <span class="slot" :class="{ filled: inParty }"></span>
-        </span>
-        {{ t('hangar.platoon') }}
-      </button>
+    <!-- РЕЖИМ + «В БОЙ» — ЗАКРЕПЛЕНЫ внизу (не скроллятся, всегда доступны) -->
+    <div class="hangar-cta">
+      <div class="modeseg" data-tut="mode">
+        <button :class="{ on: profile.battleMode === 'capture' }" @click="pickMode('capture')">{{ t('common.modeCapture') }}</button>
+        <button :class="{ on: profile.battleMode === 'annihilation' }" @click="pickMode('annihilation')">{{ t('common.modeAnnihilation') }}</button>
+      </div>
       <button class="pz-cta playbtn" :class="locked ? 'pz-cta--muted' : 'pz-cta--hazard'" data-tut="play" @click="locked ? openOrUnlock() : emit('play')">
         <span v-if="locked" class="play-stack">
           <span class="play-main">{{ t('hangar.openTank') }}</span>
@@ -484,6 +405,87 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* Средняя часть ангара: скроллится, если не влезает (короткие телефоны). CTA «В БОЙ»
+   и нижняя навигация — СЁСТРЫ ниже, flex-shrink:0 → закреплены и всегда доступны.
+   min-height:0 обязателен, иначе flex-ребёнок не даёт колонке сжиматься (контент
+   распирал бы экран и снова прятал низ). */
+.hangar-mid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  -webkit-overflow-scrolling: touch;
+}
+/* закреплённый низ: режим-сегмент над «В БОЙ» */
+.hangar-cta {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(0deg, rgba(8, 9, 6, 0.6), transparent);
+}
+.hangar-cta .playbtn { width: 100%; }
+/* подсказка-чип «сменить танк → Ангар» (выбор машины/камо живёт на вкладке Ангар) */
+.change-hint {
+  margin-top: 7px;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+.change-hint:active { color: var(--amber); border-color: var(--amber); transform: scale(0.95); }
+/* компактный тулбар вторичных действий */
+.hangar-tools {
+  display: flex;
+  gap: 7px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 2px 12px 0;
+}
+.toolpill {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.toolpill.on { color: var(--amber); border-color: var(--amber); background: rgba(242, 165, 12, 0.12); }
+.tp-rel { position: relative; display: inline-flex; }
+.tp-rel .task-dot { position: absolute; top: -4px; right: -7px; }
+/* сегмент выбора режима (тонкий, вместо двух больших кнопок) */
+.modeseg {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 3px;
+}
+.modeseg button {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 6px;
+  cursor: pointer;
+}
+.modeseg button.on { color: #1d1604; background: linear-gradient(180deg, var(--amber-hi, #ffce5a), var(--amber)); }
 .prem-badge {
   display: inline-flex;
   align-items: center;

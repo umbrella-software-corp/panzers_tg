@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>map3d — стенд карт</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+    #stage { position: fixed; inset: 0; }
+    #bar { position: fixed; top: 8px; left: 8px; right: 8px; z-index: 10; display: flex; flex-wrap: wrap; gap: 4px; }
+    #bar a { font: 12px system-ui; color: #cfe8ff; background: rgba(0,0,0,.5); padding: 3px 8px; border-radius: 6px; text-decoration: none; }
+    #bar a.on { background: #2a8a55; color: #fff; }
+  </style>
+</head>
+<body>
+  <!-- DEV-ОНЛИ стенд: рендерит НАСТОЯЩИЙ NetGame3D со стаб-клиентом (без вебсокета),
+       чтобы видеть/скринить статику карты (земля/небо/свет/пропы) без живого боя.
+       В прод-сборку не попадает (Vite билдит только index.html). -->
+  <div id="stage"></div>
+  <div id="bar"></div>
+  <script type="module" src="/src/dev/map3d.js"></script>
+</body>
+</html>

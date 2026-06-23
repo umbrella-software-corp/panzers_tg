@@ -21,8 +21,12 @@ import {
   researchXpNeed,
   spendFreeXp,
   syncProfile,
+  setCamo,
+  buyCamo,
+  camoUnlocked,
+  tankCamo,
 } from '../store.js'
-import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal, CAMOS, CAMO_BY_ID } from '../game/meta.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // алиас: `t` занят как переменная-танк в шаблоне/скрипте
@@ -240,6 +244,24 @@ function pickInHangar() {
   selectTank(sel.value)
   emit('go', 'hangar')
 }
+// КАМУФЛЯЖ выбранной машины прямо в Ангаре (по просьбе): тап по открытому камо —
+// сразу надеть; по закрытому — превью + кнопка покупки за жетоны (как в ангаре).
+const camoPreview = ref(null)
+function pickCamoTree(id) {
+  const tid = selected.value && selected.value.id
+  if (!tid) return
+  if (!id || camoUnlocked(tid, id)) { camoPreview.value = null; setCamo(tid, id || '') }
+  else camoPreview.value = id
+}
+async function buyCamoTree() {
+  const tid = selected.value && selected.value.id
+  const id = camoPreview.value
+  if (!tid || !id) return
+  if (await buyCamo(tid, id)) { setCamo(tid, id); camoPreview.value = null }
+  else shake()
+}
+// надетый (или превьюшный) камо выбранной машины — для подсветки ячейки
+const dockCamo = computed(() => (selected.value ? camoPreview.value || tankCamo(selected.value.id) : null))
 // цвет ромбика уровня модуля в строке ветки
 function diamondColor(tankId, modId) {
   const lvl = tankModLevel(tankId, modId)
@@ -454,7 +476,31 @@ watch(selected, (t) => {
           </div>
         </div>
 
-        <button class="pz-btn2" @click="pickInHangar">{{ tr('tree.pickInHangar') }}</button>
+        <!-- камуфляж выбранной машины (выбираешь прямо здесь — по просьбе) -->
+        <template v-if="!selected.premium">
+          <div class="dock-camo-h pz-pixel">{{ tr('tree.camo') }}</div>
+          <div class="camo-dots pz-noscroll">
+            <button
+              v-for="c in CAMOS"
+              :key="c.id || 'std'"
+              class="camo-cell"
+              :class="{ on: dockCamo === c.id, locked: !camoUnlocked(selected.id, c.id) }"
+              :title="c.name"
+              @click="pickCamoTree(c.id)"
+            >
+              <TankImg :tank-id="selected.id" :camo="c.id" :size="38" :rotate="180" />
+              <span v-if="!camoUnlocked(selected.id, c.id)" class="camo-price pz-pixel"><PzIcon name="token" :size="8" /> {{ c.cost }}</span>
+              <span class="camo-lbl">{{ c.short }}</span>
+            </button>
+          </div>
+          <div v-if="camoPreview" class="camo-buy">
+            <span class="camo-buy-name pz-display">{{ (CAMO_BY_ID[camoPreview] || {}).name }}</span>
+            <button class="pz-cta camo-buy-btn" @click="buyCamoTree">{{ tr('hangar.buy') }} <PzIcon name="token" :size="11" /> {{ (CAMO_BY_ID[camoPreview] || {}).cost }}</button>
+          </div>
+        </template>
+
+        <!-- ВЫБРАТЬ: ставит танк выбранным и возвращает на главную → там «В БОЙ» -->
+        <button class="pz-cta pz-cta--hazard pick-btn" @click="pickInHangar">{{ tr('tree.pickInHangar') }}</button>
         <!-- продажа танка (#26): только «позади фронтира», не прем, не боевой -->
         <button
           v-if="canSell(selected)"
@@ -624,6 +670,30 @@ watch(selected, (t) => {
   gap: 10px;
   animation: pz-slide-up 0.25s ease;
 }
+/* выбор камуфляжа прямо в Ангаре (перенесён с главной) */
+.dock-camo-h { font-size: 7px; color: var(--ink-faint); letter-spacing: 0.1em; margin-bottom: -4px; }
+.camo-dots { display: flex; align-items: center; gap: 7px; overflow-x: auto; }
+.camo-cell {
+  position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 1px; padding: 4px 6px 3px; border-radius: 9px; border: 1.5px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.32); cursor: pointer; opacity: 0.9;
+}
+.camo-cell.locked :deep(canvas) { filter: grayscale(0.7) brightness(0.6); }
+.camo-cell.on { border-color: var(--amber); background: rgba(242, 165, 12, 0.12); box-shadow: 0 0 8px rgba(242, 165, 12, 0.4); opacity: 1; }
+.camo-price {
+  position: absolute; top: 2px; right: 2px; display: flex; align-items: center; gap: 2px;
+  font-size: 7px; color: #1d1604; background: var(--amber); padding: 1px 4px 1px 2px; border-radius: 6px;
+}
+.camo-lbl { font-size: 7px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink-dim); }
+.camo-cell.on .camo-lbl { color: var(--amber); }
+.camo-buy {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 8px 6px 12px; border: 1px solid var(--amber); border-radius: 9px;
+  background: rgba(242, 165, 12, 0.08); animation: pz-slide-up 0.2s ease;
+}
+.camo-buy-name { font-size: 13px; color: var(--amber); }
+.camo-buy-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; font-size: 13px; width: auto; }
+.pick-btn { margin-top: 2px; }
 .dock-close {
   position: absolute;
   top: 8px;
