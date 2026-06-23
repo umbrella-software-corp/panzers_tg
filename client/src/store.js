@@ -7,7 +7,7 @@ import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
 // серверный конфиг (флаги админки: турниры вкл/выкл; бонус за подписку на канал)
-export const serverConfig = reactive({ tournaments: false, channel: { on: false, url: '', credits: 0, tokens: 0 }, feedback: { on: false, tokens: 0, credits: 0 }, econAuthority: false, pushBonusTokens: 25 })
+export const serverConfig = reactive({ tournaments: false, channel: { on: false, url: '', credits: 0, tokens: 0 }, feedback: { on: false, tokens: 0, credits: 0 }, econAuthority: false, pushBonusTokens: 25, buildId: '' })
 
 // серверно-авторитетная экономика включена? Тогда деньги/танки/модули ведёт СЕРВЕР:
 // покупки идут через эндпоинты, награды за бой приходят в pendingGrants, локальные
@@ -75,6 +75,7 @@ export async function loadConfig() {
     if (c.feedback) serverConfig.feedback = c.feedback
     serverConfig.econAuthority = !!c.econAuthority
     if (typeof c.pushBonusTokens === 'number') serverConfig.pushBonusTokens = c.pushBonusTokens
+    if (c.buildId) serverConfig.buildId = c.buildId // для диагностики входа (Diag.vue): сверка билдов
     maybeReloadForNewBuild(c.buildId)
   } catch {
     /* офлайн — оставляем дефолт */

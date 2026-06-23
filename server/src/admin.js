@@ -64,6 +64,7 @@ export const adminPage = () => `<!doctype html>
     <button class="tab" data-tab="grants" onclick="showTab('grants')">🎁 Выдачи и пуши</button>
     <button class="tab" data-tab="battles" onclick="showTab('battles')">⚔️ Бои<span class="badge" id="battleBadge">0</span></button>
     <button class="tab" data-tab="purchases" onclick="showTab('purchases')">💳 Покупки</button>
+    <button class="tab" data-tab="auth" onclick="showTab('auth')">🔐 Входы<span class="badge" id="authBadge">0</span></button>
   </div>
 
   <div class="tabpane active" id="tab-overview">
@@ -140,6 +141,16 @@ export const adminPage = () => `<!doctype html>
 
   <div class="tabpane" id="tab-purchases">
     <h2>Покупки за звёзды</h2><div id="payments"></div>
+  </div>
+
+  <div class="tabpane" id="tab-auth">
+    <h2>Отказы авторизации <span class="muted" style="font-size:13px">· почему игрок «не залогинен» (играет, но под гостем)</span></h2>
+    <p class="muted" style="font-size:12px; margin:2px 0 10px">
+      Кольцо последних отказов (401) в памяти сервера. <b>reason</b>: <code>guest-no-initdata</code> — клиент не нашёл initData и ушёл гостем (CDN-скрипт/хеш не доехал);
+      <code>expired</code> — подпись старше суток (вебвью из кэша, не было свежего запуска); <code>bad-signature</code> — битый/чужой initData;
+      <code>empty/no-hash/no-user</code> — обрезанный initData. <b>tg</b> — id из НЕдоверенного initData (для сопоставления с тикетом). Сброс — при рестарте сервера.
+    </p>
+    <div id="authFails"></div>
   </div>
 </div>
 <div id="drill" hidden>
@@ -319,6 +330,30 @@ async function refresh() {
   const liveBattles = (s.rooms || []).filter((r) => r.started).length
   const bb = $('battleBadge')
   if (bb) { bb.textContent = liveBattles; bb.classList.toggle('live', liveBattles > 0) }
+
+  // отказы авторизации («не залогинен») — почему клиент не прошёл, для сопоставления с тикетом
+  try {
+    const af = await api('/api/admin/auth-failures')
+    const fails = af.failures || []
+    const ab = $('authBadge')
+    if (ab) { ab.textContent = fails.length; ab.classList.toggle('live', fails.length > 0) }
+    const ageStr = (a) => a == null ? '—' : a < 90 ? a + 'с' : a < 5400 ? Math.round(a / 60) + 'м' : Math.round(a / 3600) + 'ч'
+    $('authFails').innerHTML = table(
+      ['Когда', 'reason', 'tg', 'имя', 'len', 'возраст', 'guest', 'url', 'ip', 'UA'],
+      fails.map((f) => [
+        dt(f.ts),
+        '<b style="color:var(--red)">' + esc(f.reason) + '</b>',
+        f.tgId ? esc(String(f.tgId)) : '—',
+        esc(f.name || '—'),
+        f.initDataLen,
+        esc(ageStr(f.authAgeSec)),
+        f.hasGuestId ? esc(f.guestId || 'да') : '—',
+        esc((f.url || '').replace(/^\/api\//, '')),
+        esc(f.ip || '—'),
+        '<span class="muted" style="font-size:11px">' + esc((f.ua || '').slice(0, 70)) + '</span>',
+      ])
+    )
+  } catch { /* старый сервер без эндпоинта — пропускаем */ }
 
   const t = s.traffic || { total:0, newToday:0, new7d:0, dau:0, activeToday:0, playedToday:0, reachedTotal:0, returnedReal:0, pushBlocked:0, pushReachable:0, used3D:0, bySource:[] }
   LINK_BASE = s.linkBase || ''

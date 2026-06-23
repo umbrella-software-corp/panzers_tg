@@ -13,6 +13,7 @@ import DailyReward from './components/DailyReward.vue'
 import ChannelSheet from './components/ChannelSheet.vue'
 import Onboarding from './components/Onboarding.vue'
 import SecondTankChoice from './components/SecondTankChoice.vue'
+import Diag from './components/Diag.vue'
 import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus, serverSynced, authRejected } from './store.js'
 import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
@@ -480,6 +481,9 @@ function rematch(reward) {
   <Rating v-else-if="screen === 'rating'" @go="go" />
   <Matchmaking v-else-if="screen === 'matchmaking'" :map-id="draw.mapId" :side="draw.side" :training="training" @battle="deploy" @cancel="cancelMatchmaking" />
   <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :training="!!netMatch && !!netMatch.training" @exit="exitBattle" @rematch="rematch" @ended="onBattleEnded" />
+
+  <!-- скрытая диагностика входа (5 тапов в левом-верхнем углу) — кейс «не залогинен» -->
+  <Diag />
 
   <DailyReward v-if="daily && screen !== 'battle'" @close="daily = false" @claimed="onDailyClaimed" />
 

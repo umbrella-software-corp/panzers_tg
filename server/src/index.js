@@ -4,7 +4,7 @@
 import http from 'http'
 import { WebSocketServer } from 'ws'
 import { BattleSim, MAP_SIZE, randomMap, softFactor, vetFactor } from 'panzer-tg-shared'
-import { authRequest, hasBot } from './auth.js'
+import { authRequest, hasBot, recordAuthFailure, recentAuthFailures } from './auth.js'
 import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, withProfileLock, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
@@ -246,6 +246,10 @@ async function handleAdmin(req, res) {
   }
   if (req.url === '/api/admin/digest-status' && req.method === 'GET') {
     return json(res, 200, getDigestProgress()) // прогресс рассылки для живого индикатора в админке
+  }
+  if (req.url === '/api/admin/auth-failures' && req.method === 'GET') {
+    // последние отказы авторизации (почему клиент не залогинился) — кольцевой буфер в памяти
+    return json(res, 200, { failures: recentAuthFailures() })
   }
   if (req.url === '/api/admin/stats' && req.method === 'GET') {
     const payments = await listPayments()
@@ -495,7 +499,10 @@ async function handleApi(req, res) {
   }
   if (req.url.startsWith('/api/admin/')) return handleAdmin(req, res)
   const user = authRequest(req)
-  if (!user) return json(res, 401, { error: 'unauthorized' })
+  if (!user) {
+    recordAuthFailure(req) // диагностика «играю, но не залогинен» (@Z_86_V) — см. /api/admin/auth-failures
+    return json(res, 401, { error: 'unauthorized' })
+  }
 
   if (req.url === '/api/profile' && req.method === 'GET') {
     await recordVisit(user) // метрики: источник/firstSeen/lastSeen (DAU)
