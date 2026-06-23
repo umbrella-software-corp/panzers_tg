@@ -14,6 +14,7 @@ const emit = defineEmits(['play', 'skip'])
 // логика шага (подсветка) — здесь; тексты (title/body/cta) — в onboarding.steps[i]
 const STEPS = [
   { sel: '[data-tut="tank"]', pad: 14 },
+  { sel: '[data-tut="garage"]', pad: 8 }, // «⇄ Ангар» — там смена танка/камуфляжа (карусель убрана)
   { sel: '[data-tut="mode"]', pad: 8 },
   { sel: '[data-tut="play"]', pad: 8 },
 ]
