@@ -84,15 +84,22 @@ onMounted(async () => {
 const board = computed(() => {
   // живой топ с сервера — строки кликабельны (place → карточка игрока)
   if (liveTop.value) {
-    const rows = liveTop.value.map((p) => ({
-      place: p.place,
-      name: p.name,
-      rating: p.rating,
-      winrate: p.battles ? Math.round((p.wins / p.battles) * 100) : 0,
-      you: p.name === profile.name,
-      premium: p.name === profile.name ? isPremium() : !!p.premium, // ★ прем-игрок
-      live: true,
-    }))
+    const rows = liveTop.value.map((p) => {
+      const you = p.name === profile.name
+      return {
+        place: p.place,
+        name: p.name,
+        // своя строка показывает ЛОКАЛЬНЫЙ wn8 — ровно то число, что в донесении боя и в
+        // карточке «мой рейтинг». Серверная копия отстаёт на дебаунс-сейв (1.5с) и при
+        // открытом экране кэшируется → иначе «в бою одно, в таблице другое». Порядок и
+        // место (i+1) и клик (p.place) — серверные, их не трогаем.
+        rating: you ? (profile.stats.wn8 ?? p.rating) : p.rating,
+        winrate: p.battles ? Math.round((p.wins / p.battles) * 100) : 0,
+        you,
+        premium: you ? isPremium() : !!p.premium, // ★ прем-игрок
+        live: true,
+      }
+    })
     if (!rows.some((r) => r.you)) {
       // я вне топа. <5 боёв → не ранжируюсь (показываем «ещё N боёв» вместо рейтинга)
       const need = Math.max(0, RATING_MIN_BATTLES - (profile.stats.battles || 0))
