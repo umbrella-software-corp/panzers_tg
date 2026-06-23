@@ -11,6 +11,8 @@ let hangarInteractiveTracked = false
 let refEntryDetectedTracked = false
 let refEntryShownTracked = false
 let latestScreen = null
+let firstInteractiveContext = null
+let refEntryShownContext = null
 let interactiveObserver = null
 let interactivePoll = null
 let interactiveWaiters = []
@@ -186,18 +188,44 @@ function trackRaw(eventType, props = {}) {
   amplitude.track(eventType, commonProps(props))
 }
 
+function setFirstInteractiveContext(screenHint, props = {}) {
+  const prev = firstInteractiveContext || {}
+  const screen = latestScreen || screenHint || props.screen || prev.screen || null
+  firstInteractiveContext = {
+    screen,
+    prev_screen: props.prev_screen ?? prev.prev_screen ?? null,
+    battles_count: props.battles_count ?? prev.battles_count ?? null,
+    // Первым в очередь часто попадает технический hangar_viewed под boot splash, а уже
+    // потом авто-тренировка переводит новичка в matchmaking. Не даём раннему waiter'у
+    // затереть факт training_auto=false.
+    training_auto: !!props.training_auto || !!prev.training_auto,
+    source_event: props.source_event || prev.source_event || null,
+  }
+}
+
+function setRefEntryShownContext(screenHint, props = {}) {
+  if (currentStartParamKind() !== 'ref') return
+  const prev = refEntryShownContext || {}
+  refEntryShownContext = {
+    screen: latestScreen || screenHint || props.screen || prev.screen || null,
+    battles_count: props.battles_count ?? prev.battles_count ?? null,
+    training_auto: !!props.training_auto || !!prev.training_auto,
+  }
+}
+
 function trackFirstInteractive(screenHint, props = {}) {
+  setFirstInteractiveContext(screenHint, props)
   if (firstInteractiveTracked) return
   afterInteractive(() => {
     if (firstInteractiveTracked) return
     firstInteractiveTracked = true
-    const screen = latestScreen || screenHint || props.screen || null
+    const ctx = firstInteractiveContext || {}
     trackRaw('first_interactive_screen_shown', {
-      screen,
-      prev_screen: props.prev_screen || null,
-      battles_count: props.battles_count ?? null,
-      training_auto: !!props.training_auto,
-      source_event: props.source_event || null,
+      screen: latestScreen || ctx.screen || screenHint || props.screen || null,
+      prev_screen: ctx.prev_screen || null,
+      battles_count: ctx.battles_count ?? null,
+      training_auto: !!ctx.training_auto,
+      source_event: ctx.source_event || null,
     })
   })
 }
@@ -221,14 +249,17 @@ function trackHangarInteractive(props = {}) {
 }
 
 function trackRefEntryShown(screenHint, props = {}) {
-  if (refEntryShownTracked || currentStartParamKind() !== 'ref') return
+  if (currentStartParamKind() !== 'ref') return
+  setRefEntryShownContext(screenHint, props)
+  if (refEntryShownTracked) return
   afterInteractive(() => {
     if (refEntryShownTracked) return
     refEntryShownTracked = true
+    const ctx = refEntryShownContext || {}
     trackRaw('ref_entry_shown', {
-      screen: latestScreen || screenHint || props.screen || null,
-      battles_count: props.battles_count ?? null,
-      training_auto: !!props.training_auto,
+      screen: latestScreen || ctx.screen || screenHint || props.screen || null,
+      battles_count: ctx.battles_count ?? null,
+      training_auto: !!ctx.training_auto,
     })
   })
 }
