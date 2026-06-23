@@ -511,7 +511,7 @@ export class BattleSim {
         let move = 0
         if (!brave && b.hp < retreatHp && !rush) move = -1 // ранен — отходим (в концовке НЕ отходим — добиваем)
         else if (blindToHuman && bestD > ai.idealRange * 0.5) move = 1 // не засвечен у человека → поджимаем (засветиться и стрелять), а не камп на дистанции
-        else if (rush && bestD > ai.idealRange * 0.5) move = 1 // концовка: прём в упор добивать, без отсидки на дистанции
+        else if (rush && bestD > ai.idealRange * 0.85) move = 1 // концовка: сближаемся до БОЕВОЙ дистанции и добиваем (не в упор — иначе толкотня/«колбасит как коров»)
         else if (inCover) move = 0 // в кусте — пережидаем перезарядку (выйдем стрелять, когда ствол готов)
         else if (cover) move = 1 // едем в укрытие
         else if (bestD > ai.idealRange * 1.1) move = 1 // далеко — сближаемся (с флангом)
