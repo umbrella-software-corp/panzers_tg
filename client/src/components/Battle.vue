@@ -1381,25 +1381,26 @@ onBeforeUnmount(() => {
 }
 .cap {
   position: relative;
-  width: 22px;
-  height: 22px;
+  width: 23px;
+  height: 23px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   font-family: var(--font-display);
-  font-size: 11px;
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.55);
-  border: 1.5px solid var(--ink-faint);
+  font-size: 12px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9); /* буква А/В/С читается на любом фоне (фидбек Katrin) */
+  background: rgba(8, 11, 17, 0.72); /* плотнее — контраст на белом снегу */
+  border: 2px solid rgba(232, 194, 74, 0.9); /* нейтрал — янтарный, ярче (в цвет точки на карте) */
 }
 .cap.ally {
   border-color: var(--team);
-  background: color-mix(in oklab, var(--team) 25%, rgba(0, 0, 0, 0.55));
+  background: color-mix(in oklab, var(--team) 42%, rgba(8, 11, 17, 0.72));
 }
 .cap.enemy {
   border-color: var(--foe);
-  background: color-mix(in oklab, var(--foe) 25%, rgba(0, 0, 0, 0.55));
+  background: color-mix(in oklab, var(--foe) 42%, rgba(8, 11, 17, 0.72));
 }
 .cap.capping {
   animation: pz-blink 0.7s linear infinite;
