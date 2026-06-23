@@ -490,7 +490,9 @@ export class NetGame3D extends NetGame {
       const key = o.prop ? o.prop : (o.kind === 'rock' || o.kind === 'block') ? 'boulder' : o.kind === 'box' ? 'crate' : null
       const sc = key && scenes[key]
       if (!sc) continue
-      const fitR = o.prop ? 2.2 : key === 'crate' ? 1.8 : 2.1
+      // масштаб пропа относительно танка (TANK_LEN=78): ящик меньше танка, валун чуть
+      // крупнее (фидбек «коробка больше танка» — было 1.8/2.1, пропы выглядели гигантами).
+      const fitR = o.prop ? 1.7 : key === 'crate' ? 1.25 : 1.5
       const wrap = this._normalizeProp(sc, { fit: o.r * fitR })
       // ВАЛУН тинтуем под землю карты (текстура светлая) — снег→белый, песок→песочный,
       // лес→серо-зелёный. Лёгкий тинт, чтобы камень не выбивался из палитры.
@@ -530,7 +532,7 @@ export class NetGame3D extends NetGame {
     for (const d of this._decorProps()) {
       const sc = scenes[d.prop]
       if (!sc) continue
-      const wrap = this._normalizeProp(sc, { fit: d.r * 2.2 })
+      const wrap = this._normalizeProp(sc, { fit: d.r * 1.8 })
       wrap.position.set(d.x, 0, d.y)
       wrap.rotation.y = (hashId(`${d.x}:${d.y}`) % 360) * Math.PI / 180
       this.scene.add(wrap)
@@ -589,7 +591,7 @@ export class NetGame3D extends NetGame {
         const rr = half * (0.84 + rand() * 0.12)
         const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr
         if (bad(x, y, 220)) continue
-        out.push({ x, y, prop: 'mtn', h: 300 + rand() * 200, rot: rand() * Math.PI * 2 })
+        out.push({ x, y, prop: 'mtn', h: 230 + rand() * 150, rot: rand() * Math.PI * 2 })
       }
     }
     return out
