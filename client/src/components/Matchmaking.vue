@@ -6,7 +6,6 @@ import { profile, loadoutStats, party } from '../store.js'
 import { TANK_BY_ID, MAX_TIER, SKIN_BY_ID, rankByBattles } from '../game/meta.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { connectMatch } from '../game/net.js'
-import { apiOnline } from '../api.js'
 import { tgUserId } from '../tg.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -33,15 +32,7 @@ const foeTeam = ref([]) // живые враги на стороне проти�
 const phase = ref('search') // search → fill → go
 const online = ref(null) // null — пробуем, true/false — режим определён
 const botsEtaOnline = ref(6)
-// глобальный счётчик «N в сети» (/api/online) — соц-пруф во время поиска: видно, что
-// есть с кем играть. Опрос раз в 30с (как на главной).
-const onlineCount = ref(null)
-let onlineTimer = null
-async function refreshOnline() {
-  try {
-    onlineCount.value = (await apiOnline()).online
-  } catch {}
-}
+// (счётчик «N в сети» убран по просьбе)
 
 const map = computed(() => MAP_BY_ID[props.mapId] || MAPS[0])
 const tankName = computed(() => (TANK_BY_ID[profile.selectedTank] || {}).name || '')
@@ -243,13 +234,10 @@ onMounted(() => {
     tank_tier: (TANK_BY_ID[profile.selectedTank] || {}).tier || null,
   })
   tick = setInterval(() => secs.value++, 1000)
-  refreshOnline()
-  onlineTimer = setInterval(refreshOnline, 30000)
   search()
 })
 onUnmounted(() => {
   clearInterval(tick)
-  clearInterval(onlineTimer)
   timers.forEach(clearTimeout)
   // бой не начался — соединение никому не нужно
   if (!gone && client) client.close()
@@ -277,11 +265,6 @@ const blipColor = (a) => (a.kind === 'bot' ? 'var(--ink-faint)' : a.kind === 'pa
     <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 0">
       <div class="pz-display" style="font-size: 17px">{{ failed ? t('matchmaking.titleNoConnection') : phase === 'go' ? t('matchmaking.titleFound') : t('matchmaking.titleSearching') }}</div>
       <div style="display: flex; align-items: center; gap: 6px">
-        <!-- живой «N в сети» — соц-пруф пока ищем соперников -->
-        <span v-if="onlineCount" class="pz-chip" :title="t('common.online')" style="padding: 2px 8px; gap: 5px; color: var(--ink-dim)">
-          <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 5px var(--green); display: inline-block"></span>
-          <span class="pz-pixel" style="font-size: 8px">{{ t('common.onlineNow', { n: onlineCount }) }}</span>
-        </span>
         <span class="pz-chip" style="color: var(--ink-dim)">
           <span class="pz-pixel" style="font-size: 9px" :style="{ color: phase === 'go' ? 'var(--green)' : 'var(--amber)' }">{{ mmss }}</span>
         </span>

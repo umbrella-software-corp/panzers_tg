@@ -173,11 +173,13 @@ export class BattleSim {
       : TANK_CLASSES[botClsId]
     const stats = classToRadians(cls)
     // боту — реальная машина его класса (вместо классовой болванки в цвете команды).
-    // ТИР боя задан (anchorTier) → бот «весит» в пределах ±1 тира игрока: спрайт
-    // БЛИЖАЙШЕГО доступного тира + HP/урон по тиру (botTierHpMult/DmgMult). Без
-    // anchorTier — старое плоское классовое поведение. Тир варьируем по слоту (−1/0/+1).
+    // ТИР боя задан (anchorTier) → бот «весит» по тиру игрока, но НИКОГДА ВЫШЕ: спрайт
+    // БЛИЖАЙШЕГО тира + HP/урон по тиру (botTierHpMult/DmgMult). Тир варьируем по слоту
+    // ТОЛЬКО ВНИЗ (−1/0), без +1 — иначе враги «сильно жирнее» (фидбек): тир+1 = +11% HP
+    // ПЛЮС классовый базовый HP часто выше конкретного танка игрока. Без anchorTier —
+    // старое плоское классовое поведение.
     const botPool = BOT_TANK_IDS[botClsId] || BOT_TANK_IDS.medium
-    const botTier = !human && this.anchorTier ? Math.max(1, Math.min(10, this.anchorTier + ((slot % 3) - 1))) : null
+    const botTier = !human && this.anchorTier ? Math.max(1, Math.min(10, this.anchorTier + Math.min(0, (slot % 3) - 1))) : null
     let botTankId
     if (botTier) {
       // ближайший по тиру спрайт класса (пул неполон по тирам → точного ±1 может не быть);
