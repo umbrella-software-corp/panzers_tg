@@ -412,7 +412,25 @@ export class NetGame3D extends NetGame {
       if (o.prop) { this._obstSwap.push({ o, prim: null }); continue }
       // ВНИМАНИЕ: в картах камень — kind:'block' (не 'rock'); раньше он не рисовался в 3D
       if (o.kind === 'rock' || o.kind === 'block') { m = new THREE.Mesh(new THREE.IcosahedronGeometry(o.r, 0), rockMat); m.scale.y = 0.7; m.position.set(o.x, o.r * 0.4, o.y); this._obstSwap.push({ o, prim: m }) }
-      else if (o.kind === 'bush') { m = new THREE.Mesh(new THREE.SphereGeometry(o.r, 10, 8), bushMat.clone()); m.material.transparent = true; m.scale.y = 0.7; m.position.set(o.x, o.r * 0.5, o.y); this.bushMeshes.push({ prim: m, fadeMats: [m.material], x: o.x, y: o.y, r: o.r }); this._obstSwap.push({ o, prim: m }) }
+      else if (o.kind === 'bush') {
+        // куст = кустистый КЛАСТЕР из 3-5 тёмно-зелёных приплюснутых блобов (один гладкий
+        // шар выглядел как зелёная сфера-«НЛО»). Детерминированно по позиции (hashId).
+        const g = new THREE.Group(); const fadeMats = []
+        const n = 3 + (hashId(`${o.x}:${o.y}`) % 3)
+        for (let k = 0; k < n; k++) {
+          const s = hashId(`${o.x}:${o.y}:${k}`)
+          const rr = o.r * (0.4 + ((s % 100) / 100) * 0.3)
+          const ang = (s % 360) * Math.PI / 180
+          const dist = o.r * 0.55 * (((s >> 5) % 100) / 100)
+          const mat = bushMat.clone(); mat.color.setHex(mixHex(0x2c5e36, 0x18361f, (s % 100) / 100)); mat.transparent = true
+          const sm = new THREE.Mesh(new THREE.SphereGeometry(rr, 8, 6), mat)
+          sm.scale.y = 0.6; sm.position.set(Math.cos(ang) * dist, rr * 0.55, Math.sin(ang) * dist)
+          sm.castShadow = true; sm.receiveShadow = true
+          g.add(sm); fadeMats.push(mat)
+        }
+        g.position.set(o.x, 0, o.y); m = g
+        this.bushMeshes.push({ prim: g, fadeMats, x: o.x, y: o.y, r: o.r }); this._obstSwap.push({ o, prim: g })
+      }
       else if (o.kind === 'box') { m = new THREE.Mesh(new THREE.BoxGeometry(o.r * 1.6, o.r * 1.4, o.r * 1.6), boxMat); m.position.set(o.x, o.r * 0.7, o.y); this._obstSwap.push({ o, prim: m }) }
       else if (o.kind === 'hill') { m = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 1.05, o.r * 0.35, 24), hillMat); m.position.set(o.x, o.r * 0.17, o.y) }
       else if (o.kind === 'water') { m = new THREE.Mesh(new THREE.CircleGeometry(o.r, 36), waterMat.clone()); m.rotation.x = -Math.PI / 2; m.position.set(o.x, 1.2, o.y); m._ph = (hashId(`${o.x}:${o.y}`) % 100) / 16; this.waterMeshes.push(m) }
@@ -567,13 +585,8 @@ export class NetGame3D extends NetGame {
     const NATURE = ['polygon', 'forest', 'lakes', 'meadow', 'crossing']
     const ROCKY = ['heights', 'desert']
     if (NATURE.includes(id)) {
-      // деревья у кустов (куст = реальное укрытие → лес «густеет» честно)
-      for (const o of this.obstacles) {
-        if (o.kind !== 'bush') continue
-        const a = rand() * Math.PI * 2, d = o.r * (0.85 + rand() * 0.45)
-        out.push({ x: o.x + Math.cos(a) * d, y: o.y + Math.sin(a) * d, prop: 'tree', h: 150 + rand() * 80, rot: rand() * Math.PI * 2 })
-      }
-      // опушка: кольцо деревьев по краю карты (явный задник, не центр)
+      // ДЕРЕВЬЯ ТОЛЬКО ПО ОПУШКЕ (край карты). Раньше сажали деревья НА кусты — дерево
+      // торчало из зелёной сферы-куста и клипалось («это чего такое»). Убрано.
       const ring = 12
       for (let i = 0; i < ring; i++) {
         const a = (i / ring) * Math.PI * 2 + rand() * 0.35
