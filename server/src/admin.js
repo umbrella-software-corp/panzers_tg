@@ -348,7 +348,7 @@ async function refresh() {
         f.initDataLen,
         esc(ageStr(f.authAgeSec)),
         f.hasGuestId ? esc(f.guestId || 'да') : '—',
-        esc((f.url || '').replace(/^\/api\//, '')),
+        esc((f.url || '').split('/api/').join('')),
         esc(f.ip || '—'),
         '<span class="muted" style="font-size:11px">' + esc((f.ua || '').slice(0, 70)) + '</span>',
       ])
