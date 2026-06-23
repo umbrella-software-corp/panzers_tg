@@ -625,13 +625,16 @@ export class NetGame3D extends NetGame {
   // точка захвата — диск-основа + диск-прогресс + жирное кольцо + полупрозрачный столб
   _mkCap(p) {
     const g = new THREE.Group(); g.position.set(p.x, 0, p.y)
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(p.r, 48), new THREE.MeshBasicMaterial({ color: 0x9aa6b2, transparent: true, opacity: 0.1, depthWrite: false }))
+    // ТЁМНАЯ подложка-диск — контраст маркера на ЛЮБОМ фоне (особенно на БЕЛОМ снегу,
+    // где светлые кольца сливались, фидбек Katrin). Цветом владельца НЕ красим: это
+    // нейтральная тёмная плита, на ней читаются цветные кольцо/прогресс/столб.
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(p.r, 48), new THREE.MeshBasicMaterial({ color: 0x0b0e14, transparent: true, opacity: 0.26, depthWrite: false }))
     disc.rotation.x = -Math.PI / 2; disc.position.y = 1.5
-    const fill = new THREE.Mesh(new THREE.CircleGeometry(p.r, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false }))
+    const fill = new THREE.Mesh(new THREE.CircleGeometry(p.r, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.42, depthWrite: false }))
     fill.rotation.x = -Math.PI / 2; fill.position.y = 2; fill.scale.setScalar(0.001)
-    const ring = this._mkGroundRing(p.r - 5, p.r, 0x9aa6b2, 0.7); ring.position.y = 3
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 110, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0x9aa6b2, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }))
-    beam.position.y = 55
+    const ring = this._mkGroundRing(p.r - 9, p.r, 0x9aa6b2, 0.95); ring.position.y = 3 // толще+ярче кольцо
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 130, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0x9aa6b2, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide }))
+    beam.position.y = 65 // выше+ярче столб — маркер виден сверху на любом грунте
     g.add(disc, fill, ring, beam); this.scene.add(g)
     return { g, disc, fill, ring, beam, r: p.r }
   }
@@ -794,8 +797,8 @@ export class NetGame3D extends NetGame {
     const caps = this.cur ? this.cur.caps : []
     for (const cap of caps || []) {
       const c = this.capRings[cap.id]; if (!c) continue
-      const owner = cap.owner === this.side ? this.colors.ally.hp : cap.owner != null ? this.colors.enemy.hp : 0x9aa6b2
-      c.ring.material.color.setHex(owner); c.disc.material.color.setHex(owner); c.beam.material.color.setHex(owner)
+      const owner = cap.owner === this.side ? this.colors.ally.hp : cap.owner != null ? this.colors.enemy.hp : 0xe8c24a // нейтрал — янтарный (виден на белом снегу и на тёмных картах)
+      c.ring.material.color.setHex(owner); c.beam.material.color.setHex(owner) // диск НЕ красим — он тёмная плита-подложка
       const capper = cap.capper === this.side ? this.colors.ally.hp : cap.capper != null ? this.colors.enemy.hp : owner
       const p = Math.max(0, Math.min(1, cap.p || 0))
       c.fill.material.color.setHex(capper)
