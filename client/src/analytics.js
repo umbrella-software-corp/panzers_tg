@@ -2,7 +2,7 @@
 // не autocapture. НЕ шлём: initData, raw username/first_name, invoice/charge id,
 // полный URL и raw start_param, и НИКАКИХ per-tick/per-frame событий.
 import * as amplitude from '@amplitude/analytics-browser'
-import { startParam, tgUserId } from './tg.js'
+import { startParam, tgUserId, tgInitData } from './tg.js'
 
 let ready = false
 let pendingUserId = null
@@ -12,6 +12,7 @@ let refEntryDetectedTracked = false
 let refEntryShownTracked = false
 let latestScreen = null
 let interactiveObserver = null
+let interactivePoll = null
 let interactiveWaiters = []
 
 function tg() {
@@ -24,6 +25,31 @@ function buildId() {
   } catch {
     return null
   }
+}
+
+function startParamFromInitData() {
+  try {
+    const raw = tgInitData()
+    return raw ? new URLSearchParams(raw).get('start_param') || null : null
+  } catch {
+    return null
+  }
+}
+
+function startParamFromLaunchHash() {
+  try {
+    const hash = String(window.__PZ_TG_HASH || window.location.hash || '').replace(/^#/, '')
+    return new URLSearchParams(hash).get('tgWebAppStartParam') || null
+  } catch {
+    return null
+  }
+}
+
+// startParam() исторически читает SDK initDataUnsafe и dev-query. Для аналитики входа
+// важно покрыть и SDK-empty Telegram-клиенты: там start_param лежит в сохранённом
+// tgWebAppData hash, который уже умеет читать tgInitData().
+function effectiveStartParam() {
+  return startParam() || startParamFromInitData() || startParamFromLaunchHash()
 }
 
 // источник трафика из start_param: только безобидный тег (ref/sq — отдельная ветка),
@@ -47,12 +73,13 @@ function startParamKind(sp) {
 }
 
 function currentStartParamKind() {
-  return startParamKind(startParam())
+  return startParamKind(effectiveStartParam())
 }
 
 function commonProps(extra = {}) {
   const webapp = tg()
-  const sp = startParam()
+  const sp = effectiveStartParam()
+  const kind = startParamKind(sp)
   return {
     app: 'panzers_tg',
     env: import.meta.env.MODE || 'production',
@@ -60,11 +87,11 @@ function commonProps(extra = {}) {
     platform: webapp ? 'telegram' : 'browser',
     tg_platform: webapp?.platform || 'unknown',
     user_type: tgUserId() ? 'telegram' : 'guest',
-    start_param_kind: startParamKind(sp),
+    start_param_kind: kind,
     source_tag: cleanSourceTag(sp),
     // инцентивированный реф-заход (реферер вознаграждается за приведённого → риск
     // «фермы»): тег на КАЖДОМ событии сессии входа, чтобы вычитать ферму из воронки
-    incentivized: startParamKind(sp) === 'ref',
+    incentivized: kind === 'ref',
     ...extra,
   }
 }
@@ -84,10 +111,25 @@ function appInteractiveNow() {
   return !blockingOverlayPresent()
 }
 
+function stopInteractivePoll() {
+  if (!interactivePoll) return
+  clearInterval(interactivePoll)
+  interactivePoll = null
+}
+
 function flushInteractiveWaiters() {
   if (!appInteractiveNow()) return
   const waiters = interactiveWaiters.splice(0)
   for (const run of waiters) run()
+  if (!interactiveWaiters.length) stopInteractivePoll()
+}
+
+function startInteractivePoll() {
+  if (interactivePoll || typeof window === 'undefined') return
+  interactivePoll = window.setInterval(() => {
+    if (!interactiveWaiters.length) return stopInteractivePoll()
+    flushInteractiveWaiters()
+  }, 1000)
 }
 
 function ensureInteractiveWatch() {
@@ -98,8 +140,14 @@ function ensureInteractiveWatch() {
     document.addEventListener('visibilitychange', flushInteractiveWaiters)
     window.addEventListener('pageshow', flushInteractiveWaiters)
   } catch {
-    /* MutationObserver может быть недоступен в старом webview — останется timeout ниже */
+    /* MutationObserver может быть недоступен в старом webview — поможет poll ниже */
   }
+}
+
+function enqueueInteractiveWaiter(run) {
+  interactiveWaiters.push(run)
+  ensureInteractiveWatch()
+  startInteractivePoll()
 }
 
 // Некоторые события компонентов монтируются под boot/auth оверлеями. Для воронок первой
@@ -109,19 +157,18 @@ function afterInteractive(fn) {
   if (typeof document === 'undefined') return fn()
   let done = false
   const run = () => {
-    if (done) return
+    if (done || !appInteractiveNow()) return
     done = true
     fn()
   }
-  if (appInteractiveNow()) return setTimeout(run, 0)
-  interactiveWaiters.push(run)
-  ensureInteractiveWatch()
-  // Не теряем событие навсегда, если старый клиент не дал MutationObserver/visibility.
-  setTimeout(() => {
-    const i = interactiveWaiters.indexOf(run)
-    if (i >= 0) interactiveWaiters.splice(i, 1)
-    run()
-  }, 15000)
+  if (appInteractiveNow()) {
+    setTimeout(() => {
+      if (appInteractiveNow()) run()
+      else enqueueInteractiveWaiter(run)
+    }, 0)
+    return
+  }
+  enqueueInteractiveWaiter(run)
 }
 
 function enrichProps(eventType, props = {}) {
@@ -158,7 +205,9 @@ function trackFirstInteractive(screenHint, props = {}) {
 function trackHangarInteractive(props = {}) {
   if (hangarInteractiveTracked) return
   afterInteractive(() => {
-    if (hangarInteractiveTracked) return
+    // Hangar может смонтироваться под boot splash, а потом авто-тренировка переключит экран
+    // до снятия оверлея. Не считаем такой технический mount реальным просмотром ангара.
+    if (hangarInteractiveTracked || latestScreen !== 'hangar') return
     hangarInteractiveTracked = true
     trackRaw('hangar_interactive_viewed', {
       selected_tank: props.selected_tank || null,
@@ -288,7 +337,7 @@ export function identifyUser(props = {}) {
 // (на возвратах его уже нет). ref = инцентивированный (реферер вознаграждается).
 export function identifyAcquisition() {
   if (!ready) return
-  const sp = startParam()
+  const sp = effectiveStartParam()
   const kind = startParamKind(sp)
   const id = new amplitude.Identify()
   id.setOnce('acq_kind', kind) // none | ref | squad | source
