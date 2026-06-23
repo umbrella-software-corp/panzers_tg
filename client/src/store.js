@@ -115,6 +115,7 @@ import {
   CAMO_BY_ID,
   expectedBattle,
   battleScore,
+  battleRatingDelta,
 } from './game/meta.js'
 
 // ключ кеша — ПЕР-АККАУНТ (по tg-id): иначе на одном устройстве два Telegram-аккаунта
@@ -924,13 +925,16 @@ export function addBattleResult(result, kills = 0, extra = {}) {
   const ratedTank = TANK_BY_ID[profile.selectedTank] || TANK_BY_ID.t26
   const exp = expectedBattle(ratedTank)
   const prevWn8 = s.wn8 || 0
+  // агрегаты копим для статы (рейтинг их больше не считает — оставлены под историю)
   s.sumDmg = (s.sumDmg || 0) + (extra.damage || 0)
   s.sumFrag = (s.sumFrag || 0) + kills
   s.sumSpot = (s.sumSpot || 0) + (extra.spot || 0)
   s.expDmg = (s.expDmg || 0) + exp.dmg
   s.expFrag = (s.expFrag || 0) + exp.frag
   s.expSpot = (s.expSpot || 0) + exp.spot
-  s.wn8 = battleScore(s)
+  // ПРОГРЕССИЯ: дельта очков за этот бой → прибавляем к рейтингу таблицы лидеров.
+  const dWn8 = battleRatingDelta({ damage: extra.damage || 0, frag: kills, result }, ratedTank)
+  s.wn8 = Math.max(0, prevWn8 + dWn8)
   s.lastWn8Delta = s.wn8 - prevWn8 // для показа изменения в донесении
   // повышение в звании: награда за каждую новую ступень (обычно одну за бой)
   const reached = rankByBattles(s.battles).index
