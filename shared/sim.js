@@ -454,6 +454,12 @@ export class BattleSim {
       }
     }
 
+    // КОНЦОВКА БОЯ (annihilation): в последние ~45с боты перестают камперить (не ныряют
+    // в кусты, не отходят ранеными) и ПРУТ добивать — иначе недобитые «трусы прячутся и
+    // ждут, когда выйдет время» (#29 @Z_86_V), а победа решается по таймеру, а не в бою.
+    // Это ДВИЖЕНИЕ, не стрельба: инвариант честности (бот бьёт человека только из его
+    // засвета + после грейса) ниже НЕ трогаем — давим, чтобы засветиться и честно драться.
+    const rush = this.mode === 'annihilation' && this.matchTime < 45
     if (b.reverseT > 0) {
       // АНТИ-ЗАСТРЕВАНИЕ: пока reverseT — пятимся ЗАДНИМ ХОДОМ + доворот вбок (avoidDir),
       // чтобы вылезти из угла/у стены (#28 «боты стоят и крутятся на месте»). Одного
@@ -488,7 +494,7 @@ export class BattleSim {
         const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
         const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
         // укрытие ищем, только пока ствол не готов и мы НЕ в отступлении (раненый просто уходит)
-        const cover = b.fireCd > 0 && b.hp >= retreatHp ? this._nearestBush(b.x, b.y, 220) : null
+        const cover = b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 220) : null
         const inCover = cover && Math.hypot(b.x - cover.x, b.y - cover.y) <= cover.r
         // видим ЧЕЛОВЕКА, грейс прошёл, но стрелять нельзя — он нас ещё не засветил
         // (инвариант честности). Не висим пассивно на дистанции → ПОДЖИМАЕМ, чтобы
@@ -503,8 +509,9 @@ export class BattleSim {
         const maxTurn = b.botTurn * dt
         b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
         let move = 0
-        if (!brave && b.hp < retreatHp) move = -1 // ранен — отходим
+        if (!brave && b.hp < retreatHp && !rush) move = -1 // ранен — отходим (в концовке НЕ отходим — добиваем)
         else if (blindToHuman && bestD > ai.idealRange * 0.5) move = 1 // не засвечен у человека → поджимаем (засветиться и стрелять), а не камп на дистанции
+        else if (rush && bestD > ai.idealRange * 0.5) move = 1 // концовка: прём в упор добивать, без отсидки на дистанции
         else if (inCover) move = 0 // в кусте — пережидаем перезарядку (выйдем стрелять, когда ствол готов)
         else if (cover) move = 1 // едем в укрытие
         else if (bestD > ai.idealRange * 1.1) move = 1 // далеко — сближаемся (с флангом)
@@ -611,8 +618,8 @@ export class BattleSim {
       if (b.avoidT > 0) a += b.avoidDir * 1.5
       const diff = angleDiff(a, b.hull)
       b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, diff))
-      b.x += Math.cos(b.hull) * b.botSpeed * 0.6 * dt
-      b.y += Math.sin(b.hull) * b.botSpeed * 0.6 * dt
+      b.x += Math.cos(b.hull) * b.botSpeed * (rush ? 0.95 : 0.6) * dt // концовка: быстрее ищем добить
+      b.y += Math.sin(b.hull) * b.botSpeed * (rush ? 0.95 : 0.6) * dt
     }
 
     // РАССРЕДОТОЧЕНИЕ (анти-толпа): мягко расталкиваем СЛИШКОМ близких союзников —
