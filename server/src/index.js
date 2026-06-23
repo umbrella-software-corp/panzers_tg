@@ -46,6 +46,56 @@ const PORT = +(process.env.PORT || 8080)
 process.on('uncaughtException', (e) => console.error('[srv] uncaughtException:', e))
 process.on('unhandledRejection', (e) => console.error('[srv] unhandledRejection:', e))
 
+// ---------- замер нагрузки сервера (админка ловит лаг боёв числом, а не на глаз) ----------
+// event-loop lag: насколько setInterval опаздывает против ожидаемого = насколько заблокирован
+// поток (CPU/синхронный I/O). Десятки-сотни мс = WS-понги и тики комнат стоят в очереди =
+// реальный лаг во ВСЕХ боях. Главный индикатор перегруза (важнее «среднего тика»).
+const EL_LAG = []
+;(() => {
+  const STEP = 500
+  let last = process.hrtime.bigint()
+  const t = setInterval(() => {
+    const now = process.hrtime.bigint()
+    const lag = Math.max(0, Number(now - last) / 1e6 - STEP)
+    last = now
+    EL_LAG.push(lag)
+    if (EL_LAG.length > 60) EL_LAG.shift() // ~30с окна
+  }, STEP)
+  t.unref?.()
+})()
+
+// сводка нагрузки: лаг loop + тики комнат (самозамер tickAccMs/tickN) + кол-во боёв/юнитов +
+// RAM. rooms/TICK_HZ объявлены ниже, но на момент ВЫЗОВА (HTTP-запрос) уже инициализированы.
+function serverLoad() {
+  const lag = EL_LAG.length
+    ? { cur: Math.round(EL_LAG[EL_LAG.length - 1]), avg: Math.round(EL_LAG.reduce((a, b) => a + b, 0) / EL_LAG.length), max: Math.round(Math.max(...EL_LAG)) }
+    : { cur: 0, avg: 0, max: 0 }
+  let tickSum = 0, tickRooms = 0, tickMax = 0, simUnits = 0, startedRooms = 0
+  for (const r of rooms.values()) {
+    if (r.started) startedRooms++
+    if (r.started && r.tickN > 0) {
+      const avg = r.tickAccMs / r.tickN
+      tickSum += avg
+      tickRooms++
+      if (avg > tickMax) tickMax = avg
+    }
+    // юнитов в симуляции считаем только в БОЕВЫХ комнатах (нестартовавшие не тикают = не грузят)
+    if (r.started && r.sim && Array.isArray(r.sim.units)) for (const u of r.sim.units) if (u && u.alive) simUnits++
+  }
+  return {
+    elLagCur: lag.cur,
+    elLagAvg: lag.avg,
+    elLagMax: lag.max,
+    tickHz: TICK_HZ,
+    tickBudgetMs: Math.round((1000 / TICK_HZ) * 100) / 100,
+    tickAvgMs: tickRooms ? Math.round((tickSum / tickRooms) * 100) / 100 : 0,
+    tickMaxMs: Math.round(tickMax * 100) / 100,
+    startedRooms,
+    simUnits,
+    rssMb: Math.round(process.memoryUsage().rss / 1048576),
+  }
+}
+
 // ---------- HTTP API ----------
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -309,6 +359,7 @@ async function handleAdmin(req, res) {
       products: PRODUCTS,
       payMode: hasBot() ? 'stars' : 'dev',
       analytics: analyticsEnabled(),
+      load: serverLoad(), // event-loop lag + тики комнат + RAM — диагностика лага боёв
     })
   }
   if (req.url === '/api/admin/profiles' && req.method === 'GET') {

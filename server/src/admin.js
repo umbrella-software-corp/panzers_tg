@@ -68,6 +68,8 @@ export const adminPage = () => `<!doctype html>
   </div>
 
   <div class="tabpane active" id="tab-overview">
+    <h2>Нагрузка сервера <span class="muted" style="font-size:12px">· event-loop lag = реальный лаг боёв (десятки-сотни мс = перегруз)</span></h2>
+    <div class="cards" id="load"></div>
     <h2>Трафик</h2><div class="cards" id="traffic"></div>
     <h2>Источники трафика</h2><div id="sources"></div>
     <h2>Рефереры (кто привёл по реф-ссылке <code>ref_&lt;id&gt;</code>)</h2><div id="referrers"></div>
@@ -324,6 +326,19 @@ async function refresh() {
     [s.payments.length, 'покупок'],
     ['★ ' + s.revenueStars.toLocaleString('ru-RU'), 'выручка, звёзды'],
     [s.payMode === 'stars' ? 'STARS' : 'DEV', 'режим оплаты'],
+  ].map(([v, l]) => '<div class="card"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>').join('')
+
+  // НАГРУЗКА СЕРВЕРА: event-loop lag — главный индикатор лага боёв (поток заблокирован).
+  // Цвет по макс. лагу: <25мс зелёный (ок), 25-80 жёлтый, >80 красный (игроки чувствуют).
+  const L = s.load || {}
+  const lagCol = (L.elLagMax || 0) > 80 ? 'var(--red)' : (L.elLagMax || 0) > 25 ? 'var(--amber)' : 'var(--green)'
+  $('load').innerHTML = [
+    ['<span style="color:' + lagCol + '">' + (L.elLagCur || 0) + ' / ' + (L.elLagAvg || 0) + ' / ' + (L.elLagMax || 0) + '</span>', 'event-loop lag мс · тек/сред/макс'],
+    [(L.tickAvgMs || 0) + ' / ' + (L.tickMaxMs || 0), 'тик комнаты мс · сред/макс'],
+    [(L.tickBudgetMs || 0) + 'мс @ ' + (L.tickHz || 0) + 'Гц', 'бюджет тика'],
+    [L.startedRooms || 0, 'комнат в бою'],
+    [L.simUnits || 0, 'юнитов в симуляции'],
+    [(L.rssMb || 0) + ' МБ', 'RAM (RSS)'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>').join('')
 
   // живой счётчик активных боёв на вкладке «Бои» (стартовавшие комнаты)
