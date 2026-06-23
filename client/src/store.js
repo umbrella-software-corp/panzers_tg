@@ -58,9 +58,22 @@ export function setReverseSteer(mode) {
 // перезагружаемся за свежим. Зовётся на бутстрапе (loadConfig в App.vue) — не в бою,
 // работа не теряется. Анти-цикл: помним buildId, для которого уже релоадили (если релоад
 // не вытащил новый бандл из кэша — второй раз не дёргаем, пробуем в след. сессии).
+// __BUILD_ID__ = "<git-hash>.<unix-ms>" → таймстамп сборки (число после последней точки)
+function buildTs(id) {
+  const m = /(\d{10,})$/.exec(String(id || ''))
+  return m ? Number(m[1]) : NaN
+}
 function maybeReloadForNewBuild(serverBuildId) {
   if (!serverBuildId || typeof __BUILD_ID__ === 'undefined') return
   if (serverBuildId === __BUILD_ID__) return
+  // Перезагружаемся ТОЛЬКО если серверный билд НОВЕЕ нашего (по таймстампу). Сервер
+  // читает BUILD_ID раз при старте → после клиентского деплоя (пересборка dist без
+  // рестарта) его BUILD_ID СТАРЕЕ свежего бандла, и сравнение «по любому отличию»
+  // гоняло всех в лишнюю перезагрузку («обновление...», особенно больно на медленных
+  // телефонах). Новый бандл и так доезжает через no-cache index.html на след. открытии;
+  // форс-релоад нужен лишь когда сервер реально новее (полный деплой с рестартом).
+  const st = buildTs(serverBuildId), ct = buildTs(__BUILD_ID__)
+  if (Number.isFinite(st) && Number.isFinite(ct) && st <= ct) return
   let already = null
   try { already = sessionStorage.getItem('pz_reloaded_for') } catch { /* приватный режим */ }
   if (already === serverBuildId) return
