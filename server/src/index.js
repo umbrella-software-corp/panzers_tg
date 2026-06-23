@@ -649,6 +649,10 @@ async function handleApi(req, res) {
       // очередь админ-выдач ведёт сервер: кладёт /api/admin/grant, применяет+чистит /api/grants-apply.
       // Клиентский сейв НЕ может её трогать — иначе игрок затёр бы свои же невыданные награды.
       pendingGrants: Array.isArray(prev.pendingGrants) ? prev.pendingGrants : [],
+      // pity-счётчик донат-крейтов — СЕРВЕРНО-авторитетен (анти-абьюз платных круток):
+      // ведёт его только econ.rollNationCrate в grants-apply, клиент НЕ может его сбросить
+      // сейвом профиля (иначе через localStorage обнулял бы pity и гарантию t8).
+      cratePity: prev.cratePity && typeof prev.cratePity === 'object' ? prev.cratePity : {},
     }
     // СЕРВЕРНО-АВТОРИТЕТНАЯ ЭКОНОМИКА (флаг ВКЛ): деньги/танки/модули/перки ведёт сервер
     // (начисление за бой + валидируемые эндпоинты покупок), клиентский сейв их НЕ пишет —
@@ -686,6 +690,7 @@ async function handleApi(req, res) {
       // (kind 'admin' или легаси без kind) сюда попадают; покупки/бонусы (kind purchase|bonus)
       // применяем к балансу, но окно НЕ показываем — у них своя кнопка-подтверждение.
       const got = { credits: 0, tokens: 0, tanks: [] }
+      const crates = [] // ролл донат-крейтов (kind:'crate') — для ревила на клиенте
       for (const g of p.pendingGrants) {
         if (!g) continue
         const reveal = !g.kind || g.kind === 'admin'
@@ -696,11 +701,14 @@ async function handleApi(req, res) {
           if (!Array.isArray(p.owned)) p.owned = []
           for (const tk of g.tanks) if (tk && GRANT_TANKS.has(tk) && !p.owned.includes(tk)) { p.owned.push(tk); if (reveal) got.tanks.push(tk) }
         }
+        // ДОНАТ-КРЕЙТ: ролл здесь (авторитетно, под локом) — мутирует p (баланс/owned/
+        // camoOwned/pity), собираем награду для ревила. Деньги уже списаны Telegram.
+        if (g.kind === 'crate') { const rw = econ.rollNationCrate(p, g.nation); if (rw) crates.push(rw) }
         n++
       }
       p.pendingGrants = []
       await saveProfile(user.uid, p)
-      return { ok: true, applied: n, got, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], branchXp: p.branchXp || {}, freeXp: p.freeXp || 0, pendingGrants: [] }
+      return { ok: true, applied: n, got, crates, credits: p.credits || 0, tokens: p.tokens || 0, goldAmmo: p.goldAmmo || 0, owned: p.owned || [], camoOwned: p.camoOwned || [], cratePity: p.cratePity || {}, branchXp: p.branchXp || {}, freeXp: p.freeXp || 0, pendingGrants: [] }
     })
     return json(res, 200, out)
   }

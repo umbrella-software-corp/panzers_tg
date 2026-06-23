@@ -376,6 +376,66 @@ export function claimRefMilestone(uid, idx) {
   })
 }
 
+// ---------- ДОНАТ-КРЕЙТЫ (крутка за Telegram Stars): честный ролл по нации ----------
+// У каждой нации t4-прем + t8-прем (= GRANT_TANKS). Шансы ОПУБЛИКОВАНЫ (CRATE_ODDS).
+// Pity: CRATE_PITY-я крутка без t8 → гарантированный t8. Дубль уже-открытого танка →
+// кристаллы. Ролл вызывается в /api/grants-apply (авторитетно, под локом профиля): p
+// мутируется (баланс/owned/camoOwned/pity), клиент адаптирует результат + показывает ревил.
+const CRATE_TANKS = {
+  ussr: { t4: 't28', t8: 't54' },
+  ger: { t4: 'pz4h', t8: 'maus' },
+  usa: { t4: 'ram', t8: 'sper' },
+}
+export const CRATE_NATIONS = Object.keys(CRATE_TANKS)
+export const CRATE_STARS = 20 // цена одной крутки (★) — ЗЕРКАЛО payments.PRODUCTS.crate_*.stars
+export const CRATE_PITY = 15 // круток без t8 → гарантия t8
+export const CRATE_ODDS = { t8: 0.005, t4: 0.03, camo: 0.12, crystals: 0.25 } // остальное (0.595) → кредиты
+const CRATE_DUP = { t8: 250, t4: 100 } // дубль танка → столько кристаллов (tokens)
+const crnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1))
+
+// мутирует p, возвращает дескриптор награды для ревила: { nation, type, tank?, tier?, camo?, crystals?, credits? }
+export function rollNationCrate(p, nation) {
+  const pool = CRATE_TANKS[nation]
+  if (!pool) return null
+  if (!p.cratePity || typeof p.cratePity !== 'object') p.cratePity = {}
+  const pulls = (p.cratePity[nation] | 0) + 1 // круток с последнего t8, включая текущую
+  const o = CRATE_ODDS
+  let kind
+  if (pulls >= CRATE_PITY) kind = 't8' // pity-гарант
+  else {
+    const r = Math.random()
+    if (r < o.t8) kind = 't8'
+    else if (r < o.t8 + o.t4) kind = 't4'
+    else if (r < o.t8 + o.t4 + o.camo) kind = 'camo'
+    else if (r < o.t8 + o.t4 + o.camo + o.crystals) kind = 'crystals'
+    else kind = 'credits'
+  }
+  p.cratePity[nation] = kind === 't8' ? 0 : pulls // t8 сбрасывает pity-счётчик
+
+  const reward = { nation, type: kind }
+  if (kind === 't8' || kind === 't4') {
+    const tankId = pool[kind]
+    if (!Array.isArray(p.owned)) p.owned = []
+    if (p.owned.includes(tankId)) {
+      const c = CRATE_DUP[kind] // уже есть → дубль в кристаллы
+      p.tokens = (p.tokens || 0) + c
+      reward.type = 'dup'; reward.tank = tankId; reward.tier = kind; reward.crystals = c
+    } else {
+      p.owned.push(tankId)
+      reward.tank = tankId; reward.tier = kind
+    }
+  } else if (kind === 'camo') {
+    const camo = dropRandomCamo(p)
+    if (camo) reward.camo = camo
+    else { const c = 60; p.tokens = (p.tokens || 0) + c; reward.type = 'crystals'; reward.crystals = c } // всё камо открыто → кристаллы
+  } else if (kind === 'crystals') {
+    const c = crnd(20, 60); p.tokens = (p.tokens || 0) + c; reward.crystals = c
+  } else {
+    const c = crnd(2000, 9000); p.credits = (p.credits || 0) + c; reward.credits = c
+  }
+  return reward
+}
+
 // дроп случайного ЗАПЕРТОГО камуфляжа — ТОЛЬКО на АКТИВНУЮ технику игрока: выбранный
 // танк, затем недавние из истории, и лишь как запас — прочие купленные. Иначе дроп
 // уходил на стартеры чужих наций (которыми не играешь) и ощущался как «на чужой танк».
