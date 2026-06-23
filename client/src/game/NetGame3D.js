@@ -413,19 +413,21 @@ export class NetGame3D extends NetGame {
       // ВНИМАНИЕ: в картах камень — kind:'block' (не 'rock'); раньше он не рисовался в 3D
       if (o.kind === 'rock' || o.kind === 'block') { m = new THREE.Mesh(new THREE.IcosahedronGeometry(o.r, 0), rockMat); m.scale.y = 0.7; m.position.set(o.x, o.r * 0.4, o.y); this._obstSwap.push({ o, prim: m }) }
       else if (o.kind === 'bush') {
-        // куст = кустистый КЛАСТЕР из 3-5 тёмно-зелёных приплюснутых блобов (один гладкий
-        // шар выглядел как зелёная сфера-«НЛО»). Детерминированно по позиции (hashId).
+        // куст = НИЗКАЯ ШИРОКАЯ ЛИСТВА (плоский тёмный кластер блобов), а НЕ высокий
+        // ярко-зелёный ШАР-«НЛО» во весь экран (фидбек «всё сломалось»). Высоту режем
+        // (scale.y 0.32), ширину капим (vr), цвет тёмный. Скрытность остаётся o.r.
         const g = new THREE.Group(); const fadeMats = []
-        const n = 3 + (hashId(`${o.x}:${o.y}`) % 3)
+        const vr = Math.min(o.r, 80) // визуальный радиус листвы (геймплей-скрытность = o.r)
+        const n = 4 + (hashId(`${o.x}:${o.y}`) % 2)
         for (let k = 0; k < n; k++) {
           const s = hashId(`${o.x}:${o.y}:${k}`)
-          const rr = o.r * (0.4 + ((s % 100) / 100) * 0.3)
+          const rr = vr * (0.5 + ((s % 100) / 100) * 0.25)
           const ang = (s % 360) * Math.PI / 180
-          const dist = o.r * 0.55 * (((s >> 5) % 100) / 100)
-          const mat = bushMat.clone(); mat.color.setHex(mixHex(0x2c5e36, 0x18361f, (s % 100) / 100)); mat.transparent = true
-          const sm = new THREE.Mesh(new THREE.SphereGeometry(rr, 8, 6), mat)
-          sm.scale.y = 0.6; sm.position.set(Math.cos(ang) * dist, rr * 0.55, Math.sin(ang) * dist)
-          sm.castShadow = true; sm.receiveShadow = true
+          const dist = vr * 0.42 * (((s >> 5) % 100) / 100)
+          const mat = bushMat.clone(); mat.color.setHex(mixHex(0x2c5e36, 0x16301c, (s % 100) / 100)); mat.transparent = true
+          const sm = new THREE.Mesh(new THREE.SphereGeometry(rr, 8, 5), mat)
+          sm.scale.y = 0.32; sm.position.set(Math.cos(ang) * dist, rr * 0.24, Math.sin(ang) * dist)
+          sm.receiveShadow = true // куст НЕ отбрасывает тень (мягче/дешевле)
           g.add(sm); fadeMats.push(mat)
         }
         g.position.set(o.x, 0, o.y); m = g
