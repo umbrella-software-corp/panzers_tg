@@ -313,13 +313,13 @@ onMounted(() => {
 
 
     <!-- ===== chrome ===== -->
-    <header style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px">
-      <div style="display: flex; align-items: center; gap: 8px; min-width: 0">
-        <div class="pz-display" style="font-size: 19px">PANZER <span style="color: var(--amber)">TG</span></div>
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px 6px">
+      <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto">
+        <div class="pz-display" style="font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">PANZER <span style="color: var(--amber)">TG</span></div>
         <!-- премиум активен: корона на главной (тап → магазин) -->
-        <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive')" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}<i>{{ t('common.days', { n: premiumDaysLeft() }) }}</i></button>
+        <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive') + ' · ' + t('common.days', { n: premiumDaysLeft() })" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}</button>
       </div>
-      <div style="display: flex; align-items: center; gap: 8px">
+      <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0">
         <CurrencyBar :credits="profile.credits" :tokens="profile.tokens" @shop="emit('go', 'shop')" />
         <button class="support-btn" :title="t('settings.title')" :aria-label="t('settings.title')" @click="openSettings">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
