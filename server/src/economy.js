@@ -387,7 +387,7 @@ const CRATE_TANKS = {
   usa: { t4: 'ram', t8: 'sper' },
 }
 export const CRATE_NATIONS = Object.keys(CRATE_TANKS)
-export const CRATE_STARS = 20 // цена одной крутки (★) — ЗЕРКАЛО payments.PRODUCTS.crate_*.stars
+export const CRATE_STARS = 10 // цена одной крутки (★) — ЗЕРКАЛО payments.PRODUCTS.crate_*.stars
 export const CRATE_PITY = 15 // круток без t8 → гарантия t8
 export const CRATE_ODDS = { t8: 0.005, t4: 0.03, camo: 0.12, crystals: 0.25 } // остальное (0.595) → кредиты
 const CRATE_DUP = { t8: 250, t4: 100 } // дубль танка → столько кристаллов (tokens)

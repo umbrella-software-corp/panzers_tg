@@ -9,29 +9,29 @@ import { t, pickLang } from './i18n.js'
 
 // каталог: что начисляем за звёзды
 export const PRODUCTS = {
-  p1: { title: '1 000 кредитов', stars: 50, credits: 1000 },
-  p2: { title: '3 500 кредитов', stars: 135, credits: 3500 },
-  p3: { title: '9 000 кредитов', stars: 299, credits: 9000 },
-  t1: { title: '20 жетонов', stars: 65, tokens: 20 },
-  t2: { title: '60 жетонов', stars: 165, tokens: 60 },
-  t3: { title: '150 жетонов', stars: 329, tokens: 150 },
-  rename: { title: 'Смена позывного', stars: 50, rename: true },
-  prem: { title: 'Премиум-аккаунт · 7 дней', stars: 99, premiumDays: 7 },
+  p1: { title: '1 000 кредитов', stars: 25, credits: 1000 },
+  p2: { title: '3 500 кредитов', stars: 68, credits: 3500 },
+  p3: { title: '9 000 кредитов', stars: 150, credits: 9000 },
+  t1: { title: '20 жетонов', stars: 33, tokens: 20 },
+  t2: { title: '60 жетонов', stars: 83, tokens: 60 },
+  t3: { title: '150 жетонов', stars: 165, tokens: 150 },
+  rename: { title: 'Смена позывного', stars: 25, rename: true },
+  prem: { title: 'Премиум-аккаунт · 7 дней', stars: 50, premiumDays: 7 },
   // премиум-техника — цена ПО ТИРУ (низкий тир дешевле): T4 = ⭐79, T8 = ⭐199.
   // grantProduct добавляет tank в owned. id и stars сверены с PREMIUM_TANKS в
   // client/src/game/meta.js (спрайты <tank>.png уже в репо). Менять stars В ОБОИХ местах.
-  pt_t28: { title: 'Т-28 · премиум-танк', stars: 79, tank: 't28' },
-  pt_t54: { title: 'Т-54 · премиум-танк', stars: 199, tank: 't54' },
-  pt_pz4h: { title: 'Pz. IV H · премиум-танк', stars: 79, tank: 'pz4h' },
-  pt_maus: { title: 'Maus · премиум-танк', stars: 199, tank: 'maus' },
-  pt_ram: { title: 'Ram II · премиум-танк', stars: 79, tank: 'ram' },
-  pt_sper: { title: 'Super Pershing · премиум-танк', stars: 199, tank: 'sper' },
+  pt_t28: { title: 'Т-28 · премиум-танк', stars: 40, tank: 't28' },
+  pt_t54: { title: 'Т-54 · премиум-танк', stars: 100, tank: 't54' },
+  pt_pz4h: { title: 'Pz. IV H · премиум-танк', stars: 40, tank: 'pz4h' },
+  pt_maus: { title: 'Maus · премиум-танк', stars: 100, tank: 'maus' },
+  pt_ram: { title: 'Ram II · премиум-танк', stars: 40, tank: 'ram' },
+  pt_sper: { title: 'Super Pershing · премиум-танк', stars: 100, tank: 'sper' },
   // ДОНАТ-КРЕЙТЫ (крутка за ⭐): ролл по нации делается в /api/grants-apply
   // (econ.rollNationCrate, честные шансы+pity). grantProduct кладёт kind:'crate' в
   // очередь — деньги списаны, награда выкатывается авторитетно. stars = econ.CRATE_STARS.
-  crate_ussr: { title: 'Ящик СССР · крутка', stars: 20, crate: 'ussr' },
-  crate_ger: { title: 'Ящик Германии · крутка', stars: 20, crate: 'ger' },
-  crate_usa: { title: 'Ящик США · крутка', stars: 20, crate: 'usa' },
+  crate_ussr: { title: 'Ящик СССР · крутка', stars: 10, crate: 'ussr' },
+  crate_ger: { title: 'Ящик Германии · крутка', stars: 10, crate: 'ger' },
+  crate_usa: { title: 'Ящик США · крутка', stars: 10, crate: 'usa' },
 }
 
 // позывной с клиента: режем управляющие символы, тримим, 3..16 символов.
