@@ -27,14 +27,14 @@ const CRATES = [
 ]
 const rollGain = (g) => (Array.isArray(g) ? g[0] + Math.floor(Math.random() * (g[1] - g[0] + 1)) : g)
 const CREDIT_PACKS = [
-  { id: 'p1', amount: 1000, price: '50 ⭐' },
-  { id: 'p2', amount: 3500, price: '135 ⭐', hot: true },
-  { id: 'p3', amount: 9000, price: '299 ⭐' },
+  { id: 'p1', amount: 1000, price: '25 ⭐' },
+  { id: 'p2', amount: 3500, price: '68 ⭐', hot: true },
+  { id: 'p3', amount: 9000, price: '150 ⭐' },
 ]
 const TOKEN_PACKS = [
-  { id: 't1', amount: 20, price: '65 ⭐' },
-  { id: 't2', amount: 60, price: '165 ⭐', hot: true },
-  { id: 't3', amount: 150, price: '329 ⭐' },
+  { id: 't1', amount: 20, price: '33 ⭐' },
+  { id: 't2', amount: 60, price: '83 ⭐', hot: true },
+  { id: 't3', amount: 150, price: '165 ⭐' },
 ]
 
 const toast = ref(null) // { key, text, bad }
@@ -181,7 +181,7 @@ onMounted(() => {
               {{ tr('shop.premiumActive', { n: premiumDaysLeft() }) }}
             </div>
           </div>
-          <button class="pz-cta" style="padding: 11px 15px; font-size: 14px; white-space: nowrap; width: auto; flex-shrink: 0" @click="buyPremium">99 ⭐</button>
+          <button class="pz-cta" style="padding: 11px 15px; font-size: 14px; white-space: nowrap; width: auto; flex-shrink: 0" @click="buyPremium">50 ⭐</button>
         </div>
       </section>
 

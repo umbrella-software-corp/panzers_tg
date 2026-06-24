@@ -91,12 +91,12 @@ export const TANKS_BY_NATION = {
 // что обещание из карточки не выполняется).
 export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemEvery: 10, gems: 10 }
 export const PREMIUM_TANKS = [
-  { id: 't28', nation: 'ussr', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 79, stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
-  { id: 't54', nation: 'ussr', tier: 8, cls: 'Средний', premium: true, stars: 199, stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },
-  { id: 'pz4h', nation: 'ger', tier: 4, cls: 'Средний', premium: true, stars: 79, stats: { dmg: 4, rof: 5, spd: 5, mnv: 4, view: 5, hp: 4 } },
-  { id: 'maus', nation: 'ger', tier: 8, cls: 'Тяжёлый', premium: true, stars: 199, stats: { dmg: 8, rof: 2, spd: 2, mnv: 2, view: 5, hp: 8 } },
-  { id: 'ram', nation: 'usa', tier: 4, cls: 'Средний', premium: true, stars: 79, stats: { dmg: 3, rof: 6, spd: 5, mnv: 5, view: 4, hp: 4 } },
-  { id: 'sper', nation: 'usa', tier: 8, cls: 'Тяжёлый', premium: true, stars: 199, stats: { dmg: 9, rof: 5, spd: 5, mnv: 4, view: 6, hp: 9 } },
+  { id: 't28', nation: 'ussr', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 40, stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
+  { id: 't54', nation: 'ussr', tier: 8, cls: 'Средний', premium: true, stars: 100, stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },
+  { id: 'pz4h', nation: 'ger', tier: 4, cls: 'Средний', premium: true, stars: 40, stats: { dmg: 4, rof: 5, spd: 5, mnv: 4, view: 5, hp: 4 } },
+  { id: 'maus', nation: 'ger', tier: 8, cls: 'Тяжёлый', premium: true, stars: 100, stats: { dmg: 8, rof: 2, spd: 2, mnv: 2, view: 5, hp: 8 } },
+  { id: 'ram', nation: 'usa', tier: 4, cls: 'Средний', premium: true, stars: 40, stats: { dmg: 3, rof: 6, spd: 5, mnv: 5, view: 4, hp: 4 } },
+  { id: 'sper', nation: 'usa', tier: 8, cls: 'Тяжёлый', premium: true, stars: 100, stats: { dmg: 9, rof: 5, spd: 5, mnv: 4, view: 6, hp: 9 } },
 ].map(withClass) // withClass: classId + локализованные геттеры name/desc (прем-танки тоже)
 // ----- ДОП. ТЕХНИКА: ПТ-САУ + лёгкие/тяжёлые из борда (ветки/нации игры) -----
 // Пока «просто доступны»: НЕ в TANKS_BY_NATION (линейное дерево исследований не
@@ -361,7 +361,7 @@ export const CAMOS = [
 export const CAMO_BY_ID = Object.fromEntries(CAMOS.map((c) => [c.id, c]))
 export const CAMO_IDS = CAMOS.map((c) => c.id).filter(Boolean)
 // смена позывного — за Telegram Stars (цена авторитетна на сервере, PRODUCTS.rename)
-export const RENAME_COST_STARS = 50
+export const RENAME_COST_STARS = 25
 
 // ---------- воинские звания (по числу боёв) ----------
 // Награда (credits/tokens) выдаётся ОДИН раз за каждое новое звание. Звание
