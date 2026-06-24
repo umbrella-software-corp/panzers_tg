@@ -275,24 +275,24 @@ export const GOLD_AMMO_PACKS = [
 // `survived` = 1 если дожил до конца боя. Пул-ЗЕРКАЛО в shared/economy.js — порядок
 // и id держать идентичными (выбор дня шьётся по индексам).
 export const DAILY_TASKS = [
-  { id: 'dmg600', goal: 4500, key: 'damage', credits: 400 },
+  { id: 'dmg600', goal: 1700, key: 'damage', credits: 400 }, // цель ×0.375 под ресейл урона (была 4500)
   { id: 'kills3', goal: 3, key: 'kills', credits: 500 },
   { id: 'light2', goal: 2, key: 'lightKills', credits: 400 }, // алмазы→кредиты: жетоны фармят только премы (#26)
   { id: 'block3', goal: 3, key: 'blocked', credits: 350 },
   { id: 'win1', goal: 1, key: 'wins', credits: 600 },
   { id: 'battles3', goal: 3, key: 'battles', credits: 300 },
-  { id: 'dmg9000', goal: 9000, key: 'damage', credits: 800 },
+  { id: 'dmg9000', goal: 3400, key: 'damage', credits: 800 }, // цель ×0.375 под ресейл урона (была 9000)
   { id: 'kills5', goal: 5, key: 'kills', credits: 800 },
   { id: 'win3', goal: 3, key: 'wins', credits: 600 }, // было tokens:10 → кредиты (#26)
   { id: 'battles5', goal: 5, key: 'battles', credits: 500 },
   { id: 'survive2', goal: 2, key: 'survived', credits: 450 },
-  { id: 'armor2000', goal: 2000, key: 'blockedDmg', credits: 450 },
+  { id: 'armor2000', goal: 750, key: 'blockedDmg', credits: 450 }, // цель ×0.375 под ресейл урона (была 2000)
   { id: 'light3', goal: 3, key: 'lightKills', credits: 500 }, // было tokens:7 → кредиты (#26)
 ].map((d) => defLoc(d, { label: (o) => `game.tasks.${o.id}` }))
 export const TASKS_PER_DAY = 4
 // бонус за выполнение ВСЕХ задач дня (по фидбеку) — ощутимо жирнее любой одиночной.
 // ЗЕРКАЛО shared/economy.js TASKS_ALL_BONUS.
-export const TASKS_ALL_BONUS = { credits: 1500 } // жетоны убраны — фарм алмазов только премами (#26)
+export const TASKS_ALL_BONUS = { credits: 1500, tokens: 1 } // +гем за все дейлики дня (#23, мелкий трикл; флаг владельцу — частично возвращает #26)
 
 // детерминированный выбор задач дня (у всех игроков одинаковые): стабильно
 // перетасовываем пул по дате и берём первые TASKS_PER_DAY — без повторов при любом
@@ -488,15 +488,15 @@ export const MEDALS = [
   // больше опыта; начисляется в reward.xp боя, см. battleMedalXp).
   { id: 'warrior', tier: 'bronze', glyph: '✪', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150, xp: 120 } },
   { id: 'sniper', tier: 'gold', glyph: '✹', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2, xp: 300 } },
-  { id: 'firestorm', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1, xp: 250 } },
-  { id: 'wall', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blockedDmg', need: 2000, reward: { credits: 300, tokens: 1, xp: 200 } },
+  { id: 'firestorm', tier: 'silver', glyph: '✸', kind: 'battle', metric: 'damage', need: 3000, reward: { credits: 300, tokens: 1, xp: 250 } },
+  { id: 'wall', tier: 'silver', glyph: '⛨', kind: 'battle', metric: 'blockedDmg', need: 750, reward: { credits: 300, tokens: 1, xp: 200 } },
   { id: 'scout', tier: 'bronze', glyph: '◉', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200, xp: 150 } },
   { id: 'survivor', tier: 'bronze', glyph: '✠', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150, xp: 100 } },
   { id: 'triumph', tier: 'gold', glyph: '★', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3, xp: 400 } },
   // боевые высшего порядка — стакаются с базовыми за выдающийся бой
   { id: 'kingslayer', tier: 'gold', glyph: '⚔', kind: 'battle', metric: 'kills', need: 7, reward: { credits: 900, tokens: 4, xp: 500 } },
-  { id: 'devastator', tier: 'gold', glyph: '☄', kind: 'battle', metric: 'damage', need: 15000, reward: { credits: 600, tokens: 2, xp: 400 } },
-  { id: 'bastion', tier: 'gold', glyph: '⛉', kind: 'battle', metric: 'blockedDmg', need: 4000, reward: { credits: 500, tokens: 2, xp: 350 } },
+  { id: 'devastator', tier: 'gold', glyph: '☄', kind: 'battle', metric: 'damage', need: 5600, reward: { credits: 600, tokens: 2, xp: 400 } },
+  { id: 'bastion', tier: 'gold', glyph: '⛉', kind: 'battle', metric: 'blockedDmg', need: 1500, reward: { credits: 500, tokens: 2, xp: 350 } },
   { id: 'pathfinder', tier: 'silver', glyph: '⊚', kind: 'battle', metric: 'lightKills', need: 4, reward: { credits: 350, tokens: 1, xp: 250 } },
   // карьерные — рубежи
   { id: 'recruit', tier: 'bronze', glyph: '➀', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },

@@ -99,7 +99,10 @@ export function battleReward({ result, kills = 0, damage = 0 }) {
   const win = result === 'victory'
   const draw = result === 'draw'
   const baseXp = win ? 150 : draw ? 90 : 60
-  const xp = Math.max(0, baseXp + kills * 55 + Math.round((damage || 0) / 22))
+  // делитель урона 22→8: после ресейла урона ×0.375 (DMG_SCALE 16→6) член damage/22 просел
+  // на −62% → XP/кредиты за бой упали (фидбек #23 «начисление опыта/кредитов хромает»).
+  // 22×0.375≈8 восстанавливает XP-от-урона к доресейловому уровню. ЗЕРКАЛО Battle.vue.
+  const xp = Math.max(0, baseXp + kills * 55 + Math.round((damage || 0) / 8))
   return { credits: Math.round(xp * 1.25), xp }
 }
 // суммарный опыт за боевые медали этого боя. ЗЕРКАЛО meta.js battleMedalXp.
@@ -136,14 +139,14 @@ export function rankIndexByBattles(battles) {
 export const MEDALS = [
   { id: 'warrior', kind: 'battle', metric: 'kills', need: 3, reward: { credits: 150, xp: 120 } },
   { id: 'sniper', kind: 'battle', metric: 'kills', need: 5, reward: { credits: 500, tokens: 2, xp: 300 } },
-  { id: 'firestorm', kind: 'battle', metric: 'damage', need: 8000, reward: { credits: 300, tokens: 1, xp: 250 } },
-  { id: 'wall', kind: 'battle', metric: 'blockedDmg', need: 2000, reward: { credits: 300, tokens: 1, xp: 200 } },
+  { id: 'firestorm', kind: 'battle', metric: 'damage', need: 3000, reward: { credits: 300, tokens: 1, xp: 250 } },
+  { id: 'wall', kind: 'battle', metric: 'blockedDmg', need: 750, reward: { credits: 300, tokens: 1, xp: 200 } },
   { id: 'scout', kind: 'battle', metric: 'lightKills', need: 2, reward: { credits: 200, xp: 150 } },
   { id: 'survivor', kind: 'battle', metric: 'survived', need: 1, reward: { credits: 150, xp: 100 } },
   { id: 'triumph', kind: 'battle', metric: 'triumph', need: 1, reward: { credits: 600, tokens: 3, xp: 400 } },
   { id: 'kingslayer', kind: 'battle', metric: 'kills', need: 7, reward: { credits: 900, tokens: 4, xp: 500 } },
-  { id: 'devastator', kind: 'battle', metric: 'damage', need: 15000, reward: { credits: 600, tokens: 2, xp: 400 } },
-  { id: 'bastion', kind: 'battle', metric: 'blockedDmg', need: 4000, reward: { credits: 500, tokens: 2, xp: 350 } },
+  { id: 'devastator', kind: 'battle', metric: 'damage', need: 5600, reward: { credits: 600, tokens: 2, xp: 400 } },
+  { id: 'bastion', kind: 'battle', metric: 'blockedDmg', need: 1500, reward: { credits: 500, tokens: 2, xp: 350 } },
   { id: 'pathfinder', kind: 'battle', metric: 'lightKills', need: 4, reward: { credits: 350, tokens: 1, xp: 250 } },
   { id: 'recruit', kind: 'career', metric: 'battles', need: 10, reward: { credits: 200 } },
   { id: 'veteran', kind: 'career', metric: 'battles', need: 100, reward: { credits: 600, tokens: 2 } },
@@ -173,23 +176,25 @@ export function careerMedalIds(s) {
 // ЗЕРКАЛО meta.js DAILY_TASKS / TASKS_PER_DAY / tasksOfDay — порядок, id и алгоритм
 // держать идентичными клиенту (сервер валидирует, что забранная задача — сегодняшняя).
 export const DAILY_TASKS = [
-  { id: 'dmg600', goal: 4500, key: 'damage', credits: 400 },
+  { id: 'dmg600', goal: 1700, key: 'damage', credits: 400 }, // цель урезана ×0.375 под ресейл урона (была 4500)
   { id: 'kills3', goal: 3, key: 'kills', credits: 500 },
   { id: 'light2', goal: 2, key: 'lightKills', credits: 400 }, // алмазы→кредиты: жетоны фармят только премы (#26)
   { id: 'block3', goal: 3, key: 'blocked', credits: 350 },
   { id: 'win1', goal: 1, key: 'wins', credits: 600 },
   { id: 'battles3', goal: 3, key: 'battles', credits: 300 },
-  { id: 'dmg9000', goal: 9000, key: 'damage', credits: 800 },
+  { id: 'dmg9000', goal: 3400, key: 'damage', credits: 800 }, // цель урезана ×0.375 под ресейл урона (была 9000)
   { id: 'kills5', goal: 5, key: 'kills', credits: 800 },
   { id: 'win3', goal: 3, key: 'wins', credits: 600 }, // было tokens:10 → кредиты (#26)
   { id: 'battles5', goal: 5, key: 'battles', credits: 500 },
   { id: 'survive2', goal: 2, key: 'survived', credits: 450 },
-  { id: 'armor2000', goal: 2000, key: 'blockedDmg', credits: 450 },
+  { id: 'armor2000', goal: 750, key: 'blockedDmg', credits: 450 }, // цель урезана ×0.375 под ресейл урона (была 2000)
   { id: 'light3', goal: 3, key: 'lightKills', credits: 500 }, // было tokens:7 → кредиты (#26)
 ]
 export const TASKS_PER_DAY = 4
-// бонус за выполнение ВСЕХ задач дня. ЗЕРКАЛО meta.js TASKS_ALL_BONUS.
-export const TASKS_ALL_BONUS = { credits: 1500 } // жетоны убраны — фарм алмазов только премами (#26)
+// бонус за выполнение ВСЕХ задач дня. ЗЕРКАЛО meta.js TASKS_ALL_BONUS. tokens:1 добавлен
+// по фидбеку #23 (@basketballaim) — гем за главную задачу «все дейлики дня» (1/день, мелкий
+// трикл; частично возвращает #26 «гемы только премами» — флаг владельцу).
+export const TASKS_ALL_BONUS = { credits: 1500, tokens: 1 }
 export const TASK_BY_ID = Object.fromEntries(DAILY_TASKS.map((t) => [t.id, t]))
 export function tasksOfDay(dayString) {
   let s = [...String(dayString)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7)

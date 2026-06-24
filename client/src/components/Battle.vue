@@ -439,7 +439,7 @@ const reward = computed(() => {
   // урон/фраги/медали, а не флэт-база). Кредиты ∝ опыту («относительно опыта — кредиты»).
   const dmg = s.damageDealt || 0
   const medalXp = battleMedalXp({ kills: s.kills, damage: dmg, blockedDmg: s.blockedDmg || 0, lightKills: s.lightKills || 0, survived: !s.deaths, victory: win })
-  const xp = (win ? 150 : draw ? 90 : 60) + s.kills * 55 + Math.round(dmg / 22) + medalXp + (s.bonusXp || 0)
+  const xp = (win ? 150 : draw ? 90 : 60) + s.kills * 55 + Math.round(dmg / 8) + medalXp + (s.bonusXp || 0) // дел. 22→8: компенсация ресейла урона ×0.375 (XP/кредиты просели). ЗЕРКАЛО shared/economy.battleReward
   return {
     xp,
     silver: Math.round(xp * 1.25),
