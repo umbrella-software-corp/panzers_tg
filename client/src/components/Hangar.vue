@@ -236,6 +236,13 @@ function swipeEnd(e) {
   const dx = x - _swipeX; _swipeX = null
   if (Math.abs(dx) > 44) switchTank(dx < 0 ? 1 : -1)
 }
+// тап по сцене танка → Ангар (tree). НО в 3D палец по танку = ПОВОРОТ: Tank3DView
+// эмитит 'drag' при реальном вращении → глушим навигацию, иначе танк «не крутился»
+// (любое касание уводило на вкладку). Тап без поворота — по-прежнему открывает Ангар.
+let _tankDragged = false
+function onTankDown() { _tankDragged = false }
+function onTankDrag() { _tankDragged = true }
+function onTankTap() { if (_tankDragged) { _tankDragged = false; return } emit('go', 'tree') }
 const fmt = (n) => n.toLocaleString('ru-RU')
 const inParty = computed(() => squad.active || !!party.token) // в лобби взвода или уже в бою с ним
 // друг зашёл по ссылке (squad стал активен) → авто-открываем шторку взвода, чтобы он видел лобби
@@ -306,11 +313,11 @@ onMounted(() => {
         <div class="bay-hazard"></div>
       </div>
 
-      <!-- тень + танк. Тап по танку → Ангар (там меняешь машину и камо) -->
-      <div class="tank-wrap" data-tut="tank" @click="emit('go', 'tree')">
+      <!-- тень + танк. Тап → Ангар; драг в 3D → ПОВОРОТ танка (навигацию глушим, см. onTankTap) -->
+      <div class="tank-wrap" data-tut="tank" @pointerdown="onTankDown" @click="onTankTap">
         <div class="tank-shadow"></div>
-        <!-- 3D: модель ВЫБРАННОГО танка (любого), мордой к игроку; листание карусели меняет её -->
-        <Tank3DView v-if="threeD" :url="heroUrl" :camo="locked ? '' : dispCamo" :seed="heroSeed" :scale="heroScale" class="tank3d-host" :style="locked ? 'filter: brightness(0.82) saturate(0.85)' : ''" />
+        <!-- 3D: модель ВЫБРАННОГО танка (любого), мордой к игроку; крути пальцем (turntable) -->
+        <Tank3DView v-if="threeD" :url="heroUrl" :camo="locked ? '' : dispCamo" :seed="heroSeed" :scale="heroScale" class="tank3d-host" :style="locked ? 'filter: brightness(0.82) saturate(0.85)' : ''" @drag="onTankDrag" />
         <template v-else>
           <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
             <TankImg :tank-id="tank.id" :size="300" :hangar="true" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />

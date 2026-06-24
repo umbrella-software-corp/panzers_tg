@@ -334,8 +334,8 @@ watch(selected, (t) => {
     <div class="xp-line">
       <span>🔬 {{ tr('tree.branchXp') }}: <b class="pz-display" style="color: var(--amber)">{{ nationXp.toLocaleString('ru-RU') }}</b></span>
       <span>✦ {{ tr('tree.freeXp') }}: <b class="pz-display" style="color: #7cc0ff">{{ freeXp.toLocaleString('ru-RU') }}</b></span>
-      <button v-if="canPourFree" class="pour-btn" @click="pourFreeXp">{{ tr('tree.pourFree', { n: pourAmount.toLocaleString('ru-RU') }) }}</button>
-      <span v-else-if="freeXp > 0" class="xp-hint">{{ tr('tree.freeXpHint') }}</span>
+      <!-- ВЛОЖИТЬ свободный опыт теперь в доке выбранного танка (рядом с «Исследовать»),
+           чтобы было видно во ЧТО вкладываешь. Сверху — только обмен кристаллов. -->
       <button v-if="(profile.tokens || 0) >= 10" class="xp-buy" :title="tr('tree.buyFreeXpHint')" @click="buyFreeXp">{{ tr('tree.buyFreeXp') }}</button>
     </div>
 
@@ -556,10 +556,19 @@ watch(selected, (t) => {
         </div>
         <!-- переход к недостающему шагу: пред. танк или его модули -->
         <button v-if="gotoStep" class="pz-btn2 goto-step" @click="goToStep(gotoStep.id)">→ {{ gotoStep.label }}</button>
-        <!-- ВЛОЖИТЬ свободный опыт в ЭТОТ танк (покрыть нехватку опыта ветки) -->
-        <button v-if="selPourAmount > 0" class="pz-cta pour-dock" @click="pourToSelected">✦ {{ tr('tree.pourFreeDock', { n: selPourAmount.toLocaleString('ru-RU') }) }}</button>
+        <!-- не хватает только опыта ветки, но есть свободный → кнопка ВЛОЖИТЬ в слоте «Исследовать»
+             (тот же размер). Покрываем нехватку именно этого танка; после — кнопка станет «Исследовать». -->
+        <button
+          v-if="!gotoStep && selPourAmount > 0"
+          class="pz-cta pour-dock"
+          style="font-size: 15px; padding: 12px 16px"
+          @click="pourToSelected"
+        >
+          ✦ {{ tr('tree.pourFreeDock', { n: selPourAmount.toLocaleString('ru-RU') }) }}
+        </button>
         <!-- исследование активно, только когда условия (кроме кредитов) выполнены -->
         <button
+          v-else
           class="pz-cta"
           style="font-size: 15px; padding: 12px 16px"
           :style="{ animation: flash ? 'pz-shake .3s linear 2' : 'none' }"
@@ -742,12 +751,12 @@ watch(selected, (t) => {
 .camo-buy-name { font-size: 13px; color: var(--amber); }
 .camo-buy-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; font-size: 13px; width: auto; }
 .pick-btn { margin-top: 2px; }
-/* кнопка «Вложить свободный опыт» в доке — синяя (цвет свободного опыта) */
+/* кнопка «Вложить свободный опыт» в доке — синяя (цвет свободного опыта), в слоте «Исследовать» */
 .pour-dock {
   width: 100%;
-  margin-bottom: 8px;
   background: linear-gradient(180deg, #8fd0ff, #4a9fe0);
   color: #07243d;
+  border-color: #4a9fe0;
 }
 .pour-dock:active { transform: scale(0.98); }
 .dock-close {

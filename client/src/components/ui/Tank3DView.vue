@@ -13,6 +13,9 @@ const props = defineProps({
   seed: { type: Number, default: 7 }, // зерно узора (обычно хэш tankId) — стабильно у всех клиентов
   scale: { type: Number, default: 1 }, // относительный размер по классу (meta.tankSizeScale)
 })
+// 'drag' — был реальный поворот пальцем (а не тап). Hangar глушит по нему навигацию
+// в Ангар (иначе @click по сцене уводил на вкладку и танк «не крутился»).
+const emit = defineEmits(['drag'])
 const host = ref(null)
 const loading = ref(true) // показываем «загрузка модели…» пока GLB не отрисован (платформа не выглядит пустой)
 let THREE, renderer, scene, camera, model, raf
@@ -33,10 +36,16 @@ onMounted(async () => {
   renderer.setSize(W, H)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   host.value.appendChild(renderer.domElement)
-  // КРИТично для вращения на ТАЧ: без touch-action:none на самой канве браузер считает
-  // драг по ней скроллом и НЕ шлёт pointermove → танк не крутится на телефоне (в превью
-  // синтетические события шли мимо этого, потому «работало»). Ставим на DOM-элемент.
-  renderer.domElement.style.touchAction = 'none'
+  // ВРАЩЕНИЕ на ТАЧ: вешаем обработчики ПРЯМО на канву (не на host через @pointer/bubbling —
+  // на iOS-вебвью bubbling + passive-листенер не давал крутить). touch-action:none + НЕпассивный
+  // pointermove с preventDefault → палец по танку вращает, а не скроллит страницу.
+  const el = renderer.domElement
+  el.style.touchAction = 'none'
+  el.addEventListener('pointerdown', onPointerDown)
+  el.addEventListener('pointermove', onPointerMove, { passive: false })
+  el.addEventListener('pointerup', onPointerUp)
+  el.addEventListener('pointercancel', onPointerUp)
+  el.addEventListener('pointerleave', onPointerUp)
   scene = new THREE.Scene()
   camera = new THREE.PerspectiveCamera(34, W / H, 0.1, 100)
   camera.position.set(0, 4.2, 4.6); camera.lookAt(0, 0.1, 0)
@@ -127,14 +136,18 @@ async function show() {
 // DRAG-TO-ROTATE: горизонталь крутит танк (Y), вертикаль — лёгкий наклон (X, ограничен,
 // не переворачиваем). Инерция после отпускания (см. loop). touch-action:none — палец на
 // танке вращает, а не скроллит страницу.
+let moved = 0 // суммарный путь пальца за жест — отличаем поворот от тапа
 function onPointerDown(e) {
-  dragging = true; velY = 0; lastPX = e.clientX; lastPY = e.clientY
+  dragging = true; velY = 0; moved = 0; lastPX = e.clientX; lastPY = e.clientY
   try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* ok */ }
 }
 function onPointerMove(e) {
   if (!dragging) return
+  if (e.cancelable) e.preventDefault() // глушим скролл страницы под пальцем (iOS-вебвью)
   const dx = e.clientX - lastPX, dy = e.clientY - lastPY
   lastPX = e.clientX; lastPY = e.clientY
+  moved += Math.abs(dx) + Math.abs(dy)
+  if (moved > 6) emit('drag') // порог: явный поворот, а не дрожь пальца на тапе
   dragY += dx * 0.011
   velY = Math.max(-0.3, Math.min(0.3, dx * 0.011)) // кап скорости флика (не разгоняем бесконечно)
   dragX = Math.max(-0.3, Math.min(0.5, dragX + dy * 0.006)) // наклон ограничен (взгляд чуть сверху/сбоку)
@@ -157,15 +170,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="host"
-    class="tank3d"
-    @pointerdown="onPointerDown"
-    @pointermove="onPointerMove"
-    @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
-    @pointerleave="onPointerUp"
-  >
+  <!-- обработчики вращения навешены ПРЯМО на канву в onMounted (addEventListener,
+       passive:false) — надёжнее на iOS, чем @pointer на host через bubbling -->
+  <div ref="host" class="tank3d">
     <div v-if="loading" class="tank3d-load"><span class="tank3d-spin"></span>загрузка модели…</div>
   </div>
 </template>
