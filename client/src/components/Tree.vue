@@ -87,6 +87,14 @@ const xpShort = computed(() => {
 // сколько свободного опыта можно влить прямо сейчас (= нехватка, но не больше пула)
 const pourAmount = computed(() => Math.min(freeXp.value, xpShort.value))
 const canPourFree = computed(() => pourAmount.value > 0)
+// СКОЛЬКО влить в ВЫБРАННЫЙ (открытый в доке) танк — надёжнее верхней строки: nextLocked
+// мог зацепить другой танк при непоследовательном owned (гранты с пропуском), и кнопка
+// сверху не показывалась, хотя на ВЫБРАННЫЙ танк опыта не хватает (фидбек «вложить не могу»).
+const selPourAmount = computed(() => {
+  const tk = selected.value
+  if (!tk || isOwned(tk.id)) return 0
+  return Math.min(freeXp.value, Math.max(0, researchXpNeed(tk) - branchXpOf(tk)))
+})
 async function pourFreeXp() {
   if (!canPourFree.value) return shake()
   track('free_xp_pour_clicked', { nation: profile.nation, amount: pourAmount.value, free_xp: freeXp.value, target_tank: nextLocked.value?.id || null })
@@ -95,6 +103,14 @@ async function pourFreeXp() {
   } else {
     shake()
   }
+}
+// влить свободный опыт в ВЫБРАННЫЙ танк дока (покрыть нехватку опыта ветки).
+async function pourToSelected() {
+  if (selPourAmount.value <= 0) return shake()
+  track('free_xp_pour_dock', { nation: profile.nation, amount: selPourAmount.value, tank: selected.value?.id || null })
+  if (await spendFreeXp(profile.nation, selPourAmount.value)) {
+    track('free_xp_poured', { nation: profile.nation, amount: selPourAmount.value })
+  } else shake()
 }
 // обмен кристаллов на свободный опыт: 10 💎 → 100 ✦ (за раз). «Качать за кристаллы».
 async function buyFreeXp() {
@@ -540,6 +556,8 @@ watch(selected, (t) => {
         </div>
         <!-- переход к недостающему шагу: пред. танк или его модули -->
         <button v-if="gotoStep" class="pz-btn2 goto-step" @click="goToStep(gotoStep.id)">→ {{ gotoStep.label }}</button>
+        <!-- ВЛОЖИТЬ свободный опыт в ЭТОТ танк (покрыть нехватку опыта ветки) -->
+        <button v-if="selPourAmount > 0" class="pz-cta pour-dock" @click="pourToSelected">✦ {{ tr('tree.pourFreeDock', { n: selPourAmount.toLocaleString('ru-RU') }) }}</button>
         <!-- исследование активно, только когда условия (кроме кредитов) выполнены -->
         <button
           class="pz-cta"
@@ -724,6 +742,14 @@ watch(selected, (t) => {
 .camo-buy-name { font-size: 13px; color: var(--amber); }
 .camo-buy-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; font-size: 13px; width: auto; }
 .pick-btn { margin-top: 2px; }
+/* кнопка «Вложить свободный опыт» в доке — синяя (цвет свободного опыта) */
+.pour-dock {
+  width: 100%;
+  margin-bottom: 8px;
+  background: linear-gradient(180deg, #8fd0ff, #4a9fe0);
+  color: #07243d;
+}
+.pour-dock:active { transform: scale(0.98); }
 .dock-close {
   position: absolute;
   top: 8px;

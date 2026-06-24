@@ -33,6 +33,10 @@ onMounted(async () => {
   renderer.setSize(W, H)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   host.value.appendChild(renderer.domElement)
+  // КРИТично для вращения на ТАЧ: без touch-action:none на самой канве браузер считает
+  // драг по ней скроллом и НЕ шлёт pointermove → танк не крутится на телефоне (в превью
+  // синтетические события шли мимо этого, потому «работало»). Ставим на DOM-элемент.
+  renderer.domElement.style.touchAction = 'none'
   scene = new THREE.Scene()
   camera = new THREE.PerspectiveCamera(34, W / H, 0.1, 100)
   camera.position.set(0, 4.2, 4.6); camera.lookAt(0, 0.1, 0)
