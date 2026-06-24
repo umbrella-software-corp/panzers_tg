@@ -1,0 +1,157 @@
+name: _deploy
+
+# Reusable deploy: build the two images (server + web), push to GHCR, then SSH to
+# the env's VPS and pull-and-restart. Called by deploy.yml with environment:
+# staging|production. The job declares `environment:` so secrets.* and vars.*
+# resolve from THAT GitHub Environment — staging and production are fully separated.
+#
+# Per-environment configuration (set in repo Settings → Environments):
+#   variables:  SSH_HOST, DOMAIN, WEBAPP_URL, VITE_API_URL, VITE_WS_URL,
+#               VITE_AMPLITUDE_PROXY, AMPLITUDE_API_KEY (public), BOT_USERNAME,
+#               SUPPORT_BOT_USERNAME, CHANNEL_ID, CHANNEL_URL
+#   secrets:    DEPLOY_SSH_KEY, BOT_TOKEN, ADMIN_KEY,
+#               SUPPORT_BOT_TOKEN, SUPPORT_CHAT_ID
+# Production deploys automatically on a panzers/X.Y.Z tag — no approval gate; the
+# team controls timing by when they push the tag.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      # Serialize deploys per env — no point racing two redeploys on one VPS.
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image prefix / tag / build id
+        id: meta
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"            # GHCR requires lowercase
+          echo "image_prefix=ghcr.io/${owner}/panzers_tg" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF}" == refs/tags/panzers/* ]]; then
+            tag="${GITHUB_REF#refs/tags/panzers/}"          # e.g. 1.0.0
+          else
+            tag="sha-${GITHUB_SHA::7}"                     # e.g. sha-1a2b3c4
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          # BUILD_ID needs a trailing unix-ms so the client version-gate can tell
+          # which build is newer (store.js parses the digits after the last dot).
+          echo "build_id=${tag}.$(date +%s%3N)" >> "$GITHUB_OUTPUT"
+          # Moving tag = environment name (staging|production) for easy manual pulls.
+          echo "moving=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push server
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}-server:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image_prefix }}-server:${{ steps.meta.outputs.moving }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image_prefix }}-server:buildcache-${{ steps.meta.outputs.moving }}
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image_prefix }}-server:buildcache-${{ steps.meta.outputs.moving }},mode=max
+
+      - name: Build & push web
+        # VITE_* are baked into the SPA at build time → stg and prod images differ
+        # even at the same SHA. AMPLITUDE_API_KEY is public (ends up in the bundle).
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: client/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}-web:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image_prefix }}-web:${{ steps.meta.outputs.moving }}
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL }}
+            VITE_WS_URL=${{ vars.VITE_WS_URL }}
+            VITE_AMPLITUDE_API_KEY=${{ vars.AMPLITUDE_API_KEY }}
+            VITE_AMPLITUDE_PROXY=${{ vars.VITE_AMPLITUDE_PROXY }}
+            VITE_BOT_USERNAME=${{ vars.BOT_USERNAME }}
+            VITE_SUPPORT_BOT=${{ vars.SUPPORT_BOT_USERNAME }}
+            VITE_BUILD_ID=${{ steps.meta.outputs.build_id }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image_prefix }}-web:buildcache-${{ steps.meta.outputs.moving }}
+          cache-to: type=registry,ref=${{ steps.meta.outputs.image_prefix }}-web:buildcache-${{ steps.meta.outputs.moving }},mode=max
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ vars.SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Classic KEX: some hosting firewalls reset the post-quantum KEXINIT.
+          cat > ~/.ssh/config <<EOF
+          Host target
+            HostName ${SSH_HOST}
+            User deploy
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256
+            StrictHostKeyChecking accept-new
+          EOF
+          ssh-keyscan -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Sync deploy artifacts
+        run: |
+          ssh target 'install -d -m 755 /opt/panzers'
+          rsync -az deploy/docker-compose.prod.yml deploy/remote-deploy.sh target:/opt/panzers/
+
+      - name: Write .env on server
+        # The heredoc delimiter is single-quoted (<<'EOF') so bash does NO expansion
+        # inside the body — only GH Actions templating (${{ }}) is substituted before
+        # bash sees it. Secret values may safely contain $, ', ", \. File is 0600.
+        run: |
+          umask 077
+          cat > .env.deploy <<'EOF'
+          # Generated by GitHub Actions — do not edit by hand.
+          IMAGE_PREFIX=${{ steps.meta.outputs.image_prefix }}
+          IMAGE_TAG=${{ steps.meta.outputs.tag }}
+          BUILD_ID=${{ steps.meta.outputs.build_id }}
+
+          DOMAIN=${{ vars.DOMAIN }}
+          WEBAPP_URL=${{ vars.WEBAPP_URL }}
+
+          BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+          BOT_USERNAME=${{ vars.BOT_USERNAME }}
+          ADMIN_KEY=${{ secrets.ADMIN_KEY }}
+
+          AMPLITUDE_API_KEY=${{ vars.AMPLITUDE_API_KEY }}
+
+          SUPPORT_BOT_TOKEN=${{ secrets.SUPPORT_BOT_TOKEN }}
+          SUPPORT_CHAT_ID=${{ secrets.SUPPORT_CHAT_ID }}
+
+          CHANNEL_ID=${{ vars.CHANNEL_ID }}
+          CHANNEL_URL=${{ vars.CHANNEL_URL }}
+          EOF
+          scp .env.deploy target:/opt/panzers/.env
+          rm -f .env.deploy
+
+      - name: Deploy
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ssh target "GHCR_USER='${{ github.actor }}' GHCR_TOKEN='${GHCR_TOKEN}' bash /opt/panzers/remote-deploy.sh"

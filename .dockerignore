@@ -1,0 +1,14 @@
+# Keep the build context lean and never bake local state into images.
+**/node_modules
+.git
+.github
+**/dist
+server/data
+design-ref
+tools
+*.log
+.env
+.env.local
+**/.env.local
+**/.DS_Store
+client/public/_*.html
