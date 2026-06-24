@@ -36,16 +36,19 @@ onMounted(async () => {
   renderer.setSize(W, H)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   host.value.appendChild(renderer.domElement)
-  // ВРАЩЕНИЕ на ТАЧ: вешаем обработчики ПРЯМО на канву (не на host через @pointer/bubbling —
-  // на iOS-вебвью bubbling + passive-листенер не давал крутить). touch-action:none + НЕпассивный
-  // pointermove с preventDefault → палец по танку вращает, а не скроллит страницу.
+  // ВРАЩЕНИЕ: на iOS-вебвью pointer-события НЕ долетали (танк не крутился 3 раза) → используем
+  // TOUCH (мобильный стандарт, всегда работает) + MOUSE (десктоп). touch-action:none + НЕпассивный
+  // touchmove с preventDefault → палец по танку вращает, а не скроллит. mouse* на window — драг
+  // продолжается даже если курсор ушёл с канвы.
   const el = renderer.domElement
   el.style.touchAction = 'none'
-  el.addEventListener('pointerdown', onPointerDown)
-  el.addEventListener('pointermove', onPointerMove, { passive: false })
-  el.addEventListener('pointerup', onPointerUp)
-  el.addEventListener('pointercancel', onPointerUp)
-  el.addEventListener('pointerleave', onPointerUp)
+  el.addEventListener('touchstart', onTouchStart, { passive: false })
+  el.addEventListener('touchmove', onTouchMove, { passive: false })
+  el.addEventListener('touchend', onTouchEnd)
+  el.addEventListener('touchcancel', onTouchEnd)
+  el.addEventListener('mousedown', onMouseDown)
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
   scene = new THREE.Scene()
   camera = new THREE.PerspectiveCamera(34, W / H, 0.1, 100)
   camera.position.set(0, 4.2, 4.6); camera.lookAt(0, 0.1, 0)
@@ -137,29 +140,37 @@ async function show() {
 // не переворачиваем). Инерция после отпускания (см. loop). touch-action:none — палец на
 // танке вращает, а не скроллит страницу.
 let moved = 0 // суммарный путь пальца за жест — отличаем поворот от тапа
-function onPointerDown(e) {
-  dragging = true; velY = 0; moved = 0; lastPX = e.clientX; lastPY = e.clientY
-  try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* ok */ }
-}
-function onPointerMove(e) {
+// общая логика драга (вызывается из touch И mouse — координаты экрана x,y)
+function dragStart(x, y) { dragging = true; velY = 0; moved = 0; lastPX = x; lastPY = y }
+function dragMove(x, y) {
   if (!dragging) return
-  if (e.cancelable) e.preventDefault() // глушим скролл страницы под пальцем (iOS-вебвью)
-  const dx = e.clientX - lastPX, dy = e.clientY - lastPY
-  lastPX = e.clientX; lastPY = e.clientY
+  const dx = x - lastPX, dy = y - lastPY
+  lastPX = x; lastPY = y
   moved += Math.abs(dx) + Math.abs(dy)
   if (moved > 6) emit('drag') // порог: явный поворот, а не дрожь пальца на тапе
   dragY += dx * 0.011
   velY = Math.max(-0.3, Math.min(0.3, dx * 0.011)) // кап скорости флика (не разгоняем бесконечно)
   dragX = Math.max(-0.3, Math.min(0.5, dragX + dy * 0.006)) // наклон ограничен (взгляд чуть сверху/сбоку)
 }
-function onPointerUp(e) {
-  dragging = false
-  try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ok */ }
+function dragEnd() { dragging = false }
+// TOUCH (мобайл — главный путь, на iOS pointer не летел)
+function onTouchStart(e) { const t = e.touches[0]; if (t) dragStart(t.clientX, t.clientY) }
+function onTouchMove(e) {
+  const t = e.touches[0]
+  if (!dragging || !t) return
+  if (e.cancelable) e.preventDefault() // глушим скролл страницы под пальцем
+  dragMove(t.clientX, t.clientY)
 }
+function onTouchEnd() { dragEnd() }
+// MOUSE (десктоп; move/up на window — драг продолжается за пределами канвы)
+function onMouseDown(e) { dragStart(e.clientX, e.clientY) }
+function onMouseMove(e) { dragMove(e.clientX, e.clientY) }
+function onMouseUp() { dragEnd() }
 
 watch(() => [props.url, props.camo, props.seed, props.scale], () => show())
 onBeforeUnmount(() => {
   disposed = true; cancelAnimationFrame(raf)
+  try { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp) } catch { /* ok */ }
   if (this_ro) try { this_ro.disconnect() } catch { /* ok */ }
   if (renderer) {
     try { renderer.forceContextLoss() } catch { /* ok */ } // освобождаем WebGL-контекст (иначе утечка → 3D перестаёт создаваться)

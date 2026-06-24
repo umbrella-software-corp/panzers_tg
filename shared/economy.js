@@ -29,7 +29,9 @@ export const NATION_IDS = ['ussr', 'ger', 'usa']
 // ---------- модули: 5 слотов × 3 уровня ----------
 export const MODULE_SLOTS = ['gun', 'tur', 'eng', 'trk', 'rad']
 export const MODULE_MAX = 3
-export const moduleCost = (tier, level) => tier * (level === 2 ? 40 : 80)
+// цена модуля растёт КВАДРАТично по тиру (награда за бой тоже растёт) — ощутимый слив, не копейки.
+// tier²·50/110: т5 1250/2750, т7 2450/5390, т10 5000/11000. ЗЕРКАЛО meta.js — менять В ОБОИХ.
+export const moduleCost = (tier, level) => Math.round(tier * tier * (level === 2 ? 50 : 110))
 export const modLevel = (modules, tankId, modId) => ((modules || {})[tankId] || {})[modId] || 1
 export const modsMaxedCount = (modules, tankId) => MODULE_SLOTS.filter((m) => modLevel(modules, tankId, m) >= MODULE_MAX).length
 
