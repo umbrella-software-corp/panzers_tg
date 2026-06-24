@@ -616,10 +616,14 @@ const TANK_LENGTH_M = {
   m2l: 4.43, stu: 4.53, sher: 5.89, e8: 6.0, per: 6.33, sper: 6.35,
   m48: 6.42, m60: 6.95, ram: 5.64, m1a2: 7.93, abrx: 7.93,
 }
-const SIZE_BY_CLASS = { light: 0.8, medium: 1, heavy: 1.22 }
+const SIZE_BY_CLASS = { light: 0.8, medium: 1, heavy: 1.2 }
+// У КАЖДОГО ТАНКА СВОЙ размер (по реальной длине корпуса): лёгкий ~0.63 → тяж до 1.2 (≈1.9× спред,
+// видно в ангаре). КАП 1.2 — чтобы самые длинные (Maus 10.2м, Т-14 8.7м) не вылезали за кадр и не
+// обрезались. ИС-2/КВ-1 (~0.93) — эталонный «крупный, но влезает» размер, не трогаем.
+const SIZE_CAP = 1.2
 export function tankSizeScale(id) {
   const len = TANK_LENGTH_M[id]
-  if (len) return len / SIZE_REF_M
+  if (len) return Math.min(SIZE_CAP, len / SIZE_REF_M)
   const t = TANK_BY_ID[id]
-  return (t && SIZE_BY_CLASS[t.classId]) || 1
+  return Math.min(SIZE_CAP, (t && SIZE_BY_CLASS[t.classId]) || 1)
 }
