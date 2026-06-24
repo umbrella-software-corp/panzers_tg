@@ -28,6 +28,8 @@ import {
   botTierDmgMult,
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
+  ARCHETYPE,
+  archetypeOf,
   BOT_SEP_RADIUS,
   BOT_SEP_PUSH,
   BOT_SPOT_VISION,
@@ -233,6 +235,8 @@ export class BattleSim {
       botDamage: Math.round(stats.damage * this.botDmgMult * dmgMult * (1 + (VET.dmgMult - 1) * this.vet)),
       botSpeed: stats.maxSpeed * BOT_SPEED_MULT,
       botTurn: stats.turnRate * 0.9,
+      // АРХЕТИП поведения (роль машины: штурмовик/танк/снайпер/охотник/поддержка). Только бот.
+      arche: human ? null : archetypeOf(botTankId, stats.id),
       fireCd: 1 + slot * 0.2,
       stuckT: 0,
       avoidT: 0,
@@ -409,6 +413,13 @@ export class BattleSim {
 
   _stepBot(b, dt) {
     const ai = this.ai // softStart-тюнинг (грейс/шанс) или базовый ENEMY_AI
+    // АРХЕТИП: роль машины модулирует дистанцию боя / отход / укрытие / выбор цели / агрессию.
+    // idR — предпочитаемая дистанция (кап fireRange*0.95: снайпер не «зависает» вне радиуса огня).
+    const arche = b.arche || ARCHETYPE.assault
+    const idR = Math.min(ai.fireRange * 0.95, ai.idealRange * arche.distMult)
+    // КОНЦОВКА annihilation (<45с): боты ФОКУСИРУЮТ (анти-догпайл off) + прут добивать — иначе
+    // бой распыляется без киллов до таймера. Считаем заранее: нужно в выборе цели ниже.
+    const rush = this.mode === 'annihilation' && this.matchTime < 45
     // PvE-эдж: бот на команде БЕЗ людей = враг соло-игрока → чуть точнее/злее (см. ENEMY_EDGE).
     // В PvP (люди в обеих командах) эджа нет. Мягкий старт его подавляет (новичка не давим).
     const enemyBot = !this.softStart && !this.humanTeams.has(b.team)
@@ -429,7 +440,8 @@ export class BattleSim {
       // бот видит и стреляет только в радиусе своего зрения — не через всю карту
       if (d > ai.vision || this._lineBlocked(b.x, b.y, f.x, f.y)) continue
       const hpFrac = f.maxHp ? Math.max(0, Math.min(1, f.hp / f.maxHp)) : 1
-      let score = d * (0.55 + 0.45 * hpFrac) // ФОКУС-ОГОНЬ: подранок «ближе» по скору → команда добивает вместе
+      const hpW = Math.min(0.7, 0.45 * arche.hpFocus) // вес добивания подранка (архетип: охотник-финишер выше)
+      let score = d * (1 - hpW + hpW * hpFrac) // ФОКУС-ОГОНЬ: подранок «ближе» по скору → команда добивает вместе
       // фокус на живом игроке: растёт с ветеранством + PvE-враги давят на него сильнее
       if (f.human) score *= Math.max(0.3, 1 - 0.25 * this.vet - (enemyBot ? ENEMY_EDGE.humanFocus : 0))
       // АНТИ-ДОГПАЙЛ (умнее): реже берём цель, которую УЖЕ обступила своя команда — бот
@@ -441,7 +453,7 @@ export class BattleSim {
       for (const a of this.units) {
         if (a.alive && a.team === b.team && a.id !== b.id && (a.x - f.x) ** 2 + (a.y - f.y) ** 2 < crowdR2) mates++
       }
-      score *= 1 + 0.45 * mates // каждый уже-наседающий союзник делает цель менее привлекательной
+      score *= Math.max(0.2, 1 + (rush ? 0 : arche.crowd) * mates) // (+) рассредоточение / (−) поддержка липнет / rush: фокус
       if (score < bestScore) {
         bestScore = score
         bestD = d
@@ -464,12 +476,10 @@ export class BattleSim {
       }
     }
 
-    // КОНЦОВКА БОЯ (annihilation): в последние ~45с боты перестают камперить (не ныряют
-    // в кусты, не отходят ранеными) и ПРУТ добивать — иначе недобитые «трусы прячутся и
-    // ждут, когда выйдет время» (#29 @Z_86_V), а победа решается по таймеру, а не в бою.
-    // Это ДВИЖЕНИЕ, не стрельба: инвариант честности (бот бьёт человека только из его
-    // засвета + после грейса) ниже НЕ трогаем — давим, чтобы засветиться и честно драться.
-    const rush = this.mode === 'annihilation' && this.matchTime < 45
+    // КОНЦОВКА БОЯ (annihilation, rush — объявлен выше): в последние ~45с боты перестают
+    // камперить (не ныряют в кусты, не отходят ранеными), ФОКУСИРУЮТ и ПРУТ добивать — иначе
+    // недобитые «трусы прячутся и ждут таймер» (#29 @Z_86_V). Это ДВИЖЕНИЕ+фокус, не нарушение
+    // честности (бот бьёт человека только из его засвета + после грейса) — её ниже НЕ трогаем.
     if (b.reverseT > 0) {
       // АНТИ-ЗАСТРЕВАНИЕ: пока reverseT — пятимся ЗАДНИМ ХОДОМ + доворот вбок (avoidDir),
       // чтобы вылезти из угла/у стены (#28 «боты стоят и крутятся на месте»). Одного
@@ -502,30 +512,39 @@ export class BattleSim {
         //    вблизи сводим ствол на цель. Лобовой суицид-разгон убран.
         const flank = b.id % 2 ? 1 : -1
         const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
-        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
-        // укрытие ищем, только пока ствол не готов и мы НЕ в отступлении (раненый просто уходит)
-        const cover = b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 220) : null
+        // ОТХОД по архетипу: штурмовик/танк (retreatFrac≈0) НЕ отступают; снайпер/охотник/поддержка кайтят
+        const retreatHp = b.maxHp * (arche.retreatFrac + (b.id % 5) * 0.012) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
+        const canRetreat = arche.retreatFrac > 0
+        // УКРЫТИЕ по архетипу: снайпер/охотник прячут корпус (cover высок → ищем шире), штурмовик почти нет
+        const cover = arche.cover > 0.25 && b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 120 + 200 * arche.cover) : null
         const inCover = cover && Math.hypot(b.x - cover.x, b.y - cover.y) <= cover.r
-        // видим ЧЕЛОВЕКА, грейс прошёл, но стрелять нельзя — он нас ещё не засветил
-        // (инвариант честности). Не висим пассивно на дистанции → ПОДЖИМАЕМ, чтобы
-        // засветиться и завязать честный бой (#28 «бот ходит за мной и не стреляет»).
-        // В грейс новичка НЕ давим (флаг false) — честный первый бой сохраняется.
+        // видим ЧЕЛОВЕКА, грейс прошёл, но стрелять нельзя — он нас ещё не засветил (инвариант
+        // честности). Не висим пассивно → ПОДЖИМАЕМ засветиться (#28). В грейс новичка НЕ давим.
         const blindToHuman =
           target.human && this.t >= ai.graceSec && !(this._spotted[target.team] && this._spotted[target.team].has(b.id))
+        // фланг шире у нежмущих (охотник заходит во фланг/тыл), уже у напористых (штурмовик прямее)
+        const flankW = bestD > idR ? 0.3 + 0.4 * (1 - arche.push) : 0.14
+        // КОММИТ В ВЫСТРЕЛ: ствол готов (или вот-вот) + цель в радиусе огня → НАВОДИМСЯ на неё,
+        // не флангуем и не ныряем в куст. Иначе бот вечно кружит/прячется и почти не стреляет
+        // (особенно на низких скоростях новой сетки) → союзники не добивают, бой не решается.
+        const commitShot = b.fireCd <= 0.35 && bestD <= ai.fireRange && !this._lineBlocked(b.x, b.y, target.x, target.y)
         let steerA
-        if (cover) steerA = Math.atan2(cover.y - b.y, cover.x - b.x) // на перезарядке — ныряем в куст
-        else steerA = ang + (bestD > ai.idealRange ? 0.5 : 0.14) * flank // фланговый заход; у дистанции боя — ствол на цель
+        if (commitShot) steerA = ang // ствол на цель — стреляем, тактика потом
+        else if (cover) steerA = Math.atan2(cover.y - b.y, cover.x - b.x) // на перезарядке — ныряем в куст
+        else steerA = ang + flankW * flank // фланговый заход; у дистанции боя — ствол на цель
         if (b.avoidT > 0) steerA += b.avoidDir * 1.5
         const maxTurn = b.botTurn * dt
         b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
         let move = 0
-        if (!brave && b.hp < retreatHp && !rush) move = -1 // ранен — отходим (в концовке НЕ отходим — добиваем)
-        else if (blindToHuman && bestD > ai.idealRange * 0.5) move = 1 // не засвечен у человека → поджимаем (засветиться и стрелять), а не камп на дистанции
-        else if (rush && bestD > ai.idealRange * 0.85) move = 1 // концовка: сближаемся до БОЕВОЙ дистанции и добиваем (не в упор — иначе толкотня/«колбасит как коров»)
+        // ближе этой дистанции держащий-дистанцию (снайпер/поддержка) отъезжает (кайт); штурмовик — почти нет
+        const backoff = idR * (0.4 + 0.5 * (1 - arche.push))
+        if (canRetreat && !brave && b.hp < retreatHp && !rush) move = -1 // ранен — отходим (танк/штурмовик не отступают)
+        else if (blindToHuman && bestD > idR * 0.5) move = 1 // не засвечен у человека → поджимаем (засветиться и стрелять)
+        else if (rush && bestD > ai.idealRange * 0.85) move = 1 // концовка: все добивают (архетип не мешает)
         else if (inCover) move = 0 // в кусте — пережидаем перезарядку (выйдем стрелять, когда ствол готов)
         else if (cover) move = 1 // едем в укрытие
-        else if (bestD > ai.idealRange * 1.1) move = 1 // далеко — сближаемся (с флангом)
-        else if (bestD < ai.idealRange * 0.55) move = -0.5 // слишком близко — чуть назад
+        else if (bestD > idR * 1.1) move = 1 // далеко — сближаемся до СВОЕЙ дистанции (с флангом)
+        else if (bestD < backoff) move = -0.5 // ближе своей дистанции — отъезжаем (снайпер кайтит, штурмовик почти нет)
         wantMove = move !== 0
         const mag = move < 0 ? Math.abs(move) * REVERSE_MULT : move
         b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt

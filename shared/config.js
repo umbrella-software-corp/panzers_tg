@@ -199,6 +199,35 @@ export const botTierHpMult = (tier) => BOT_HP_CURVE[clampTier(tier)] || 1
 export const botTierDmgMult = (tier) => BOT_DMG_CURVE[clampTier(tier)] || 1
 export const BOT_DMG_MULT = 0.5 // боты бьют ~половину игрока (PvE-fair); поднять = жёстче
 export const BOT_SPEED_MULT = 0.9
+
+// ════ АРХЕТИПЫ ПОВЕДЕНИЯ БОТОВ (по таблице владельца 2026-06-24) ════
+// Бот играет РОЛЬ своей машины: ШТУРМОВИК прёт и добивает, ТАНК держит позицию/ставит корпус,
+// СНАЙПЕР кайтит из укрытий, ОХОТНИК фланг+добивание подранков, ПОДДЕРЖКА липнет к группе.
+// Параметры модулируют _stepBot (дистанция боя / отступление / укрытие / выбор цели / агрессия).
+// Инвариант ЧЕСТНОГО ЗАСВЕТА (бот бьёт человека только из его засвета + после грейса) НЕ трогаем.
+//  distMult   — множитель боевой дистанции (idealRange, капается fireRange): <1 ближе, >1 кайт
+//  retreatFrac— порог HP отхода (0 = не отступает: штурмовик/танк)
+//  cover      — тяга к укрытию 0..1 (радиус поиска куста + гейт; <0.25 не прячется)
+//  hpFocus    — вес добивания подранка в выборе цели (1 базовый, >1 финишер-охотник)
+//  crowd      — анти-догпайл (+ рассредоточение; − группировка на цель союзников = поддержка)
+//  push       — агрессия сближения (1 жмёт в упор, 0 держит дистанцию/кайт)
+export const ARCHETYPE = {
+  assault: { distMult: 0.7, retreatFrac: 0.06, cover: 0.15, hpFocus: 1.1, crowd: 0.22, push: 1.0 },
+  tank: { distMult: 0.9, retreatFrac: 0.0, cover: 0.3, hpFocus: 0.55, crowd: 0.22, push: 0.55 },
+  sniper: { distMult: 1.7, retreatFrac: 0.3, cover: 0.9, hpFocus: 0.7, crowd: 0.28, push: 0.15 },
+  hunter: { distMult: 1.05, retreatFrac: 0.26, cover: 0.7, hpFocus: 1.35, crowd: 0.32, push: 0.7 },
+  support: { distMult: 1.2, retreatFrac: 0.22, cover: 0.5, hpFocus: 0.85, crowd: -0.4, push: 0.4 },
+}
+const ARCHE_BY_CLASS = { light: 'hunter', heavy: 'tank', medium: 'assault' }
+// привязка машин к архетипам (явные из таблицы + по роли; остальное — дефолт по классу)
+export const TANK_ARCHETYPE = {
+  t34: 'assault', t3485: 'assault', pnt: 'assault', sher: 'assault', m48: 'assault', m3lee: 'assault', stug3: 'assault', hetzer: 'assault', t28: 'assault', t54: 'assault',
+  kv1: 'tank', is2: 'tank', tgr: 'tank', tgr2: 'tank', per: 'tank', abr: 'tank', t14: 'tank', m1a2: 'tank', abrx: 'tank', maus: 'tank', sper: 'tank', kv2: 'tank', jumbo: 'tank', ferdinand: 'tank',
+  t90: 'sniper', leo1: 'sniper', leo2: 'sniper', leo2a7: 'sniper', t80u: 'sniper', kf51: 'sniper', su76m: 'sniper', su85: 'sniper', su100: 'sniper', isu152: 'sniper', nashorn: 'sniper', jagdpanther: 'sniper', grille15: 'sniper', m10: 'sniper', m36: 'sniper', t30: 'sniper',
+  bt7: 'hunter', m2l: 'hunter', stu: 'hunter', pz2: 'hunter', pz3: 'hunter', t26: 'hunter', t70: 'hunter', chaffee: 'hunter', hellcat: 'hunter',
+  t72: 'support', m60: 'support', e8: 'support', pz4: 'support', ram: 'support', pz4h: 'support',
+}
+export const archetypeOf = (tankId, classId) => ARCHETYPE[TANK_ARCHETYPE[tankId] || ARCHE_BY_CLASS[classId] || 'assault']
 // РАССРЕДОТОЧЕНИЕ (анти-толпа): бот мягко отталкивается от союзника ближе SEP_RADIUS
 // (в дополнение к жёсткому _collide на касании) — толпа у одной точки/цели расходится.
 export const BOT_SEP_RADIUS = 130
