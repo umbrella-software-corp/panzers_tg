@@ -117,7 +117,7 @@ export const ENEMY_AI = {
 // Состав команды ботов по индексу (5 слотов) и понижающие коэффициенты
 // (бот стреляет стабильно по кд, поэтому слабее игрока на выстрел).
 export const BOT_CLASS_MIX = ['light', 'medium', 'heavy', 'medium', 'light']
-export const BOT_DMG_MULT = 0.5
+export const BOT_DMG_MULT = 1.0 // боты бьют как игрок (зеркало shared: «машины такими же»)
 export const BOT_SPEED_MULT = 0.9
 
 // Перевод параметров класса в радианы для движка.

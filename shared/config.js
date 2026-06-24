@@ -197,7 +197,9 @@ const BOT_HP_CURVE = [0, 0.35, 0.42, 0.57, 0.68, 1.0, 1.27, 1.33, 1.69, 2.03, 2.
 const BOT_DMG_CURVE = [0, 0.32, 0.43, 0.6, 0.77, 1.0, 1.36, 1.53, 1.79, 2.09, 2.38]
 export const botTierHpMult = (tier) => BOT_HP_CURVE[clampTier(tier)] || 1
 export const botTierDmgMult = (tier) => BOT_DMG_CURVE[clampTier(tier)] || 1
-export const BOT_DMG_MULT = 0.5 // боты бьют ~половину игрока (PvE-fair); поднять = жёстче
+export const BOT_DMG_MULT = 1.0 // боты бьют КАК ИГРОК (решение владельца: «машины такими же») —
+// фикс высокого TTK: союзники-боты добивают, враги честный вызов. Честность (засвет+грейс) и
+// softStart новичку остаются. Бот tier-7 урон ≈252 ≈ игрок 240. Снизить = мягче PvE.
 export const BOT_SPEED_MULT = 0.9
 
 // ════ АРХЕТИПЫ ПОВЕДЕНИЯ БОТОВ (по таблице владельца 2026-06-24) ════
