@@ -1,14 +1,14 @@
 <script setup>
 // Магазин: ящики и голдовые снаряды за жетоны; паки кредитов/жетонов — за
 // Telegram Stars ⭐ (пока мгновенное начисление; invoice через бота — позже).
-import { ref, onMounted } from 'vue'
-import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank, grantRandomCamo, econOn, buyCrateServer } from '../store.js'
+import { ref, onMounted, watch } from 'vue'
+import { profile, addRewards, spendTokens, buyGoldAmmo, syncProfile, isPremium, premiumDaysLeft, isOwned, selectTank, grantRandomCamo, econOn, buyCrateServer, applyPendingGrants, crateReveal } from '../store.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 // `t` алиасим в `tr`: в шаблоне/скрипте уже есть локальные `t` (v-for="t in
 // PREMIUM_TANKS", premStats(t), buyPremTank(t)) — танк, не переводчик.
 import { t as tr, fmtNum } from '../i18n.js'
-import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal } from '../game/meta.js'
+import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal, TANK_BY_ID, CAMO_BY_ID } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
 import StatRow from './ui/StatRow.vue'
@@ -36,6 +36,66 @@ const TOKEN_PACKS = [
   { id: 't2', amount: 60, price: '83 ⭐', hot: true },
   { id: 't3', amount: 150, price: '165 ⭐' },
 ]
+// ДОНАТ-ЯЩИКИ (крутка за ⭐): ЗЕРКАЛО server economy.js (CRATE_STARS/PITY/ODDS) — числа
+// чисто для ДИСПЛЕЯ, ролл авторитетно на сервере. Менять синхронно при правке шансов.
+const CRATE_STARS = 10
+const CRATE_PITY = 15
+const NATION_CRATES = [
+  { nation: 'ussr', img: '/sprites/crates/ussr.png', accent: '#d8453f' },
+  { nation: 'ger', img: '/sprites/crates/ger.png', accent: '#c9ccd2' },
+  { nation: 'usa', img: '/sprites/crates/usa.png', accent: '#4f8fe0' },
+]
+const CRATE_ODDS_ROWS = [
+  { k: 'oddsT8', pct: '0.5%', col: 'var(--amber-hi)' },
+  { k: 'oddsT4', pct: '3%', col: 'var(--amber)' },
+  { k: 'oddsCamo', pct: '12%', col: 'var(--green)' },
+  { k: 'oddsCrystals', pct: '25%', col: 'var(--blue)' },
+  { k: 'oddsCredits', pct: '59.5%', col: 'var(--ink-dim)' },
+]
+const oddsOpen = ref(null) // нация, чьи шансы развёрнуты
+const pityLeft = (nation) => Math.max(0, CRATE_PITY - ((profile.cratePity && profile.cratePity[nation]) || 0))
+const spinning = ref(false)
+// крутка донат-ящика за ⭐: продукт crate_<nation> → grantProduct кладёт kind:'crate' в
+// очередь → applyPendingGrants выполняет ролл авторитетно и кладёт результат в crateReveal.
+async function spinCrate(nc) {
+  if (spinning.value) return
+  track('shop_item_clicked', { item_id: 'crate_' + nc.nation, item_type: 'gacha_crate', price: CRATE_STARS, currency: 'stars' })
+  spinning.value = true
+  try {
+    const r = await apiBuy('crate_' + nc.nation)
+    if (r && r.granted) {
+      await applyPendingGrants() // dev-режим: ролл уже в очереди
+      spinning.value = false
+    } else if (r && r.link && window.Telegram?.WebApp?.openInvoice) {
+      window.Telegram.WebApp.openInvoice(r.link, (status) => {
+        if (status === 'paid') {
+          haptic('success')
+          setTimeout(async () => { await applyPendingGrants(); spinning.value = false }, 1300) // ждём поллинг grantProduct
+        } else { spinning.value = false }
+      })
+    } else { showToast(tr('shop.payUnavailable'), true); spinning.value = false }
+  } catch {
+    track('purchase_failed', { product_id: 'crate_' + nc.nation, reason: 'api_error' })
+    showToast(tr('shop.serverUnavailable'), true); spinning.value = false
+  }
+}
+// РЕВИЛ донат-ящика: crateReveal (массив наград из grants-apply) → разворачиваем выпавшее
+// в карточку. Одиночная крутка = 1 награда. camo приходит строкой 'tankId_camoId'.
+const crateWin = ref(null)
+function showCrateReveal(list) {
+  if (!Array.isArray(list) || !list.length) return
+  const rw = list[0]
+  if (rw.camo) {
+    const [tid, cid] = String(rw.camo).split('_')
+    rw._camo = { tankId: tid, camoId: cid, name: (CAMO_BY_ID[cid] || {}).name || cid, tankName: (TANK_BY_ID[tid] || {}).name || tid }
+  }
+  if (rw.tank) rw._tankName = (TANK_BY_ID[rw.tank] || {}).name || rw.tank
+  crateWin.value = rw
+  crateReveal.value = null
+  haptic('success')
+  track('crate_gacha_opened', { nation: rw.nation, type: rw.type, tank: rw.tank || null, tier: rw.tier || null })
+}
+watch(crateReveal, (v) => showCrateReveal(v))
 
 const toast = ref(null) // { key, text, bad }
 let toastTimer = null
@@ -156,6 +216,7 @@ onMounted(() => {
     battles_count: profile.stats?.battles || 0,
     before_first_battle: (profile.stats?.battles || 0) === 0,
   })
+  if (Array.isArray(crateReveal.value) && crateReveal.value.length) showCrateReveal(crateReveal.value) // ролл случился до входа в Магазин
 })
 </script>
 
@@ -167,6 +228,35 @@ onMounted(() => {
     </header>
 
     <div class="pz-noscroll" style="flex: 1; overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 16px">
+      <!-- ДОНАТНЫЕ ЯЩИКИ (крутка за ⭐) — герой магазина -->
+      <section>
+        <div class="pz-stencil-h">{{ tr('shop.gachaHead') }}</div>
+        <div style="font-size: 10.5px; color: var(--ink-faint); margin-top: 4px; font-weight: 500">{{ tr('shop.gachaSub') }}</div>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px">
+          <div v-for="nc in NATION_CRATES" :key="nc.nation" class="pz-plate" style="padding: 0; overflow: hidden">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 11px 12px">
+              <img :src="nc.img" :alt="tr('shop.nat_' + nc.nation)" class="crate-art" :style="{ boxShadow: '0 0 16px -3px ' + nc.accent }" />
+              <div style="flex: 1; min-width: 0">
+                <div class="pz-display" style="font-size: 14.5px">{{ tr('shop.nat_' + nc.nation) }}</div>
+                <div style="font-size: 10.5px; color: var(--ink-dim); margin-top: 2px; font-weight: 500; line-height: 1.35">{{ tr('shop.gachaPool') }}</div>
+                <div style="display: flex; align-items: center; gap: 9px; margin-top: 5px; flex-wrap: wrap">
+                  <span class="pz-pixel" style="font-size: 7.5px; color: var(--amber)">🎯 {{ tr('shop.gachaPity', { n: pityLeft(nc.nation) }) }}</span>
+                  <span class="pz-pixel crate-odds-tg" @click="oddsOpen = oddsOpen === nc.nation ? null : nc.nation">{{ tr('shop.gachaOdds') }} {{ oddsOpen === nc.nation ? '▾' : '▸' }}</span>
+                </div>
+              </div>
+              <button class="pz-cta crate-spin" :disabled="spinning" @click="spinCrate(nc)">{{ CRATE_STARS }} ⭐</button>
+            </div>
+            <div v-if="oddsOpen === nc.nation" class="crate-odds-panel">
+              <div v-for="o in CRATE_ODDS_ROWS" :key="o.k" class="crate-odds-row">
+                <span :style="{ color: o.col }">{{ tr('shop.' + o.k) }}</span>
+                <b :style="{ color: o.col }">{{ o.pct }}</b>
+              </div>
+              <div class="crate-odds-note">{{ tr('shop.gachaDupNote') }}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- премиум-аккаунт -->
       <section>
         <div class="pz-stencil-h">{{ tr('shop.premiumHead') }}</div>
@@ -330,6 +420,41 @@ onMounted(() => {
     </transition>
     </Teleport>
 
+    <!-- РЕВИЛ ДОНАТ-ЯЩИКА: что выпало (танк/дубль/камо/кристаллы/кредиты) -->
+    <Teleport to="body">
+    <transition name="pz-fade">
+      <div v-if="crateWin" class="reveal-overlay" @click.self="crateWin = null">
+        <div class="reveal-card pz-plate pz-brackets crate-reveal" :style="{ '--bk': crateWin.tank && crateWin.type !== 'dup' ? 'var(--amber-hi)' : 'var(--amber)' }">
+          <div class="pz-pixel" style="font-size: 8px; color: var(--amber); letter-spacing: 0.14em; text-align: center">{{ tr('shop.nat_' + crateWin.nation) }} · {{ tr('shop.youGot') }}</div>
+          <template v-if="crateWin.type === 't8' || crateWin.type === 't4'">
+            <div class="pz-display crate-jackpot" style="text-align: center; font-size: 18px; margin-top: 8px; color: var(--amber-hi)">{{ tr(crateWin.type === 't8' ? 'shop.crateWonT8' : 'shop.crateWonT4') }}</div>
+            <TankImg :tank-id="crateWin.tank" :size="148" style="display: block; margin: 4px auto" />
+            <div class="pz-display" style="text-align: center; font-size: 20px">{{ crateWin._tankName }}</div>
+          </template>
+          <template v-else-if="crateWin.type === 'dup'">
+            <TankImg :tank-id="crateWin.tank" :size="108" style="display: block; margin: 8px auto; filter: grayscale(0.45)" />
+            <div class="pz-display" style="text-align: center; font-size: 14.5px; line-height: 1.3">{{ tr('shop.crateDup', { name: crateWin._tankName }) }}</div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 10px"><PzIcon name="token" :size="24" /><span class="pz-display" style="font-size: 26px; color: var(--blue)">+{{ crateWin.crystals }}</span></div>
+          </template>
+          <template v-else-if="crateWin._camo">
+            <TankImg :tank-id="crateWin._camo.tankId" :camo="crateWin._camo.camoId" :size="128" style="display: block; margin: 8px auto" />
+            <div class="pz-display" style="text-align: center; font-size: 15px">{{ tr('shop.rewardCamo', { name: crateWin._camo.name }) }}</div>
+            <div style="text-align: center; font-size: 11px; color: var(--ink-dim); margin-top: 2px">{{ crateWin._camo.tankName }}</div>
+          </template>
+          <template v-else-if="crateWin.crystals">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 6px"><PzIcon name="token" :size="32" /><span class="pz-display" style="font-size: 34px; color: var(--blue)">+{{ crateWin.crystals }}</span></div>
+            <div style="text-align: center; font-size: 12px; color: var(--ink-dim)">{{ tr('shop.crateCrystals') }}</div>
+          </template>
+          <template v-else>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 6px"><PzIcon name="coin" :size="32" /><span class="pz-display" style="font-size: 34px">+{{ fmt(crateWin.credits || 0) }}</span></div>
+            <div style="text-align: center; font-size: 12px; color: var(--ink-dim)">{{ tr('shop.rewardCredits') }}</div>
+          </template>
+          <button class="pz-cta" style="width: 100%; margin-top: 16px" @click="crateWin = null">{{ tr('shop.claim') }}</button>
+        </div>
+      </div>
+    </transition>
+    </Teleport>
+
     <BottomNav screen="shop" @go="emit('go', $event)" />
   </div>
 </template>
@@ -346,6 +471,23 @@ onMounted(() => {
   background: rgba(6, 9, 14, 0.72);
   backdrop-filter: blur(4px);
 }
+/* донатные ящики (крутка за ⭐) */
+.crate-art { width: 60px; height: 60px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.crate-spin { padding: 12px 16px; font-size: 14px; white-space: nowrap; width: auto; flex-shrink: 0; }
+.crate-spin:disabled { opacity: 0.55; pointer-events: none; }
+.crate-odds-tg {
+  font-size: 7.5px; color: var(--ink-dim); border: 1px solid var(--line-strong);
+  border-radius: 5px; padding: 2px 6px 1px; cursor: pointer; letter-spacing: 0.06em;
+}
+.crate-odds-panel {
+  border-top: 1px solid var(--line); padding: 8px 14px 11px;
+  display: flex; flex-direction: column; gap: 4px; background: rgba(0, 0, 0, 0.25);
+}
+.crate-odds-row { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 600; }
+.crate-odds-note { font-size: 10px; color: var(--ink-faint); margin-top: 3px; font-weight: 500; }
+@keyframes crate-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+.crate-reveal { animation: crate-pop 0.35s ease; }
+.crate-jackpot { animation: crate-pop 0.45s ease; }
 .reveal-card {
   width: 100%;
   max-width: 320px;
