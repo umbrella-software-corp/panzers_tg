@@ -23,8 +23,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 1.9,
     toleranceDeg: 5.5,
     reload: 2.2,
-    damage: 319, // ×DMG_SCALE(14.5) — синхрон с meta.js/shared (был ×7.25)
-    hp: 1160, // ×HP_SCALE(14.5)
+    damage: 120, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 319) — синхрон с shared/meta DMG_SCALE 6
+    hp: 1160, // HP без изменений (режем только урон)
     range: 560,
     vision: 520,
     maxSpeed: 160,
@@ -38,8 +38,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 2.5,
     toleranceDeg: 4,
     reload: 3.4,
-    damage: 493, // ×DMG_SCALE(14.5)
-    hp: 1740, // ×HP_SCALE(14.5)
+    damage: 185, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 493)
+    hp: 1740, // HP без изменений
     range: 600,
     vision: 440,
     maxSpeed: 120,
@@ -53,8 +53,8 @@ export const TANK_CLASSES = {
     sweepPeriod: 3.8,
     toleranceDeg: 3.5,
     reload: 5.0,
-    damage: 754, // ×DMG_SCALE(14.5)
-    hp: 2610, // ×HP_SCALE(14.5)
+    damage: 283, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 754)
+    hp: 2610, // HP без изменений
     range: 640,
     vision: 360,
     maxSpeed: 85,
