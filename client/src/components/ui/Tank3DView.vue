@@ -17,6 +17,11 @@ const host = ref(null)
 const loading = ref(true) // показываем «загрузка модели…» пока GLB не отрисован (платформа не выглядит пустой)
 let THREE, renderer, scene, camera, model, raf
 let disposed = false
+// ВРАЩЕНИЕ ПАЛЬЦЕМ (turntable): baseRotY — ориентация «лицом к игроку» из show();
+// поверх — пользовательский доворот dragY (горизонталь) + наклон dragX (вертикаль) + инерция velY.
+let baseRotY = 0
+let dragY = 0, dragX = 0, velY = 0
+let dragging = false, lastPX = 0, lastPY = 0
 
 onMounted(async () => {
   THREE = await import('three')
@@ -34,7 +39,13 @@ onMounted(async () => {
   scene.add(new THREE.HemisphereLight(0xdce8f5, 0x3a3a2a, 1.25))
   const key = new THREE.DirectionalLight(0xfff1d6, 1.7); key.position.set(4, 9, 6); scene.add(key)
   await show()
-  const loop = () => { raf = requestAnimationFrame(loop); if (renderer) renderer.render(scene, camera) }
+  const loop = () => {
+    raf = requestAnimationFrame(loop)
+    if (!renderer) return
+    if (!dragging && Math.abs(velY) > 0.0002) { dragY += velY; velY *= 0.93 } // инерция после отпускания
+    if (model) { model.rotation.y = baseRotY + dragY; model.rotation.x = dragX }
+    renderer.render(scene, camera)
+  }
   loop()
   this_ro = new ResizeObserver(() => resize()); this_ro.observe(host.value)
 })
@@ -102,9 +113,31 @@ async function show() {
   // на 90°. Так любая (и будущая) модель встаёт лицом к игроку. window.__FACE — доп-тюнер.
   const faceY = size.x > size.z ? -Math.PI / 2 : 0
   const flipY = modelNeedsFlip(props.url) ? Math.PI : 0 // модели «задом» (MODEL_FLIP) → лицом к игроку
-  wrap.rotation.y = faceY + flipY + ((typeof window !== 'undefined' && window.__FACE != null) ? window.__FACE : 0)
+  baseRotY = faceY + flipY + ((typeof window !== 'undefined' && window.__FACE != null) ? window.__FACE : 0)
+  dragY = 0; dragX = 0; velY = 0 // новый танк — снова лицом к игроку (можно покрутить)
+  wrap.rotation.y = baseRotY
   model = wrap; scene.add(wrap)
   loading.value = false // модель в сцене → убираем индикатор загрузки
+}
+
+// DRAG-TO-ROTATE: горизонталь крутит танк (Y), вертикаль — лёгкий наклон (X, ограничен,
+// не переворачиваем). Инерция после отпускания (см. loop). touch-action:none — палец на
+// танке вращает, а не скроллит страницу.
+function onPointerDown(e) {
+  dragging = true; velY = 0; lastPX = e.clientX; lastPY = e.clientY
+  try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* ok */ }
+}
+function onPointerMove(e) {
+  if (!dragging) return
+  const dx = e.clientX - lastPX, dy = e.clientY - lastPY
+  lastPX = e.clientX; lastPY = e.clientY
+  dragY += dx * 0.011
+  velY = Math.max(-0.3, Math.min(0.3, dx * 0.011)) // кап скорости флика (не разгоняем бесконечно)
+  dragX = Math.max(-0.3, Math.min(0.5, dragX + dy * 0.006)) // наклон ограничен (взгляд чуть сверху/сбоку)
+}
+function onPointerUp(e) {
+  dragging = false
+  try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ok */ }
 }
 
 watch(() => [props.url, props.camo, props.seed, props.scale], () => show())
@@ -120,13 +153,22 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="host" class="tank3d">
+  <div
+    ref="host"
+    class="tank3d"
+    @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="onPointerUp"
+    @pointercancel="onPointerUp"
+    @pointerleave="onPointerUp"
+  >
     <div v-if="loading" class="tank3d-load"><span class="tank3d-spin"></span>загрузка модели…</div>
   </div>
 </template>
 
 <style scoped>
-.tank3d { width: 100%; height: 100%; position: relative; }
+.tank3d { width: 100%; height: 100%; position: relative; touch-action: none; cursor: grab; }
+.tank3d:active { cursor: grabbing; }
 .tank3d-load {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
   color: var(--ink-dim, #9aa6b2); font-size: 13px; font-weight: 600; letter-spacing: 0.3px; pointer-events: none;
