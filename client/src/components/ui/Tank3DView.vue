@@ -119,8 +119,9 @@ async function show() {
   const size = new THREE.Vector3(); box.getSize(size)
   const center = new THREE.Vector3(); box.getCenter(center)
   m.position.sub(center) // центр в начало координат
-  // нормализуем к опорному размеру и применяем относительный размер класса (лёгкий/тяж)
-  m.scale.setScalar((3.0 / (Math.max(size.x, size.y, size.z) || 1)) * props.scale)
+  // нормализуем к опорному размеру и применяем относительный размер класса (лёгкий/тяж).
+  // База 2.5 (было 3.0, −17%): танки крупноваты в отсеке (фидбек «размеры пересмотреть»).
+  m.scale.setScalar((2.5 / (Math.max(size.x, size.y, size.z) || 1)) * props.scale)
   applyCamo(m, props.camo, props.seed) // перекраска камуфляжем (процедурно, без PNG)
   const wrap = new THREE.Group(); wrap.add(m)
   // «мордой к игроку»: ставим модель длиной к КАМЕРЕ (ось Z). Модели от разных партий

@@ -350,9 +350,10 @@ onMounted(() => {
 
 
     <!-- ===== chrome ===== -->
-    <header style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px 6px">
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 6px">
       <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto">
-        <div class="pz-display" style="font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">PANZER <span style="color: var(--amber)">TG</span></div>
+        <!-- логотип НЕ ужимается (flex-shrink:0) — бренд не режем в многоточие даже на тесной шапке -->
+        <div class="pz-display" style="font-size: 15px; flex-shrink: 0; white-space: nowrap">PANZER <span style="color: var(--amber)">TG</span></div>
         <!-- премиум активен: корона на главной (тап → магазин) -->
         <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive') + ' · ' + t('common.days', { n: premiumDaysLeft() })" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}</button>
       </div>
