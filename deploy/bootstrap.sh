@@ -36,6 +36,17 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 systemctl enable --now docker
 
+# Docker 29 defaults to the containerd image store (storage driver "overlayfs"),
+# which cAdvisor can't read per-container metrics from (it fails to resolve the
+# container RW layer) — so the Grafana monitoring would show no container load.
+# Pin the classic overlay2 graphdriver. Safe on a fresh host (no images yet).
+if [ ! -s /etc/docker/daemon.json ]; then
+	echo "==> Pinning Docker storage driver to overlay2 (cAdvisor-friendly)"
+	mkdir -p /etc/docker
+	printf '{\n  "features": { "containerd-snapshotter": false }\n}\n' > /etc/docker/daemon.json
+	systemctl restart docker
+fi
+
 echo "==> Configuring firewall (ufw)"
 ufw --force reset
 ufw default deny incoming

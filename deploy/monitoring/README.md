@@ -18,6 +18,11 @@ node-exp ─┼─► victoriametrics ─► grafana ──(сеть panzers-edg
 > ⚠️ App-метрики (RPS, бои, WS-сокеты) тут НЕ собираются: сервер не инструментирован
 > (`/metrics` нет). Это отдельная задача — добавить экспортёр в сервер.
 
+> ⚠️ Требуется Docker storage driver **overlay2** (его пинит `bootstrap.sh` через
+> `/etc/docker/daemon.json`). Под дефолтным containerd image-store Docker 29
+> (`overlayfs`) cAdvisor не находит RW-слой контейнеров и НЕ отдаёт per-container
+> метрики. cAdvisor запущен с `cgroup: host` — обязательно на cgroup v2.
+
 ## Установка (на прод-сервере, один раз — на cutover, ПОСЛЕ app-стека)
 
 Мониторинг подключается к сети app-стека `panzers_edge` (её создаёт app-compose) —

@@ -29,15 +29,22 @@ services:
     networks: [monitoring]
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
     restart: unless-stopped
     privileged: true
+    # cgroup v2: cAdvisor must share the HOST cgroup namespace to see other
+    # containers' cgroups (/system.slice/docker-<hash>.scope); with the default
+    # private ns it sees only host services. Requires Docker's classic overlay2
+    # graphdriver (bootstrap pins it via daemon.json) — under the Docker 29
+    # containerd image store cAdvisor can't resolve the RW layer and skips
+    # containers entirely.
+    cgroup: host
     devices:
       - /dev/kmsg
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
-      - /sys:/sys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
     command:
