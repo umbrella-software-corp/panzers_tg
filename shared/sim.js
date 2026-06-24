@@ -17,6 +17,7 @@ import {
   RADIO_CRIT_MULT,
   CRIT_SLOTS,
   ENEMY_AI,
+  BOT_BRAIN,
   SOFT_START,
   VET,
   ENEMY_EDGE,
@@ -155,6 +156,11 @@ export class BattleSim {
     this.byOwner = new Map(this.units.filter((u) => u.human).map((u) => [u.ownerId, u]))
 
     this._spotted = [new Set(), new Set()] // [team] -> Set(unitId врагов)
+
+    // СЛОИСТЫЙ ИИ: командир (план команды, ленивая инициализация в _stepDirector) и
+    // счётчики поведения за бой → aiSummary() (джиттер/координация/санити точности).
+    this.director = null
+    this.brainStats = { botSeconds: 0, turnFlips: 0, throttleReversals: 0, targetSwitches: 0, focusOrders: 0, focusKills: 0, capDefenseEngagements: 0, botShots: 0, botHits: 0 }
   }
 
   // следующий ник бота из перемешанного пула; если исчерпан — случайный из BOT_NICKS
@@ -374,6 +380,7 @@ export class BattleSim {
     if (this.matchOver) return
     this.t += dt
     this.matchTime = Math.max(0, this.matchTime - dt)
+    if (!guided) this._stepDirector(dt) // командный план (раз в planSec); в тренировке боты заморожены — план не нужен
 
     for (const u of this.units) {
       if (!u.alive) continue
@@ -407,233 +414,476 @@ export class BattleSim {
     this._collide(u, TANK_RADIUS)
   }
 
-  _stepBot(b, dt) {
-    const ai = this.ai // softStart-тюнинг (грейс/шанс) или базовый ENEMY_AI
-    // PvE-эдж: бот на команде БЕЗ людей = враг соло-игрока → чуть точнее/злее (см. ENEMY_EDGE).
-    // В PvP (люди в обеих командах) эджа нет. Мягкий старт его подавляет (новичка не давим).
-    const enemyBot = !this.softStart && !this.humanTeams.has(b.team)
-    if (b.fireCd > 0) b.fireCd -= dt
-    const px = b.x
-    const py = b.y
-    let wantMove = true
+  // ============ СЛОИСТЫЙ ИИ (3 слоя) ============
+  // Слой 1 — КОМАНДИР (_stepDirector, раз в planSec): план на команду (фаза/осанка/лэйны/
+  // focus/защита/rally/интенсивность). Слой 2 — ТАКТИКА (_botThink, раз в thinkSec со
+  // сдвигом по id): фиксирует цель (гистерезис) и состояние. Слой 3 — ИСПОЛНИТЕЛЬ
+  // (_botExecute, каждый тик): плавно ведёт к намерению с мёртвыми зонами. Огонь —
+  // _tryBotFire (инвариант честного засвета перенесён ДОСЛОВНО).
 
-    // УМНЫЙ ВЫБОР ЦЕЛИ (раньше был тупо ближайший): раненую цель добиваем (она «ближе»
-    // по скору), а живого ИГРОКА фокусим тем сильнее, чем выше ветеранство. bestD —
-    // настоящая дистанция до выбранной цели (нужна для радиуса/шанса огня ниже).
-    let target = null
-    let bestScore = Infinity
-    let bestD = Infinity
+  _makeBrain(b) {
+    // роль из класса: лёгкий — разведчик/охотник, тяж — якорь, средний — каппер
+    const role = b.classId === 'light' ? 'scout' : b.classId === 'heavy' ? 'anchor' : 'capper'
+    if (b.fireCd == null) b.fireCd = b.reload || 0 // ex-человек (humanLeft): засеваем кулдаун
+    return {
+      nextThinkT: this.t + (b.id % 7) * 0.05, // первый think скоро, со сдвигом по id (не все разом)
+      role,
+      targetId: null,
+      targetDist: Infinity,
+      lostSince: 0, // this.t, когда цель ушла из вида (0 = видим сейчас)
+      lastSeen: null, // { x, y } последняя известная позиция цели (память)
+      objCapId: null, // зафиксированная точка-объектив (лэйна от командира)
+      objUntil: 0, // до этого времени лэйну не меняем (анти-дёрг)
+      cover: null, // зафиксированный куст для пик-трейда { x, y, r } или null
+      state: 'advance', // advance | hunt | peek | defend | retreat
+      stateUntil: 0, // коммит состояния (retreat) до этого времени
+      rush: false, // давить-добивать (эндшпиль/cleanup) — стэшится из плана на каденции think
+      focusShooter: false, // назначен командиром в focus-расчёт — закрывается добить цель
+      flank: b.id % 2 ? 1 : -1, // сторона флангового захода (детерминированно по id)
+      _lastTurnSign: 0,
+      _lastMoveSign: 0,
+    }
+  }
+
+  // --- Слой 1: КОМАНДИР ---
+  _stepDirector(dt) {
+    if (!this.director) this.director = { nextPlanT: 0, team: [null, null] }
+    if (this.t < this.director.nextPlanT) return
+    this.director.nextPlanT = this.t + BOT_BRAIN.planSec
+    for (const team of [0, 1]) this.director.team[team] = this._planTeam(team, this.director.team[team])
+  }
+
+  // интенсивность координации: PvP — полная (1, честная симметрия); PvE (враги соло-
+  // игрока) — демпфер от coordIntensity (пол) до 1 по ветеранству, под мягким стартом
+  // почти выключена (новичка не закатываем коллективным фокусом). bot-vs-bot — полная.
+  _coordIntensity(team) {
+    const pve = this.humanTeams.size > 0 && !this.humanTeams.has(team)
+    if (!pve) return 1
+    if (this.softStart) return BOT_BRAIN.coordIntensity * (1 - this.softFactor)
+    return BOT_BRAIN.coordIntensity + (1 - BOT_BRAIN.coordIntensity) * this.vet
+  }
+
+  // фаза боя по АБСОЛЮТНОМУ времени (матч ~110с): cleanup перекрывает всё, эндшпиль — по
+  // времени/счёту/cap-lock. opening<12 ≤ contact<35 ≤ midfight<85 ≤ endgame.
+  _phaseFor(aliveEnemy) {
+    if (aliveEnemy <= 2) return 'cleanup' // мало врагов — «найти и добить»
+    const near = this.score[0] >= SCORE_LIMIT - BOT_BRAIN.nearScoreGap || this.score[1] >= SCORE_LIMIT - BOT_BRAIN.nearScoreGap
+    if (this.t >= BOT_BRAIN.midfightSec || this.matchTime < BOT_BRAIN.lateSec || near || this.capLockTeam !== null) return 'endgame'
+    if (this.t >= BOT_BRAIN.contactSec) return 'midfight'
+    if (this.t >= BOT_BRAIN.openingSec) return 'contact'
+    return 'opening'
+  }
+
+  _planTeam(team, prev) {
+    const other = 1 - team
+    const spotted = this._spotted[team] // кого ЭТА команда видит (focus — только в засвете)
+    // снимок ситуации одним проходом: живые + кандидат на focus (подранок в засвете)
+    let aliveSelf = 0, aliveEnemy = 0
+    let focusCand = null, focusScore = Infinity
+    for (const u of this.units) {
+      if (!u.alive) continue
+      if (u.team === team) { aliveSelf++; continue }
+      aliveEnemy++
+      if (spotted && spotted.has(u.id)) {
+        const hpFrac = u.maxHp ? u.hp / u.maxHp : 1
+        const s = hpFrac - (u.human ? 0.2 : 0) // подранок и (в PvE) человек — приоритетнее на добив
+        if (s < focusScore) { focusScore = s; focusCand = u }
+      }
+    }
+    const aliveBots = this.units.filter((u) => u.alive && u.team === team && !u.human)
+    const phase = this._phaseFor(aliveEnemy)
+    const intensity = this._coordIntensity(team)
+
+    // осанка по счёту/точкам/живым
+    const ownedCaps = this.caps.filter((c) => c.owner === team).length
+    const enemyCaps = this.caps.filter((c) => c.owner === other).length
+    const dScore = this.score[team] - this.score[other]
+    const dCaps = ownedCaps - enemyCaps
+    const dAlive = aliveSelf - aliveEnemy
+    let posture
+    if (dScore < 0 || dCaps < 0 || (phase === 'endgame' && dScore <= 0) || phase === 'cleanup') posture = 'push'
+    else if (ownedCaps >= 1 && dScore > BOT_BRAIN.nearScoreGap * 0.5 && dCaps >= 0 && dAlive >= 0) posture = 'hold' // ведём — держим лид (гейт ownedCaps≥1: иначе матч застрянет)
+    else posture = 'balanced'
+    // слипание: не даунгрейдим из push, пока триггер не подтвердится 2 плана подряд (анти-флаппинг)
+    let notPushStreak = 0
+    if (posture !== 'push' && prev && prev.posture === 'push') {
+      notPushStreak = (prev._notPushStreak || 0) + 1
+      if (notPushStreak < 2) posture = 'push'
+    }
+
+    const capAssign = this._assignLanes(team, posture, aliveBots, other)
+
+    // focus-order: ≤round(2·intensity) ближайших бота на подранка — ТОЛЬКО огонь, не свор
+    // движением (стрелки держат свои лэйны/дистанцию → анти-догпайл сохранён). До контакта
+    // и при выключенной интенсивности (мягкий старт) — без фокуса.
+    let focus = null
+    if (focusCand && phase !== 'opening' && intensity > 0.15) {
+      const maxShooters = Math.max(1, Math.round(2 * intensity))
+      const near = aliveBots
+        .slice()
+        .sort((a, b) => (a.x - focusCand.x) ** 2 + (a.y - focusCand.y) ** 2 - ((b.x - focusCand.x) ** 2 + (b.y - focusCand.y) ** 2))
+      const shooters = new Set(near.slice(0, maxShooters).map((b) => b.id))
+      if (prev && prev.focus && prev.focus.targetId === focusCand.id && this.t < prev.focus.until) {
+        focus = { targetId: focusCand.id, until: prev.focus.until, shooters } // гистерезис: тот же приказ
+      } else {
+        focus = { targetId: focusCand.id, until: this.t + 3 * intensity, shooters }
+        this.brainStats.focusOrders++
+      }
+    }
+
+    // защита: своя точка, к которой подошёл враг (в радиусе cap.r·2) — нужны защитники
+    const defend = new Set()
+    for (const cap of this.caps) {
+      if (cap.owner !== team) continue
+      const threat = this.units.some((e) => e.alive && e.team === other && (e.x - cap.x) ** 2 + (e.y - cap.y) ** 2 < (cap.r * 2) ** 2)
+      if (threat) defend.add(cap.id)
+    }
+
+    // rally: центроид своих точек, иначе своя база
+    let rx = 0, ry = 0, rn = 0
+    for (const cap of this.caps) if (cap.owner === team) { rx += cap.x; ry += cap.y; rn++ }
+    const base = this.bases[team]
+    const rally = rn ? { x: rx / rn, y: ry / rn } : { x: base.x, y: base.y }
+
+    return { phase, posture, _notPushStreak: notPushStreak, intensity, capAssign, focus, defend, rally }
+  }
+
+  // ЛЭЙНЫ: распределяем ботов по точкам геометрически (замена id%5<2 + покадрового анти-
+  // догпайла). Все 11 карт — 3 точки по горизонтали; сортируем по x, по спросу (осанка/
+  // cap-lock) считаем квоту, жадно раздаём ближайшую недозагруженную. Не-3-точки деградируют
+  // корректно. Раз в planSec, без random. Возвращает Map<botId, capId>.
+  _assignLanes(team, posture, aliveBots, other) {
+    const assign = new Map()
+    if (this.mode !== 'capture' || !this.caps.length || !aliveBots.length) return assign // аннигиляция — без лэйн
+    const caps = this.caps.slice().sort((a, b) => a.x - b.x)
+    const bots = aliveBots.slice().sort((a, b) => a.x - b.x || a.id - b.id)
+    const demand = caps.map((cap) => {
+      let w = 1
+      if (cap.owner !== team) w += 1 // не наша — нужнее (взять)
+      if (cap.owner === other) w += 0.5 // вражеская — ещё нужнее (сорвать)
+      if (posture === 'hold' && cap.owner === team) w += 1 // ведём — защищаем своё
+      if (posture === 'push' && cap.owner !== team) w += 1 // отстаём — давим на чужое/нейтральное
+      if (this.capLockTeam === other && cap.owner === other) w += 2 // их lock — рвём (аврал)
+      if (this.capLockTeam === team && cap.owner === team) w += 1.5 // наш lock — держим всё
+      return w
+    })
+    const totalW = demand.reduce((s, w) => s + w, 0) || 1
+    const quota = demand.map((w) => Math.max(1, Math.round((w / totalW) * bots.length))) // ≥1 на точку (спред)
+    const filled = caps.map(() => 0)
+    for (const b of bots) {
+      let bi = -1, bd = Infinity
+      for (let i = 0; i < caps.length; i++) {
+        if (filled[i] >= quota[i]) continue
+        const d = (caps[i].x - b.x) ** 2 + (caps[i].y - b.y) ** 2
+        if (d < bd) { bd = d; bi = i }
+      }
+      if (bi < 0) for (let i = 0; i < caps.length; i++) { // квоты выбраны (округление) — ближайшая любая
+        const d = (caps[i].x - b.x) ** 2 + (caps[i].y - b.y) ** 2
+        if (d < bd) { bd = d; bi = i }
+      }
+      filled[bi]++
+      assign.set(b.id, caps[bi].id)
+    }
+    return assign
+  }
+
+  // --- Слой 2: ТАКТИКА (раз в thinkSec) ---
+  _botThink(b, ai, enemyBot) {
+    const br = b.brain
+    br.nextThinkT = this.t + BOT_BRAIN.thinkSec + (b.id % 7) * 0.01 // сдвиг по id — не все думают в один тик
+    const plan = this.director && this.director.team[b.team]
+    const enemyFocus = enemyBot ? ENEMY_EDGE.humanFocus : 0
+    const scoreOf = (f, d) => {
+      const hpFrac = f.maxHp ? Math.max(0, Math.min(1, f.hp / f.maxHp)) : 1
+      let s = d * (0.55 + 0.45 * hpFrac) // подранок «ближе» по скору → команда добивает
+      if (f.human) s *= Math.max(0.3, 1 - 0.25 * this.vet - enemyFocus) // фокус на живом игроке (vet + PvE-эдж)
+      return s
+    }
+    // лучший видимый кандидат (БЕЗ покадрового анти-догпайла — распределение теперь у командира)
+    let cand = null, candScore = Infinity
     for (const f of this.units) {
       if (!f.alive || f.team === b.team) continue
       const d = Math.hypot(f.x - b.x, f.y - b.y)
-      // бот видит и стреляет только в радиусе своего зрения — не через всю карту
       if (d > ai.vision || this._lineBlocked(b.x, b.y, f.x, f.y)) continue
-      const hpFrac = f.maxHp ? Math.max(0, Math.min(1, f.hp / f.maxHp)) : 1
-      let score = d * (0.55 + 0.45 * hpFrac) // ФОКУС-ОГОНЬ: подранок «ближе» по скору → команда добивает вместе
-      // фокус на живом игроке: растёт с ветеранством + PvE-враги давят на него сильнее
-      if (f.human) score *= Math.max(0.3, 1 - 0.25 * this.vet - (enemyBot ? ENEMY_EDGE.humanFocus : 0))
-      // АНТИ-ДОГПАЙЛ (умнее): реже берём цель, которую УЖЕ обступила своя команда — бот
-      // ищет менее занятого врага → команда РАСПРЕДЕЛЯЕТ цели по полю, а не наваливается
-      // толпой на один танк (фидбек «ботов колбасит как коров на мясокомбинате»). Когда
-      // враг ОДИН (концовка), альтернатив нет → все берут его, как и было.
-      let mates = 0
-      const crowdR2 = (ai.idealRange * 1.5) ** 2
-      for (const a of this.units) {
-        if (a.alive && a.team === b.team && a.id !== b.id && (a.x - f.x) ** 2 + (a.y - f.y) ** 2 < crowdR2) mates++
-      }
-      score *= 1 + 0.45 * mates // каждый уже-наседающий союзник делает цель менее привлекательной
-      if (score < bestScore) {
-        bestScore = score
-        bestD = d
-        target = f
+      const s = scoreOf(f, d)
+      if (s < candScore) { candScore = s; cand = f }
+    }
+    // focus-приказ командира перекрывает выбор (если цель видна команде)
+    let forced = null
+    if (plan && plan.focus && plan.focus.shooters.has(b.id)) {
+      const ft = this.byId.get(plan.focus.targetId)
+      if (ft && ft.alive && this._spotted[b.team] && this._spotted[b.team].has(ft.id)) forced = ft
+    }
+    // ЦЕЛЬ С ГИСТЕРЕЗИСОМ: держим текущую, пока видим/помним; меняем лишь на заметно лучшую
+    const cur = br.targetId != null ? this.byId.get(br.targetId) : null
+    let keepCur = false
+    if (cur && cur.alive && !forced) {
+      const cd = Math.hypot(cur.x - b.x, cur.y - b.y)
+      const curVis = cd <= ai.vision && !this._lineBlocked(b.x, b.y, cur.x, cur.y)
+      if (curVis) {
+        br.lostSince = 0
+        keepCur = !(cand && cand.id !== cur.id && candScore < scoreOf(cur, cd) * (1 - BOT_BRAIN.switchMargin))
+      } else {
+        if (br.lostSince === 0) br.lostSince = this.t // только потеряли — засекаем
+        keepCur = this.t - br.lostSince < BOT_BRAIN.giveUpSec // ещё помним (доводка/добивание)
       }
     }
+    let target, visible
+    if (forced) { target = forced; visible = this._botSees(b, forced, ai) }
+    else if (keepCur) { target = cur; visible = br.lostSince === 0 }
+    else { target = cand; visible = !!cand; if (cand) br.lostSince = 0 }
+    if (visible && target) br.lastSeen = { x: target.x, y: target.y }
+    const newId = target ? target.id : null
+    if (newId !== br.targetId) this.brainStats.targetSwitches++
+    br.targetId = newId
+    br.focusShooter = forced != null // назначен в focus-расчёт → закрывается ДОБИТЬ цель (концентрация огня)
 
-    // КАППЕР: в режиме захвата ~40% ботов (по id) ДЕРЖАТ точку даже при видимом враге —
-    // едут к ней и стоят в круге (= захват), а не бросают её в погоню. По врагу стреляют,
-    // если он попал в их сектор (блок стрельбы ниже). Остальные боты — охотники.
-    let capGoal = null
-    if (this.mode === 'capture' && b.id % 5 < 2) {
-      const open = this.caps.filter((cap) => cap.owner !== b.team)
-      if (open.length) {
-        open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
-        const cap = open[b.id % open.length]
-        const off = ((b.id % 7) / 7) * Math.PI * 2
-        const r = cap.r || 70
-        capGoal = { cx: cap.x, cy: cap.y, x: cap.x + Math.cos(off) * r * 0.7, y: cap.y + Math.sin(off) * r * 0.7, r }
-      }
+    // ОБЪЕКТИВ (лэйна от командира) с фиксацией objUntil — не дёргаем посреди проезда
+    if (plan && plan.capAssign) {
+      const assigned = plan.capAssign.get(b.id)
+      if (assigned != null && assigned !== br.objCapId && this.t >= br.objUntil) { br.objCapId = assigned; br.objUntil = this.t + 3 }
+      else if (assigned == null && this.mode !== 'capture') br.objCapId = null // аннигиляция — без лэйн
     }
 
-    // КОНЦОВКА БОЯ (annihilation): в последние ~45с боты перестают камперить (не ныряют
-    // в кусты, не отходят ранеными) и ПРУТ добивать — иначе недобитые «трусы прячутся и
-    // ждут, когда выйдет время» (#29 @Z_86_V), а победа решается по таймеру, а не в бою.
-    // Это ДВИЖЕНИЕ, не стрельба: инвариант честности (бот бьёт человека только из его
-    // засвета + после грейса) ниже НЕ трогаем — давим, чтобы засветиться и честно драться.
-    const rush = this.mode === 'annihilation' && this.matchTime < 45
+    // давить-добивать: cleanup всегда; в аннигиляции ещё endgame+push (не в balanced/hold —
+    // иначе слишком ранний вайп). Без плана — старый порог (annihilation, последние 45с).
+    const rush = plan
+      ? plan.phase === 'cleanup' || (this.mode === 'annihilation' && plan.phase === 'endgame' && plan.posture === 'push')
+      : this.mode === 'annihilation' && this.matchTime < 45
+    br.rush = rush
+
+    const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
+    const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
+
+    // СОСТОЯНИЕ (коммит до следующего think; retreat — таймер-коммит, не газ-реверс каждый тик)
+    if (!brave && b.hp < retreatHp && !rush) {
+      if (br.state !== 'retreat') br.stateUntil = this.t + BOT_BRAIN.regroupSec
+      else if (this.t >= br.stateUntil) br.stateUntil = this.t + BOT_BRAIN.regroupSec // всё ещё ранен — продлеваем
+      br.state = 'retreat'; br.cover = null
+    } else if (target) {
+      const cap = br.objCapId != null ? this._capById(br.objCapId) : null
+      const defendCap = (br.role === 'capper' || br.role === 'anchor') && cap && cap.owner === b.team && plan && plan.defend && plan.defend.has(cap.id)
+      if (defendCap) {
+        if (br.state !== 'defend') this.brainStats.capDefenseEngagements++
+        br.state = 'defend'; br.cover = null
+      } else {
+        // пик-трейд из укрытия как СОСТОЯНИЕ (решаем на каденции think, не каждый тик — это
+        // и есть крупнейший фикс дрожи: раньше cover пересчитывался ежекадрово)
+        const bush = b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 220) : null
+        if (bush) { br.state = 'peek'; br.cover = { x: bush.x, y: bush.y, r: bush.r } }
+        else { br.state = 'hunt'; br.cover = null }
+      }
+    } else {
+      br.state = 'advance'; br.cover = null // нет цели — к объективу/поиску
+    }
+  }
+
+  _botSees(b, f, ai) {
+    return Math.hypot(f.x - b.x, f.y - b.y) <= ai.vision && !this._lineBlocked(b.x, b.y, f.x, f.y)
+  }
+
+  // --- Слой 3: ИСПОЛНИТЕЛЬ (каждый тик) ---
+  _botExecute(b, dt, ai, enemyBot) {
+    const br = b.brain
+    // АНТИ-ЗАСТРЕВАНИЕ пре-эмптит всё (verbatim): пятимся задним + доворот вбок
     if (b.reverseT > 0) {
-      // АНТИ-ЗАСТРЕВАНИЕ: пока reverseT — пятимся ЗАДНИМ ХОДОМ + доворот вбок (avoidDir),
-      // чтобы вылезти из угла/у стены (#28 «боты стоят и крутятся на месте»). Одного
-      // поворота в тупике мало — нужен откат. После — обычный ИИ (цель/точка).
       b.reverseT -= dt
       b.hull += b.botTurn * dt * b.avoidDir
       b.x -= Math.cos(b.hull) * b.botSpeed * REVERSE_MULT * dt
       b.y -= Math.sin(b.hull) * b.botSpeed * REVERSE_MULT * dt
-      wantMove = true
-    } else if (target) {
-      const ang = Math.atan2(target.y - b.y, target.x - b.x)
-      if (capGoal) {
-        // ЗАЩИТА ТОЧКИ: едем к своей позиции у круга; НА точке — держим место, но
-        // разворачиваемся НА ВРАГА и стреляем (а не пялимся в центр круга, пока нас
-        // расстреливают). Раньше каппер игнорил стрелка сбоку — главная «тупость».
-        const onCap = Math.hypot(b.x - capGoal.cx, b.y - capGoal.cy) <= capGoal.r
-        let a = onCap ? ang : Math.atan2(capGoal.y - b.y, capGoal.x - b.x)
-        if (b.avoidT > 0) a += b.avoidDir * 1.5
-        b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, angleDiff(a, b.hull)))
-        wantMove = !onCap
-        if (!onCap) {
-          b.x += Math.cos(b.hull) * b.botSpeed * 0.6 * dt
-          b.y += Math.sin(b.hull) * b.botSpeed * 0.6 * dt
-        }
-      } else {
-        // ОХОТНИК (умный, тактика вместо «прёт в лоб»):
-        //  • пока пушка перезаряжается — ныряем в ближний куст (концелмент срезает чужой
-        //    шанс ×bushCover), готов выстрел — выходим и бьём → «пик-трейд» как у живых;
-        //  • без укрытия заходим с ФЛАНГА (увод вбок к борту/корме, где броня слабее),
-        //    вблизи сводим ствол на цель. Лобовой суицид-разгон убран.
-        const flank = b.id % 2 ? 1 : -1
-        const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
-        const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
-        // укрытие ищем, только пока ствол не готов и мы НЕ в отступлении (раненый просто уходит)
-        const cover = b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 220) : null
-        const inCover = cover && Math.hypot(b.x - cover.x, b.y - cover.y) <= cover.r
-        // видим ЧЕЛОВЕКА, грейс прошёл, но стрелять нельзя — он нас ещё не засветил
-        // (инвариант честности). Не висим пассивно на дистанции → ПОДЖИМАЕМ, чтобы
-        // засветиться и завязать честный бой (#28 «бот ходит за мной и не стреляет»).
-        // В грейс новичка НЕ давим (флаг false) — честный первый бой сохраняется.
-        const blindToHuman =
-          target.human && this.t >= ai.graceSec && !(this._spotted[target.team] && this._spotted[target.team].has(b.id))
-        let steerA
-        if (cover) steerA = Math.atan2(cover.y - b.y, cover.x - b.x) // на перезарядке — ныряем в куст
-        else steerA = ang + (bestD > ai.idealRange ? 0.5 : 0.14) * flank // фланговый заход; у дистанции боя — ствол на цель
-        if (b.avoidT > 0) steerA += b.avoidDir * 1.5
-        const maxTurn = b.botTurn * dt
-        b.hull += Math.max(-maxTurn, Math.min(maxTurn, angleDiff(steerA, b.hull)))
-        let move = 0
-        if (!brave && b.hp < retreatHp && !rush) move = -1 // ранен — отходим (в концовке НЕ отходим — добиваем)
-        else if (blindToHuman && bestD > ai.idealRange * 0.5) move = 1 // не засвечен у человека → поджимаем (засветиться и стрелять), а не камп на дистанции
-        else if (rush && bestD > ai.idealRange * 0.85) move = 1 // концовка: сближаемся до БОЕВОЙ дистанции и добиваем (не в упор — иначе толкотня/«колбасит как коров»)
-        else if (inCover) move = 0 // в кусте — пережидаем перезарядку (выйдем стрелять, когда ствол готов)
-        else if (cover) move = 1 // едем в укрытие
-        else if (bestD > ai.idealRange * 1.1) move = 1 // далеко — сближаемся (с флангом)
-        else if (bestD < ai.idealRange * 0.55) move = -0.5 // слишком близко — чуть назад
-        wantMove = move !== 0
-        const mag = move < 0 ? Math.abs(move) * REVERSE_MULT : move
-        b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
-        b.y += Math.sin(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
-      }
-
-      const inArc = Math.abs(angleDiff(ang, b.hull)) <= (ai.sectorHalfDeg * Math.PI) / 180
-      // СТРЕЛЯЕМ только если: цель в секторе, в радиусе огня (≤ fireRange, не на
-      // всю дальность зрения) и — для человека — бот ЗАСВЕЧЕН его командой. Иначе
-      // бот бил из тумана со своего респа, а игрок снаряды ловил «из ниоткуда».
-      const canFire =
-        inArc &&
-        b.fireCd <= 0 &&
-        bestD <= ai.fireRange &&
-        // линия до цели ЧИСТА В МОМЕНТ ВЫСТРЕЛА (вкл. трупы-укрытие) — страховка тикет #28
-        // «урон сквозь мёртвые танки»: если труп встал на линию ПОСЛЕ выбора цели, бот не
-        // бьёт сквозь него. У выбора цели проверка та же (422), здесь — на момент огня.
-        !this._lineBlocked(b.x, b.y, target.x, target.y) &&
-        // по человеку: бот ДОЛЖЕН быть им засвечен + прошёл стартовый грейс
-        // (первые graceSec секунд боты не фокусят новичка — «честный первый бой»)
-        (!target.human || (this.t >= ai.graceSec && this._spotted[target.team].has(b.id)))
-      if (canFire) {
-        b.fireCd = b.stats.reload
-        b.revealT = FIRE_REVEAL_SEC // бот тоже демаскируется выстрелом (симметрия)
-        // шанс попадания: база режется дистанцией, ходом цели (уворот) и кустом.
-        // Сидячая цель в упор на открытом — почти база; летящая боком вдалеке в
-        // кусте — мажем честно. Бьём по людям сложнее, чем по статичным болванкам.
-        let chance = ai.hitChance
-        chance *= 1 - ai.hitFalloff * Math.min(1, bestD / ai.fireRange)
-        const moving = Math.min(1, Math.abs(target.speed || 0) / (target.stats.maxSpeed || 120))
-        chance *= 1 - ai.dodgeFactor * moving
-        if (this.obstacles.some((o) => o.kind === 'bush' && Math.hypot(target.x - o.x, target.y - o.y) <= o.r)) {
-          chance *= ai.bushCover
-        }
-        if (enemyBot) chance *= ENEMY_EDGE.hitMult // PvE: враги соло-игрока чуть точнее
-        const hit = Math.random() < Math.min(0.85, chance) // потолок — не 100% даже в упор
-
-        let killed = false
-        let dealt = 0
-        let outcome = null
-        if (hit) {
-          const shotA = Math.atan2(target.y - b.y, target.x - b.x)
-          const r = this._resolveHit(b, target, b.botDamage, shotA)
-          dealt = r.dealt
-          killed = r.killed
-          outcome = r.outcome // броня цели: рикошет/непробитие
-        }
-        // ТЕАТР ПРОМАХОВ: попал — трассер точно в цель; мимо — уходит в сторону и
-        // за цель, чтобы игрок ВИДЕЛ промах (а не «прилетело из ниоткуда»).
-        let ex = target.x
-        let ey = target.y
-        if (!hit) {
-          const a0 = Math.atan2(target.y - b.y, target.x - b.x)
-          const jitter = (0.05 + Math.random() * 0.09) * (Math.random() < 0.5 ? -1 : 1) // ~3–8° вбок
-          const far = bestD * (1.04 + Math.random() * 0.12)
-          ex = b.x + Math.cos(a0 + jitter) * far
-          ey = b.y + Math.sin(a0 + jitter) * far
-        }
-        this.events.push({
-          type: 'shot',
-          unit: b.id,
-          hit,
-          killed,
-          dmg: Math.round(dealt),
-          outcome, // броня: 'ricochet'|'nopen' (фидбек «отскок от меня» у игрока)
-          target: target.id,
-          x1: Math.round(b.x),
-          y1: Math.round(b.y),
-          x2: Math.round(ex),
-          y2: Math.round(ey),
-        })
-      }
-    } else {
-      // нет цели — к точке захвата. Боты РАСПРЕДЕЛЯЮТСЯ по точкам (сорт по
-      // дистанции, выбор по индексу id), а не ломятся все на ближнюю — кучкуются меньше.
-      const open = this.caps.filter((cap) => cap.owner !== b.team)
-      open.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
-      let goal = open.length ? open[b.id % open.length] : null
-      // аннигиляция (точек нет) — охота на живых врагов; РАСПРЕДЕЛЯЕМ по разным
-      // целям из ближайших (выбор по id), а не все на одного — иначе кучкуются
-      if (!goal && this.mode === 'annihilation') {
-        const enemies = this.units.filter((e) => e.alive && e.team !== b.team)
-        if (enemies.length) {
-          enemies.sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))
-          goal = enemies[b.id % Math.min(enemies.length, 3)]
-        }
-      }
-      const c = this.mapSize / 2
-      // целимся не в ЦЕНТР объекта, а в личную позицию вокруг него (веер по id) —
-      // боты держат ПЕРИМЕТР точки, а не стоят толпой за одним ящиком (фидбэк Макса)
-      let gx = goal ? goal.x : c
-      let gy = goal ? goal.y : c
-      if (goal) {
-        const off = ((b.id % 7) / 7) * Math.PI * 2
-        const rad = (goal.r || 70) * 0.85
-        gx += Math.cos(off) * rad
-        gy += Math.sin(off) * rad
-      }
-      let a = Math.atan2(gy - b.y, gx - b.x)
-      if (b.avoidT > 0) a += b.avoidDir * 1.5
-      const diff = angleDiff(a, b.hull)
-      b.hull += Math.max(-b.botTurn * dt, Math.min(b.botTurn * dt, diff))
-      b.x += Math.cos(b.hull) * b.botSpeed * (rush ? 0.95 : 0.6) * dt // концовка: быстрее ищем добить
-      b.y += Math.sin(b.hull) * b.botSpeed * (rush ? 0.95 : 0.6) * dt
+      return true
     }
+    const plan = this.director && this.director.team[b.team]
+    const rally = plan ? plan.rally : this.bases[b.team]
+    const cap = br.objCapId != null ? this._capById(br.objCapId) : null
+    const target = br.targetId != null ? this.byId.get(br.targetId) : null
+    const tAlive = !!(target && target.alive)
+    const aimAng = tAlive ? Math.atan2(target.y - b.y, target.x - b.x) : null
+    const steerTo = (a) => {
+      if (b.avoidT > 0) a += b.avoidDir * 1.5
+      const m = b.botTurn * dt
+      b.hull += Math.max(-m, Math.min(m, angleDiff(a, b.hull)))
+    }
+    let move = 0
 
-    // РАССРЕДОТОЧЕНИЕ (анти-толпа): мягко расталкиваем СЛИШКОМ близких союзников —
-    // в дополнение к жёсткому _collide на касании. Толпа у точки/цели расходится.
+    switch (br.state) {
+      case 'retreat': {
+        // ранен — отходим к rally; цель есть → пятимся носом на врага (отстрел на отходе)
+        if (tAlive) { steerTo(aimAng); move = -0.85 }
+        else { steerTo(Math.atan2(rally.y - b.y, rally.x - b.x)); move = 0.9 }
+        break
+      }
+      case 'defend': {
+        if (!cap) { steerTo(tAlive ? aimAng : Math.atan2(rally.y - b.y, rally.x - b.x)); move = 0.85; break }
+        const onCap = Math.hypot(b.x - cap.x, b.y - cap.y) <= cap.r
+        if (onCap) {
+          // держим точку: враг в пределах cap.r·defendLeash → доворот на него и огонь; дальше
+          // — смотрим в сторону вражеской базы (ждём подход, НЕ гонимся за целью = лиш)
+          const tNear = tAlive && Math.hypot(target.x - cap.x, target.y - cap.y) <= cap.r * BOT_BRAIN.defendLeash
+          const watch = this.bases[1 - b.team]
+          steerTo(tNear ? aimAng : Math.atan2(watch.y - b.y, watch.x - b.x))
+          move = 0
+        } else {
+          const s = this._capSlot(b, cap)
+          steerTo(Math.atan2(s.y - b.y, s.x - b.x))
+          move = 1
+        }
+        break
+      }
+      case 'peek': {
+        const cover = br.cover
+        const inCover = cover && Math.hypot(b.x - cover.x, b.y - cover.y) <= cover.r
+        if (b.fireCd > 0 && cover) {
+          // ствол не готов — сидим/ныряем в куст (концелмент режет чужой шанс ×bushCover)
+          if (inCover) { steerTo(aimAng != null ? aimAng : b.hull); move = 0 }
+          else { steerTo(Math.atan2(cover.y - b.y, cover.x - b.x)); move = 1 }
+        } else {
+          move = this._huntMove(b, br, target, tAlive, ai, aimAng, steerTo) // ствол готов — выходим бить
+        }
+        break
+      }
+      case 'hunt': {
+        move = this._huntMove(b, br, target, tAlive, ai, aimAng, steerTo)
+        break
+      }
+      default: {
+        // 'advance' — нет видимой цели: едем к объективу (лэйне), в аннигиляции — к ближайшему
+        // врагу (знакомиться), иначе к rally. Стоя на нужной точке — захватываем (move 0).
+        let gx, gy, onCap = false
+        if (cap) { const s = this._capSlot(b, cap); gx = s.x; gy = s.y; onCap = Math.hypot(b.x - cap.x, b.y - cap.y) <= cap.r }
+        else if (this.mode === 'annihilation') {
+          let ne = null, nd = Infinity
+          for (const e of this.units) { if (e.alive && e.team !== b.team) { const d = (e.x - b.x) ** 2 + (e.y - b.y) ** 2; if (d < nd) { nd = d; ne = e } } }
+          if (ne) { gx = ne.x; gy = ne.y } else { gx = rally.x; gy = rally.y }
+        } else { gx = rally.x; gy = rally.y }
+        steerTo(Math.atan2(gy - b.y, gx - b.x))
+        move = onCap ? 0 : br.rush ? 0.95 : 0.85
+        break
+      }
+    }
+    if (move !== 0) {
+      const mag = move < 0 ? Math.abs(move) * REVERSE_MULT : move
+      b.x += Math.cos(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
+      b.y += Math.sin(b.hull) * Math.sign(move) * mag * b.botSpeed * dt
+    }
+    return move !== 0
+  }
+
+  // ОХОТНИК: фланговый заход + МЁРТВАЯ ЗОНА по дистанции (backBand..advBand) — между ними
+  // держим позицию (move 0), без газ-дёрга у idealRange. Возвращает газ [-0.5..1].
+  _huntMove(b, br, target, tAlive, ai, aimAng, steerTo) {
+    if (!tAlive) return 0 // цель умерла между think — стоим, think переоценит
+    const d = Math.hypot(target.x - b.x, target.y - b.y)
+    br.targetDist = d
+    steerTo(aimAng + (d > ai.idealRange ? 0.5 : 0.14) * br.flank) // фланг вдали; у дистанции боя — ствол на цель
+    // не засвечен у человека → поджимаем (засветиться и честно драться), а не камп на дистанции
+    const blindToHuman = target.human && this.t >= ai.graceSec && !(this._spotted[target.team] && this._spotted[target.team].has(b.id))
+    if (blindToHuman && d > ai.idealRange * 0.5) return 1
+    if (br.focusShooter && d > ai.idealRange * 0.72) return 1 // focus-приказ — закрываемся ДОБИТЬ (концентрация)
+    if (br.rush && d > ai.idealRange * 0.85) return 1 // добиваем — сближаемся до боевой (не в упор)
+    if (d > ai.idealRange * BOT_BRAIN.advBand) return 1 // дальше зоны — сближаемся
+    if (d < ai.idealRange * BOT_BRAIN.backBand) return -0.5 // ближе зоны — чуть назад
+    return 0 // мёртвая зона — держим (без дёрга)
+  }
+
+  // ОГОНЬ (каждый тик): блок перенесён ДОСЛОВНО — инвариант честного засвета не тронут
+  // (по человеку только из его засвета + после грейса; демаскировка симметрична; hitChance не трогаем).
+  _tryBotFire(b, ai, enemyBot) {
+    const br = b.brain
+    const target = br.targetId != null ? this.byId.get(br.targetId) : null
+    if (!target || !target.alive) return
+    const bestD = Math.hypot(target.x - b.x, target.y - b.y)
+    const ang = Math.atan2(target.y - b.y, target.x - b.x)
+    const inArc = Math.abs(angleDiff(ang, b.hull)) <= (ai.sectorHalfDeg * Math.PI) / 180
+    const canFire =
+      inArc &&
+      b.fireCd <= 0 &&
+      bestD <= ai.fireRange &&
+      // линия до цели ЧИСТА В МОМЕНТ ВЫСТРЕЛА (вкл. трупы-укрытие) — без стрельбы сквозь
+      !this._lineBlocked(b.x, b.y, target.x, target.y) &&
+      // по человеку: бот ДОЛЖЕН быть им засвечен + прошёл стартовый грейс
+      (!target.human || (this.t >= ai.graceSec && this._spotted[target.team].has(b.id)))
+    if (!canFire) return
+    b.fireCd = b.stats.reload
+    b.revealT = FIRE_REVEAL_SEC // демаскировка выстрелом (симметрия)
+    this.brainStats.botShots++
+    // шанс попадания: база режется дистанцией, ходом цели (уворот) и кустом — НЕ трогаем
+    let chance = ai.hitChance
+    chance *= 1 - ai.hitFalloff * Math.min(1, bestD / ai.fireRange)
+    const moving = Math.min(1, Math.abs(target.speed || 0) / (target.stats.maxSpeed || 120))
+    chance *= 1 - ai.dodgeFactor * moving
+    if (this.obstacles.some((o) => o.kind === 'bush' && Math.hypot(target.x - o.x, target.y - o.y) <= o.r)) chance *= ai.bushCover
+    if (enemyBot) chance *= ENEMY_EDGE.hitMult // PvE: враги соло-игрока чуть точнее
+    const hit = Math.random() < Math.min(0.85, chance) // потолок — не 100% даже в упор
+    let killed = false, dealt = 0, outcome = null
+    if (hit) {
+      this.brainStats.botHits++
+      const shotA = Math.atan2(target.y - b.y, target.x - b.x)
+      const r = this._resolveHit(b, target, b.botDamage, shotA)
+      dealt = r.dealt; killed = r.killed; outcome = r.outcome // броня цели: рикошет/непробитие
+      const plan = this.director && this.director.team[b.team]
+      if (killed && plan && plan.focus && plan.focus.targetId === target.id) this.brainStats.focusKills++ // добили focus-цель
+    }
+    // ТЕАТР ПРОМАХОВ (verbatim): мимо — трассер вбок и за цель, чтобы игрок ВИДЕЛ промах
+    let ex = target.x, ey = target.y
+    if (!hit) {
+      const a0 = Math.atan2(target.y - b.y, target.x - b.x)
+      const jitter = (0.05 + Math.random() * 0.09) * (Math.random() < 0.5 ? -1 : 1) // ~3–8° вбок
+      const far = bestD * (1.04 + Math.random() * 0.12)
+      ex = b.x + Math.cos(a0 + jitter) * far
+      ey = b.y + Math.sin(a0 + jitter) * far
+    }
+    this.events.push({
+      type: 'shot',
+      unit: b.id,
+      hit,
+      killed,
+      dmg: Math.round(dealt),
+      outcome, // броня: 'ricochet'|'nopen' (фидбек «отскок от меня» у игрока)
+      target: target.id,
+      x1: Math.round(b.x),
+      y1: Math.round(b.y),
+      x2: Math.round(ex),
+      y2: Math.round(ey),
+    })
+  }
+
+  _capById(id) {
+    for (const c of this.caps) if (c.id === id) return c
+    return null
+  }
+
+  // личная позиция бота на круге точки (веер по id) — держим ПЕРИМЕТР, не толпу в центре
+  _capSlot(b, cap) {
+    const off = ((b.id % 7) / 7) * Math.PI * 2
+    const r = (cap.r || 70) * 0.7
+    return { x: cap.x + Math.cos(off) * r, y: cap.y + Math.sin(off) * r }
+  }
+
+  // --- Слой 3 (вход): один тик бота: думаем (раз в thinkSec) → ведём → стреляем → хвост ---
+  _stepBot(b, dt) {
+    if (!b.brain) b.brain = this._makeBrain(b) // ленивое создание (вкл. ex-человека humanLeft)
+    const ai = this.ai // softStart-тюнинг (грейс/шанс) или базовый ENEMY_AI
+    // PvE-эдж: бот на команде БЕЗ людей = враг соло-игрока (чуть точнее/злее). В PvP/мягком старте — нет.
+    const enemyBot = !this.softStart && !this.humanTeams.has(b.team)
+    if (b.fireCd > 0) b.fireCd -= dt
+    const px = b.x, py = b.y, ph = b.hull
+    this.brainStats.botSeconds += dt
+
+    if (this.t >= b.brain.nextThinkT) this._botThink(b, ai, enemyBot) // переоценка намерения
+    const wantMove = this._botExecute(b, dt, ai, enemyBot) // ведём к намерению (каждый тик)
+    this._tryBotFire(b, ai, enemyBot) // огонь (каждый тик)
+
+    // СЧЁТЧИКИ ДЖИТТЕРА (для aiSummary): развороты курса / смены газа — той же методикой,
+    // что offline-проба ai-probe (знак вдоль корпуса). Цель дизайна — их падение vs baseline.
+    const dHull = angleDiff(b.hull, ph)
+    const ts = Math.abs(dHull) > 0.004 ? Math.sign(dHull) : 0
+    if (ts !== 0) { if (b.brain._lastTurnSign && ts !== b.brain._lastTurnSign) this.brainStats.turnFlips++; b.brain._lastTurnSign = ts }
+    const along = (b.x - px) * Math.cos(b.hull) + (b.y - py) * Math.sin(b.hull)
+    const ms = Math.abs(along) > 0.3 ? Math.sign(along) : 0
+    if (ms !== 0) { if (b.brain._lastMoveSign && ms !== b.brain._lastMoveSign) this.brainStats.throttleReversals++; b.brain._lastMoveSign = ms }
+
+    // РАССРЕДОТОЧЕНИЕ (анти-толпа): мягко расталкиваем СЛИШКОМ близких союзников (verbatim)
     let sepX = 0, sepY = 0
     for (const f of this.units) {
       if (f === b || !f.alive || f.team !== b.team) continue
@@ -659,8 +909,7 @@ export class BattleSim {
       b.stuckN++
       b.avoidT = 1.0
       b.reverseT = 0.5 // вылезаем ЗАДНИМ ХОДОМ — одного поворота в углу мало (#28)
-      // направление обхода ДЕТЕРМИНИРОВАННОЕ (раньше random → дёрг влево-вправо = «кручусь
-      // на месте»); при ПОВТОРНОМ застревании пробуем другую сторону (прошлый обход не помог)
+      // направление обхода ДЕТЕРМИНИРОВАННОЕ (раньше random → дёрг влево-вправо); при ПОВТОРНОМ — другая сторона
       b.avoidDir = (b.id % 2 ? 1 : -1) * (b.stuckN % 2 ? 1 : -1)
     }
   }
@@ -832,6 +1081,35 @@ export class BattleSim {
     this.matchOver = true
     this.endReason = limit ? 'score' : 'time'
     this.winner = this.score[0] === this.score[1] ? null : this.score[0] > this.score[1] ? 0 : 1
+  }
+
+  // СВОДКА ИИ за бой (для аналитики bot_ai_summary): джиттер (цель дизайна — падение vs
+  // baseline ~111/~81), координация (рост сложности через тактику) и санити точности
+  // (hitChance НЕ трогали → bot_hit_rate должен держаться baseline).
+  aiSummary() {
+    const s = this.brainStats
+    const perMin = s.botSeconds > 0 ? 60 / s.botSeconds : 0
+    return {
+      end_reason: this.endReason,
+      winner: this.winner,
+      score_a: this.score[0],
+      score_b: this.score[1],
+      alive_a: this.aliveCount(0),
+      alive_b: this.aliveCount(1),
+      match_t: Math.round(this.t),
+      vet: +this.vet.toFixed(2),
+      soft_factor: +this.softFactor.toFixed(2),
+      pve: this.humanTeams.size === 1,
+      turn_flips_min: +(s.turnFlips * perMin).toFixed(1),
+      throttle_reversals_min: +(s.throttleReversals * perMin).toFixed(1),
+      target_switches_min: +(s.targetSwitches * perMin).toFixed(1),
+      focus_orders: s.focusOrders,
+      focus_kills: s.focusKills,
+      cap_defense_engagements: s.capDefenseEngagements,
+      bot_shots: s.botShots,
+      bot_hits: s.botHits,
+      bot_hit_rate: s.botShots ? +(s.botHits / s.botShots).toFixed(3) : 0,
+    }
   }
 
   // --- геометрия ---

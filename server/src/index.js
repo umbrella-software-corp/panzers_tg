@@ -1470,6 +1470,9 @@ function roomTick(room) {
           team: h.team,
           humans: room.humans.length,
           stats_count: stats.length,
+          duration_sec: Math.round(room.sim.t), // фактическая длительность боя (sim.t = прошедшие секунды)
+          player_won: room.sim.winner === h.team, // headline-метрика винрейта (был 94.7% — слишком легко)
+          ai_version: 2, // сегментация до/после слоистого ИИ в Amplitude
         })
         const mine = stats.find((s) => s.id === h.id) // мой юнит в итоговой таблице
         logEvent(h.uid, 'battle_end', {
@@ -1489,6 +1492,20 @@ function roomTick(room) {
           const result = room.sim.winner == null ? 'draw' : room.sim.winner === h.team ? 'victory' : 'defeat'
           econ.grantBattle(h, { result, kills: mine ? mine.kills : 0, damage: mine ? mine.damage : 0, allyScore: room.sim.score[h.team] || 0, survived: mine ? mine.alive : false }, room.id).catch((e) => console.error('[econ] grantBattle:', e && e.message))
         }
+      }
+      // СВОДКА ИИ ботов — РАЗ на матч (командно-глобальные счётчики: джиттер/координация/санити
+      // точности из sim.aiSummary(); не дублируем per-human). Представитель — первый игрок с uid
+      // (как и грант; гостей в аналитику не тащим). Гард room.aiSummarySent (зеркало room.granted).
+      const rep = room.humans.find((h) => h.uid)
+      if (rep && !room.aiSummarySent) {
+        room.aiSummarySent = true
+        trackServer(rep.uid, 'bot_ai_summary', {
+          room_id: room.id,
+          mode: room.mode,
+          map_id: room.sim.mapId,
+          humans: room.humans.length,
+          ...room.sim.aiSummary(),
+        })
       }
       room.granted = true // гард от повторного начисления, если matchOver увидят дважды
       console.log(
