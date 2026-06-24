@@ -196,6 +196,17 @@ export function statReal(cs, key) {
   }
 }
 
+// Нормализация АБСОЛЮТНОГО боевого числа → 0..10 для сегментного бара (StatRow): min стата
+// по сетке → ~1 деление, max → 10 (как прежняя шкала 1-10) — танк-1 ≈ 1 бар, топ ≈ 10.
+// Нужна, т.к. stats теперь абсолютные (иначе бар value·10% всегда полный). Диапазоны — по
+// role-based сетке владельца 2026-06-24 (с запасом на премы/Maus). higher=better у всех 6.
+const STAT_BAR_RANGE = { dmg: [50, 400], rof: [4, 16], spd: [20, 80], mnv: [18, 78], view: [240, 470], hp: [700, 5600] }
+export function statBar(key, v) {
+  const r = STAT_BAR_RANGE[key]
+  if (!r) return Math.max(0, Math.min(10, +v || 0))
+  return Math.max(0.5, Math.min(10, +(1 + ((v - r[0]) / (r[1] - r[0])) * 9).toFixed(1)))
+}
+
 // ---------- модули: 5 слотов × 3 уровня (штатный → топ) ----------
 export const MODULE_DEFS = ['gun', 'tur', 'eng', 'trk', 'rad'].map((id) =>
   defLoc({ id }, {

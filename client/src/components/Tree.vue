@@ -27,7 +27,7 @@ import {
   camoUnlocked,
   tankCamo,
 } from '../store.js'
-import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal, CAMOS, CAMO_BY_ID } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal, statBar, CAMOS, CAMO_BY_ID } from '../game/meta.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // алиас: `t` занят как переменная-танк в шаблоне/скрипте
@@ -122,7 +122,7 @@ const premSel = ref(null) // развёрнутый ТТХ прем-танка (
 // ТТХ прем-танка (базовые статы 0..10 для оценки ДО покупки)
 const premStats = (t) => {
   const cs = combatStats(t) // реальные боевые числа (крупные) для ТТХ
-  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v, display: statReal(cs, k) }))
+  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: statBar(k, v), display: statReal(cs, k) }))
 }
 
 // выбрать уже купленный прем-танк → в ангар

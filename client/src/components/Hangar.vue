@@ -4,7 +4,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, tankStat, claimPushBonus } from '../store.js'
 import { squad } from '../game/squad.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, statBar, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
 import { haptic, requestWriteAccess, isFromTelegram } from '../tg.js'
 import { apiUsed3D } from '../api.js'
 import { preload3D } from '../game/NetGame3D.js'
@@ -181,21 +181,18 @@ function quickPick(id) {
 }
 
 // ТТХ с учётом прокачки: дизайн-стата × модуль × экипаж (как в loadoutStats).
-// base — исходное, value — с прокачкой; шторка рисует прирост, а не статику.
-const STAT_MOD = { dmg: 'gun', hp: 'tur', spd: 'eng', mnv: 'trk', view: 'rad' }
+// base — исходное (метка), value — с прокачкой; шторка рисует прирост, а не статику.
+// loadoutStats уже учитывает модули+экипаж → отдельный множитель m/STAT_MOD не нужен.
 const ttxStats = computed(() => {
   const t = tank.value
-  const ck = 1 + (crewLevel() - 1) * 0.01 // экипаж баффает ход/манёвр/обзор/темп
   const real = loadoutStats(t.id) // реальные боевые статы с прокачкой (как в бою)
   const baseReal = combatStats(t) // без модулей/экипажа — для прироста
-  return Object.entries(t.stats).map(([k, base]) => {
-    let m = 1
-    const mod = STAT_MOD[k]
-    if (mod) m *= MODULE_COMBAT[mod][tankModLevel(t.id, mod) - 1]
-    if (k === 'spd' || k === 'mnv' || k === 'view' || k === 'rof') m *= ck
-    const rv = statReal(real, k) // крупное реальное число (HP 2088, урон 297…)
-    const up = rv - statReal(baseReal, k) // прирост от прокачки в реальных единицах
-    return { key: k, label: STAT_LABELS[k], base, value: Math.min(10, +(base * m).toFixed(1)), display: rv, displayUp: up > 0 ? +up.toFixed(k === 'rof' ? 1 : 0) : null }
+  return Object.entries(t.stats).map(([k]) => {
+    const rv = statReal(real, k) // крупное реальное число С прокачкой (HP 5450, урон 297…)
+    const rvBase = statReal(baseReal, k) // без прокачки — для метки базы и прироста
+    const up = rv - rvBase
+    // бары нормализуем из АБСОЛЮТНЫХ чисел (statBar): value — с прокачкой, base — метка базы
+    return { key: k, label: STAT_LABELS[k], base: statBar(k, rvBase), value: statBar(k, rv), display: rv, displayUp: up > 0 ? +up.toFixed(k === 'rof' ? 1 : 0) : null }
   })
 })
 const locked = computed(() => !threeD.value && !isOwned(tank.value.id)) // в 3D-эксперименте 3 танка не залочены

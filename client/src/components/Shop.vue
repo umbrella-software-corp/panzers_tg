@@ -8,7 +8,7 @@ import { track } from '../analytics.js'
 // `t` алиасим в `tr`: в шаблоне/скрипте уже есть локальные `t` (v-for="t in
 // PREMIUM_TANKS", premStats(t), buyPremTank(t)) — танк, не переводчик.
 import { t as tr, fmtNum } from '../i18n.js'
-import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal, TANK_BY_ID, CAMO_BY_ID } from '../game/meta.js'
+import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal, statBar, TANK_BY_ID, CAMO_BY_ID } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
 import StatRow from './ui/StatRow.vue'
@@ -191,7 +191,7 @@ const buyPremium = () => buyPack({ id: 'prem' }, tr('shop.premiumLabel'))
 const premSel = ref(null) // развёрнутый ТТХ прем-танка в магазине
 const premStats = (t) => {
   const cs = combatStats(t) // реальные боевые числа (крупные) для ТТХ
-  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v, display: statReal(cs, k) }))
+  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: statBar(k, v), display: statReal(cs, k) }))
 }
 // прем-танк за ⭐: продукт pt_<id> → grantProduct кладёт в гараж (как в «Развитии»)
 async function buyPremTank(t) {
