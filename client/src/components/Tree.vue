@@ -27,11 +27,13 @@ import {
   camoUnlocked,
   tankCamo,
 } from '../store.js'
-import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal, statBar, CAMOS, CAMO_BY_ID } from '../game/meta.js'
+import { tanksOfNation, premiumOfNation, MODULE_DEFS, moduleCost, modsMaxedCount, STAT_LABELS, combatStats, statReal, statBar, CAMOS, CAMO_BY_ID, tankModelUrl, tankSizeScale, nationOf } from '../game/meta.js'
+import { preload3D } from '../game/NetGame3D.js'
 import { apiBuy } from '../api.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // алиас: `t` занят как переменная-танк в шаблоне/скрипте
 import TankImg from './ui/TankImg.vue'
+import Tank3DView from './ui/Tank3DView.vue'
 import StatRow from './ui/StatRow.vue'
 import CurrencyBar from './ui/CurrencyBar.vue'
 import NationSwitch from './ui/NationSwitch.vue'
@@ -158,10 +160,18 @@ async function buyPrem(t) {
 }
 // Вход в Ангар сразу раскрывает панель ТЕКУЩЕГО танка (там камуфляж + Выбрать) —
 // иначе игроки не находили камо. Закрытый танк → чеклист открытия (как раньше).
-const sel = ref(profile.selectedTank || null)
+// НЕ авто-открываем док текущего танка при входе (фидбек «бесит, что ангар открывается с
+// выбранным танком») — заходим на чистый список, тап по машине открывает её док.
+const sel = ref(null)
 const dockEl = ref(null)
 // проскроллить панель танка в видимую зону (она внизу скролла — без этого её не видно)
 function scrollToDock() { nextTick(() => { try { dockEl.value && dockEl.value.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {} }) }
+// 3D-режим (тот же флаг, что в ангаре): превью камуфляжа на 3D-модели в доке
+const threeD = ref((() => { try { return localStorage.getItem('pz3d') === '1' } catch { return false } })())
+const hashId = (s) => { let h = 0; s = String(s || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h) }
+const dockModelUrl = computed(() => (selected.value ? tankModelUrl(selected.value.id, nationOf(selected.value.id)) : ''))
+const dockSeed = computed(() => hashId(selected.value && selected.value.id))
+const dockScale = computed(() => tankSizeScale(selected.value && selected.value.id))
 const modTab = ref('gun')
 const flash = ref(false)
 const selected = computed(() => tanks.value.find((t) => t.id === sel.value))
@@ -303,8 +313,10 @@ onMounted(() => {
     owned_tanks_count: profile.owned?.length || 0,
     credits: profile.credits || 0,
   })
-  if (sel.value) scrollToDock() // вход → панель текущего танка (камо + Выбрать) в зоне видимости
+  // НЕ авто-скроллим к доку — заходим на чистый список (sel=null), без прыжка к выбранному танку
 })
+// открыли док + 3D — греем модель танка для превью камуфляжа (как в ангаре)
+watch(sel, (id) => { if (id && threeD.value) preload3D(id, nationOf(id)) })
 // раскрыли чеклист некупленной машины — что нужно для исследования
 watch(selected, (t) => {
   if (!t || isOwned(t.id)) return
@@ -447,6 +459,12 @@ watch(selected, (t) => {
         <!-- КАМУФЛЯЖ наверху панели (раньше был под модулями — игроки не находили) -->
         <template v-if="!selected.premium">
           <div class="dock-camo-h pz-pixel">🎨 {{ tr('tree.camo') }}</div>
+          <!-- ПРЕВЬЮ как ляжет камуфляж: 3D-модель (крути пальцем) или 2D-спрайт. Перекрашивается
+               СРАЗУ при выборе свотча (dockCamo) — раньше было непонятно, как танк будет выглядеть. -->
+          <div class="camo-preview3d">
+            <Tank3DView v-if="threeD" :url="dockModelUrl" :camo="dockCamo || ''" :seed="dockSeed" :scale="dockScale" class="cp3d-host" />
+            <TankImg v-else :tank-id="selected.id" :camo="dockCamo || ''" :size="170" :hangar="true" />
+          </div>
           <div class="camo-dots pz-noscroll">
             <button
               v-for="c in CAMOS"
@@ -729,6 +747,18 @@ watch(selected, (t) => {
 }
 /* выбор камуфляжа прямо в Ангаре (перенесён с главной) */
 .dock-camo-h { font-size: 8px; color: var(--amber); letter-spacing: 0.12em; }
+/* превью камуфляжа на танке (3D-модель крутится / 2D-спрайт) */
+.camo-preview3d {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0 8px;
+  min-height: 120px;
+  border-radius: 10px;
+  background: radial-gradient(120% 90% at 50% 35%, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.25));
+}
+.cp3d-host { width: 100%; height: 190px; }
 .camo-dots { display: flex; align-items: center; gap: 7px; overflow-x: auto; }
 .camo-cell {
   position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
