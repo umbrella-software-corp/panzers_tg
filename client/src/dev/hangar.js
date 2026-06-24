@@ -4,8 +4,9 @@ import '../style.css'
 import { createApp, h, ref } from 'vue'
 import Hangar from '../components/Hangar.vue'
 import Tree from '../components/Tree.vue'
+import Shop from '../components/Shop.vue'
 import Onboarding from '../components/Onboarding.vue'
-import { profile } from '../store.js'
+import { profile, crateReveal } from '../store.js'
 
 const showOnb = new URLSearchParams(location.search).has('onb')
 
@@ -22,7 +23,7 @@ profile.owned = ['t26', 'bt7', 't34', 'kv1', 't28', 'tgr']
 profile.selectedTank = 't34'
 
 const screen = ref('hangar')
-const SCREENS = { hangar: Hangar, tree: Tree }
+const SCREENS = { hangar: Hangar, tree: Tree, shop: Shop }
 const Root = {
   setup() {
     return () => [
@@ -36,3 +37,4 @@ const Root = {
 }
 createApp(Root).mount('#app')
 window.__setScreen = (s) => (screen.value = s)
+window.__crate = (r) => (crateReveal.value = Array.isArray(r) ? r : [r]) // тест ревила донат-ящика
