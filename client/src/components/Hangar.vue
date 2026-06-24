@@ -362,15 +362,7 @@ onMounted(() => {
       <div style="font-size: 12px; color: var(--ink-dim); font-weight: 500; margin-top: 2px">{{ t('game.classes.' + tank.classId) }} · {{ nationLabel }} · {{ t('hangar.crew', { n: crewLevel() }) }}</div>
     </div>
 
-    <!-- БЫСТРЫЙ ВЫБОР ТАНКА: лента своих машин, тап = выбрал (без захода в «Ангар»).
-         Камуфляж/прокачка/покупка — по-прежнему на вкладке «⇄ Ангар». -->
-    <div v-if="quickTanks.length > 1" class="quickpick">
-      <button v-for="qt in quickTanks" :key="qt.id" class="qp-cell" :class="{ on: qt.id === profile.selectedTank }" :title="qt.name" @click="quickPick(qt.id)">
-        <TankImg :tank-id="qt.id" :size="42" />
-        <span v-if="qt.premium" class="qp-prem">★</span>
-        <span class="qp-tier pz-pixel">{{ qt.tier }}</span>
-      </button>
-    </div>
+    <!-- Главная — чисто: танк + В БОЙ. Выбор танка/камуфляж/прокачка — на вкладке «⇄ Ангар». -->
 
     <!-- КОМПАКТНЫЙ ТУЛБАР В ОДНУ СТРОКУ: «⇄ Ангар» (там танки+камуфляж) + ТТХ/Задачи/Взвод.
          Чистый экран — основное это танк и «В БОЙ». -->

@@ -370,6 +370,8 @@ watch(selected, (t) => {
           <div v-if="!isOwned(t.id)" class="pz-chip" :style="{ color: canUnlock(t) ? 'var(--amber)' : 'var(--ink-faint)' }">
             <PzIcon name="coin" :size="13" /> {{ fmt(t.cost) }}
           </div>
+          <div v-else-if="t.id === profile.selectedTank" class="row-act selected">{{ tr('tree.picked') }}</div>
+          <div v-else class="row-act pick" @click.stop="pickPrem(t)">{{ tr('tree.pickInHangar') }}</div>
         </button>
       </div>
 
@@ -846,6 +848,30 @@ watch(selected, (t) => {
 .prem-act.owned {
   color: #7cc05a;
   background: rgba(124, 192, 90, 0.14);
+}
+/* кнопка ВЫБРАТЬ у своего танка в ряду дерева (справа, вместо цены у неоткрытых) */
+.row-act {
+  flex-shrink: 0;
+  border: none;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 8px 14px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.row-act.pick {
+  color: #1d1604;
+  background: linear-gradient(180deg, var(--amber-hi, #ffce5a), var(--amber));
+  cursor: pointer;
+}
+.row-act.pick:active {
+  transform: scale(0.95);
+}
+.row-act.selected {
+  color: var(--amber);
+  background: rgba(242, 165, 12, 0.12);
+  border: 1px solid rgba(242, 165, 12, 0.4);
 }
 .prem-ttx {
   display: flex;
