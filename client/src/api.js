@@ -107,6 +107,7 @@ const apiEcon = (action, body = {}) => call('/api/econ/' + action, { method: 'PO
 export const apiBuyTank = (tankId) => apiEcon('buy-tank', { tankId })
 export const apiSellTank = (tankId) => apiEcon('sell-tank', { tankId })
 export const apiSpendFreeXp = (nation, amount) => apiEcon('spend-free-xp', { nation, amount })
+export const apiConvertFreeXp = (crystals) => apiEcon('convert-free-xp', { crystals })
 export const apiUpgradeModule = (tankId, modId) => apiEcon('upgrade-module', { tankId, modId })
 export const apiUpgradeCrew = (memberId) => apiEcon('upgrade-crew', { memberId })
 export const apiBuyCamo = (tankId, camoId) => apiEcon('buy-camo', { tankId, camoId })

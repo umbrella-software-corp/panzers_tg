@@ -20,6 +20,7 @@ import {
   branchXpOf,
   researchXpNeed,
   spendFreeXp,
+  convertCrystalsToFreeXp,
   syncProfile,
   setCamo,
   buyCamo,
@@ -94,6 +95,12 @@ async function pourFreeXp() {
   } else {
     shake()
   }
+}
+// обмен кристаллов на свободный опыт: 10 💎 → 100 ✦ (за раз). «Качать за кристаллы».
+async function buyFreeXp() {
+  if ((profile.tokens || 0) < 10) return shake()
+  if (await convertCrystalsToFreeXp(10)) track('convert_free_xp', { crystals: 10, free_xp: 100 })
+  else shake()
 }
 const premSel = ref(null) // развёрнутый ТТХ прем-танка (тап по строке)
 // ТТХ прем-танка (базовые статы 0..10 для оценки ДО покупки)
@@ -313,6 +320,7 @@ watch(selected, (t) => {
       <span>✦ {{ tr('tree.freeXp') }}: <b class="pz-display" style="color: #7cc0ff">{{ freeXp.toLocaleString('ru-RU') }}</b></span>
       <button v-if="canPourFree" class="pour-btn" @click="pourFreeXp">{{ tr('tree.pourFree', { n: pourAmount.toLocaleString('ru-RU') }) }}</button>
       <span v-else-if="freeXp > 0" class="xp-hint">{{ tr('tree.freeXpHint') }}</span>
+      <button v-if="(profile.tokens || 0) >= 10" class="xp-buy" :title="tr('tree.buyFreeXpHint')" @click="buyFreeXp">{{ tr('tree.buyFreeXp') }}</button>
     </div>
 
     <!-- ===== ветка ===== -->
@@ -631,6 +639,21 @@ watch(selected, (t) => {
   font-size: 11px;
   color: var(--ink-faint);
 }
+/* обмен кристаллов на свободный опыт (10💎→100✦) */
+.xp-buy {
+  flex-shrink: 0;
+  border: 1px solid rgba(124, 192, 255, 0.5);
+  background: rgba(124, 192, 255, 0.12);
+  color: #9ad0ff;
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.xp-buy:active { transform: scale(0.95); }
 .spine {
   position: absolute;
   left: 29px;

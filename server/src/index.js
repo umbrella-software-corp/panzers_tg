@@ -723,6 +723,7 @@ async function handleApi(req, res) {
       case '/api/econ/buy-tank': out = await econ.buyTank(user.uid, String(b.tankId || '')); break
       case '/api/econ/sell-tank': out = await econ.sellTank(user.uid, String(b.tankId || '')); break
       case '/api/econ/spend-free-xp': out = await econ.spendFreeXp(user.uid, String(b.nation || ''), b.amount | 0); break
+      case '/api/econ/convert-free-xp': out = await econ.convertToFreeXp(user.uid, b.crystals | 0); break
       case '/api/econ/upgrade-module': out = await econ.upgradeModule(user.uid, String(b.tankId || ''), String(b.modId || '')); break
       case '/api/econ/upgrade-crew': out = await econ.upgradeCrewPerk(user.uid, String(b.memberId || '')); break
       case '/api/econ/buy-camo': out = await econ.buyCamo(user.uid, String(b.tankId || ''), String(b.camoId || '')); break

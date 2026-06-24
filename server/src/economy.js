@@ -389,8 +389,10 @@ const CRATE_TANKS = {
 export const CRATE_NATIONS = Object.keys(CRATE_TANKS)
 export const CRATE_STARS = 10 // цена одной крутки (★) — ЗЕРКАЛО payments.PRODUCTS.crate_*.stars
 export const CRATE_PITY = 15 // круток без t8 → гарантия t8
-export const CRATE_ODDS = { t8: 0.005, t4: 0.03, camo: 0.12, crystals: 0.25 } // остальное (0.595) → кредиты
+export const CRATE_ODDS = { t8: 0.005, t4: 0.03, camo: 0.12, crystals: 0.2, freeXp: 0.15 } // остальное (0.495) → кредиты
 const CRATE_DUP = { t8: 250, t4: 100 } // дубль танка → столько кристаллов (tokens)
+const CRATE_FREEXP = [150, 500] // диапазон свободного опыта в крейте (исследовательская валюта)
+export const CRYSTAL_TO_FREEXP = 10 // ОБМЕН: 1 кристалл = 10 своб. опыта (10★=100, фидбек владельца «качать за кристаллы»)
 const crnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1))
 
 // мутирует p, возвращает дескриптор награды для ревила: { nation, type, tank?, tier?, camo?, crystals?, credits? }
@@ -408,6 +410,7 @@ export function rollNationCrate(p, nation) {
     else if (r < o.t8 + o.t4) kind = 't4'
     else if (r < o.t8 + o.t4 + o.camo) kind = 'camo'
     else if (r < o.t8 + o.t4 + o.camo + o.crystals) kind = 'crystals'
+    else if (r < o.t8 + o.t4 + o.camo + o.crystals + o.freeXp) kind = 'freeXp'
     else kind = 'credits'
   }
   p.cratePity[nation] = kind === 't8' ? 0 : pulls // t8 сбрасывает pity-счётчик
@@ -430,10 +433,28 @@ export function rollNationCrate(p, nation) {
     else { const c = 60; p.tokens = (p.tokens || 0) + c; reward.type = 'crystals'; reward.crystals = c } // всё камо открыто → кристаллы
   } else if (kind === 'crystals') {
     const c = crnd(20, 60); p.tokens = (p.tokens || 0) + c; reward.crystals = c
+  } else if (kind === 'freeXp') {
+    const c = crnd(CRATE_FREEXP[0], CRATE_FREEXP[1]); p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + c; reward.freeXp = c
   } else {
     const c = crnd(2000, 9000); p.credits = (p.credits || 0) + c; reward.credits = c
   }
   return reward
+}
+
+// ОБМЕН кристаллов (tokens) на свободный опыт: 1 кристалл → CRYSTAL_TO_FREEXP опыта.
+// «Качать за кристаллы, если опыта не хватает» (фидбек владельца). Серверно-авторитетно.
+export function convertToFreeXp(uid, crystals) {
+  return withProfileLock(uid, async () => {
+    const p = await loadProfile(uid); if (!p) return err('no-profile')
+    const have = typeof p.tokens === 'number' ? p.tokens : 0
+    const c = clampInt(crystals, 0, have)
+    if (c <= 0) return err('funds')
+    p.tokens = have - c
+    p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + c * CRYSTAL_TO_FREEXP
+    await saveProfile(uid, p)
+    logEvent(uid, 'convert_free_xp', { crystals: c, freeXp: c * CRYSTAL_TO_FREEXP })
+    return ok(p)
+  })
 }
 
 // дроп случайного ЗАПЕРТОГО камуфляжа — ТОЛЬКО на АКТИВНУЮ технику игрока: выбранный

@@ -26,6 +26,8 @@ export default {
     freeXp: 'Free XP',
     pourFree: ({ n }) => `Invest ${n} →`,
     freeXpHint: 'This branch has enough — switch nation to invest',
+    buyFreeXp: '💎10 → ✦100',
+    buyFreeXpHint: 'Convert 10 crystals into 100 free XP',
     checkCredits: 'Credits',
     // переход к недостающему шагу
     stepUnlock: ({ name }) => `Unlock ${name}`,
@@ -68,6 +70,8 @@ export default {
     freeXp: 'Свободный опыт',
     pourFree: ({ n }) => `Вложить ${n} →`,
     freeXpHint: 'Этой ветке хватает — переключи нацию и вложи',
+    buyFreeXp: '💎10 → ✦100',
+    buyFreeXpHint: 'Обменять 10 кристаллов на 100 свободного опыта',
     checkCredits: 'Кредиты',
     stepUnlock: ({ name }) => `Открыть ${name}`,
     stepModules: ({ name }) => `К модулям ${name}`,

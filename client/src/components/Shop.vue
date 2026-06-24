@@ -49,8 +49,9 @@ const CRATE_ODDS_ROWS = [
   { k: 'oddsT8', pct: '0.5%', col: 'var(--amber-hi)' },
   { k: 'oddsT4', pct: '3%', col: 'var(--amber)' },
   { k: 'oddsCamo', pct: '12%', col: 'var(--green)' },
-  { k: 'oddsCrystals', pct: '25%', col: 'var(--blue)' },
-  { k: 'oddsCredits', pct: '59.5%', col: 'var(--ink-dim)' },
+  { k: 'oddsCrystals', pct: '20%', col: 'var(--blue)' },
+  { k: 'oddsFreeXp', pct: '15%', col: '#9ad0ff' },
+  { k: 'oddsCredits', pct: '49.5%', col: 'var(--ink-dim)' },
 ]
 const oddsOpen = ref(null) // нация, чьи шансы развёрнуты
 const pityLeft = (nation) => Math.max(0, CRATE_PITY - ((profile.cratePity && profile.cratePity[nation]) || 0))
@@ -444,6 +445,10 @@ onMounted(() => {
           <template v-else-if="crateWin.crystals">
             <div style="display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 6px"><PzIcon name="token" :size="32" /><span class="pz-display" style="font-size: 34px; color: var(--blue)">+{{ crateWin.crystals }}</span></div>
             <div style="text-align: center; font-size: 12px; color: var(--ink-dim)">{{ tr('shop.crateCrystals') }}</div>
+          </template>
+          <template v-else-if="crateWin.freeXp">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 6px"><span style="font-size: 30px; color: #9ad0ff">✦</span><span class="pz-display" style="font-size: 34px; color: #9ad0ff">+{{ crateWin.freeXp }}</span></div>
+            <div style="text-align: center; font-size: 12px; color: var(--ink-dim)">{{ tr('shop.crateFreeXp') }}</div>
           </template>
           <template v-else>
             <div style="display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 6px"><PzIcon name="coin" :size="32" /><span class="pz-display" style="font-size: 34px">+{{ fmt(crateWin.credits || 0) }}</span></div>

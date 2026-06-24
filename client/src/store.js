@@ -2,7 +2,7 @@
 // купленные танки, выбор, модули {tankId:{slot:level 1..3}}, взвод.
 // Реактивный, сохраняется в localStorage.
 import { reactive, watch, ref } from 'vue'
-import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiSellTank, apiSpendFreeXp, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef, apiPushBonus } from './api.js'
+import { apiLoadProfile, apiSaveProfile, apiSaveProfileFlush, apiConfig, apiGrantsApply, apiDailyBonus, apiBuyTank, apiSellTank, apiSpendFreeXp, apiConvertFreeXp, apiUpgradeModule, apiUpgradeCrew, apiBuyCamo, apiBuySkin, apiBuyGoldAmmo, apiSpendGoldAmmo, apiBuyCrate, apiClaimTask, apiClaimRef, apiPushBonus } from './api.js'
 import { tgUser, tgUserId } from './tg.js'
 import { t } from './i18n.js'
 
@@ -365,7 +365,10 @@ export async function applyPendingGrants() {
       // он мог уйти вперёд сервера), owned/tokens/credits уже адаптированы выше авторитетно.
       if (Array.isArray(r.crates) && r.crates.length) {
         if (!Array.isArray(profile.camoOwned)) profile.camoOwned = []
-        for (const cr of r.crates) if (cr && cr.camo && !profile.camoOwned.includes(cr.camo)) profile.camoOwned.push(cr.camo)
+        for (const cr of r.crates) {
+          if (cr && cr.camo && !profile.camoOwned.includes(cr.camo)) profile.camoOwned.push(cr.camo)
+          if (cr && cr.freeXp) profile.freeXp = (profile.freeXp || 0) + cr.freeXp // крейт-опыт аддитивно (не затираем локальный)
+        }
         crateReveal.value = r.crates // Shop покажет ревил-анимацию и обнулит
       }
     }
@@ -791,6 +794,22 @@ export async function spendFreeXp(nation, amount) {
   profile.freeXp -= amt
   if (!profile.branchXp || typeof profile.branchXp !== 'object') profile.branchXp = {}
   profile.branchXp[nat] = (profile.branchXp[nat] || 0) + amt
+  return true
+}
+
+// ОБМЕН кристаллов (tokens) на свободный опыт: 1 кристалл → 10 опыта (ЗЕРКАЛО
+// economy.CRYSTAL_TO_FREEXP). «Качать за кристаллы, если опыта не хватает». false при нехватке.
+export async function convertCrystalsToFreeXp(crystals) {
+  const c = Math.max(0, Math.round(crystals || 0))
+  if (c <= 0 || (profile.tokens || 0) < c) return false
+  if (econOn()) {
+    const r = await apiConvertFreeXp(c).catch(() => null)
+    if (!r || !r.ok) return false
+    adoptWallet(r)
+    return true
+  }
+  profile.tokens -= c
+  profile.freeXp = (profile.freeXp || 0) + c * 10
   return true
 }
 

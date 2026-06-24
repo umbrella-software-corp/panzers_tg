@@ -29,9 +29,9 @@ export const PRODUCTS = {
   // ДОНАТ-КРЕЙТЫ (крутка за ⭐): ролл по нации делается в /api/grants-apply
   // (econ.rollNationCrate, честные шансы+pity). grantProduct кладёт kind:'crate' в
   // очередь — деньги списаны, награда выкатывается авторитетно. stars = econ.CRATE_STARS.
-  crate_ussr: { title: 'Ящик СССР · крутка', stars: 10, crate: 'ussr' },
-  crate_ger: { title: 'Ящик Германии · крутка', stars: 10, crate: 'ger' },
-  crate_usa: { title: 'Ящик США · крутка', stars: 10, crate: 'usa' },
+  crate_ussr: { title: 'Ящик СССР', stars: 10, crate: 'ussr' },
+  crate_ger: { title: 'Ящик Германии', stars: 10, crate: 'ger' },
+  crate_usa: { title: 'Ящик США', stars: 10, crate: 'usa' },
 }
 
 // позывной с клиента: режем управляющие символы, тримим, 3..16 символов.
