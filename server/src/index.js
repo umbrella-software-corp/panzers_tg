@@ -1460,6 +1460,12 @@ function roomTick(room) {
 
     if (room.sim.matchOver) {
       const stats = roomStats(room)
+      // ЭКОНОМИКА V1 — контекст коэффициента эффективности: вклад каждого юнита (урон+фраги·300),
+      // макс по бою (MVP), макс по команде (best), средний (good/avg/weak). Боты участвуют в ранге.
+      const scored = stats.map((s) => ({ team: s.team, sc: econ.contribScore({ damage: s.damage, kills: s.kills }) }))
+      const matchMax = scored.reduce((mx, x) => Math.max(mx, x.sc), 0)
+      const teamMax = scored.reduce((mp, x) => { mp[x.team] = Math.max(mp[x.team] || 0, x.sc); return mp }, {})
+      const avgScore = scored.length ? scored.reduce((a, x) => a + x.sc, 0) / scored.length : 0
       for (const h of room.humans) {
         send(h.ws, { type: 'match-end', winner: room.sim.winner, score: room.sim.score, reason: room.sim.endReason, stats })
       }
@@ -1492,7 +1498,10 @@ function roomTick(room) {
         // fire-and-forget: match-end уже ушёл, начисление не блокирует закрытие комнаты.
         if (room.econAuthority && !room.granted) {
           const result = room.sim.winner == null ? 'draw' : room.sim.winner === h.team ? 'victory' : 'defeat'
-          econ.grantBattle(h, { result, kills: mine ? mine.kills : 0, damage: mine ? mine.damage : 0, allyScore: room.sim.score[h.team] || 0, survived: mine ? mine.alive : false }, room.id).catch((e) => console.error('[econ] grantBattle:', e && e.message))
+          // коэффициент эффективности по вкладу игрока + рангу (AFK 0.5 … MVP 2.0)
+          const mineScore = econ.contribScore({ damage: mine ? mine.damage : 0, kills: mine ? mine.kills : 0 })
+          const efficiency = econ.battleEfficiency({ score: mineScore, teamMax: teamMax[h.team] || 0, matchMax, avg: avgScore })
+          econ.grantBattle(h, { result, kills: mine ? mine.kills : 0, damage: mine ? mine.damage : 0, efficiency, survived: mine ? mine.alive : false }, room.id).catch((e) => console.error('[econ] grantBattle:', e && e.message))
         }
       }
       room.granted = true // гард от повторного начисления, если matchOver увидят дважды

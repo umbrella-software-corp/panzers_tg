@@ -89,7 +89,7 @@ export const TANKS_BY_NATION = {
 // gemEvery — кристаллы начисляются ДЕТЕРМИНИРОВАННО раз в N боёв на премиуме (а не
 // рандомом 1/10 — рандом стрик'ал: игрок мог отыграть 15+ боёв без кристаллов и решить,
 // что обещание из карточки не выполняется).
-export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemEvery: 10, gems: 10 }
+export const PREM_TANK = { xpMult: 0.25, creditMult: 0.25, gemEvery: 10, gems: 10 } // V1: прем-техника +25% кредиты/опыт
 export const PREMIUM_TANKS = [
   { id: 't28', nation: 'ussr', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 40, stats: { dmg: 160, rof: 16.0, spd: 45, mnv: 40, view: 280, hp: 1250 } },
   { id: 't54', nation: 'ussr', tier: 8, cls: 'Средний', premium: true, stars: 100, stats: { dmg: 240, rof: 8.5, spd: 56, mnv: 58, view: 360, hp: 1800 } },
@@ -270,12 +270,41 @@ export const moduleCost = (tier, level) => Math.round(tier * tier * (level === 2
 export const TIER_XP = { 1: 0, 2: 450, 3: 2200, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
 export const tankResearchXp = (tier) => TIER_XP[tier] || 0
 
-// СВОБОДНЫЙ ОПЫТ: доля опыта боя, уходящая в общий пул (вместо ветки/экипажа). Его
-// можно вложить в любую нацию (см. spendFreeXp в store). ЗЕРКАЛО shared/economy.js.
-export const FREE_XP_SHARE = 0.1
-// доля боевого опыта (от остатка) в ЭКИПАЖ; остальное — в ветку. Срезана 0.5→0.3
-// (экипаж качался слишком быстро, фидбек #26). ЗЕРКАЛО shared/economy.js.
+// СВОБОДНЫЙ ОПЫТ: V1 = 5% от опыта ветки (было 10%). ЗЕРКАЛО shared/economy.js.
+export const FREE_XP_SHARE = 0.05
+// доля опыта ветки в ЭКИПАЖ (бонус, качается параллельно). ЗЕРКАЛО shared/economy.js.
 export const CREW_XP_SHARE = 0.3
+
+// ════ ЭКОНОМИКА БОЯ V1 (ЗЕРКАЛО shared/economy.js): награды по ТИРУ × коэффициент ЭФФЕКТИВНОСТИ.
+export const REWARD_BY_TIER = {
+  1: { winCr: 150, lossCr: 100, winXp: 50, lossXp: 30 },
+  2: { winCr: 300, lossCr: 200, winXp: 80, lossXp: 50 },
+  3: { winCr: 600, lossCr: 400, winXp: 120, lossXp: 80 },
+  4: { winCr: 1200, lossCr: 800, winXp: 180, lossXp: 120 },
+  5: { winCr: 2500, lossCr: 1500, winXp: 270, lossXp: 180 },
+  6: { winCr: 5000, lossCr: 3000, winXp: 400, lossXp: 270 },
+  7: { winCr: 8000, lossCr: 5000, winXp: 600, lossXp: 400 },
+  8: { winCr: 12000, lossCr: 8000, winXp: 900, lossXp: 600 },
+  9: { winCr: 18000, lossCr: 12000, winXp: 1300, lossXp: 900 },
+  10: { winCr: 25000, lossCr: 18000, winXp: 1900, lossXp: 1300 },
+}
+export const EFFICIENCY = { afk: 0.5, weak: 0.8, avg: 1.0, good: 1.3, best: 1.6, mvp: 2.0 }
+export const KILL_WEIGHT = 300
+export const contribScore = (b) => Math.max(0, (b.damage || 0) + (b.kills || 0) * KILL_WEIGHT)
+export function battleEfficiency({ score = 0, teamMax = 0, matchMax = 0, avg = 0 } = {}) {
+  if (score <= 0) return EFFICIENCY.afk
+  if (matchMax > 0 && score >= matchMax) return EFFICIENCY.mvp
+  if (teamMax > 0 && score >= teamMax) return EFFICIENCY.best
+  if (avg > 0) return score >= avg * 1.3 ? EFFICIENCY.good : score >= avg * 0.6 ? EFFICIENCY.avg : EFFICIENCY.weak
+  return EFFICIENCY.avg
+}
+export function battleReward({ tier = 1, result = 'defeat', efficiency = 1 }) {
+  const t = REWARD_BY_TIER[Math.max(1, Math.min(10, tier | 0))] || REWARD_BY_TIER[1]
+  const win = result === 'victory'
+  const credits = Math.round((win ? t.winCr : t.lossCr) * efficiency)
+  const xp = Math.round((win ? t.winXp : t.lossXp) * efficiency)
+  return { credits, xp, freeXp: Math.round(xp * FREE_XP_SHARE) }
+}
 
 // ---------- голдовые снаряды ----------
 export const GOLD_AMMO_MULT = 1.35 // множитель урона голдового снаряда
