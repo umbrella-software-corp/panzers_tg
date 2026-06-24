@@ -28,6 +28,7 @@ import {
   botTierDmgMult,
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
+  HP_MULT,
   ARCHETYPE,
   archetypeOf,
   BOT_SEP_RADIUS,
@@ -195,7 +196,9 @@ export class BattleSim {
     }
     const hpMult = botTier ? botTierHpMult(botTier) : 1
     const dmgMult = botTier ? botTierDmgMult(botTier) : 1
-    const unitHp = Math.round(stats.hp * hpMult) // у людей hpMult=1 (botTier null)
+    // HP: ботам ×HP_MULT (−30% динамика). ЛЮДЯМ НЕ домножаем — у них stats.hp уже ×HP_MULT из
+    // клиентского combatStats (иначе двойной минус). hpMult=1 у людей (botTier null).
+    const unitHp = Math.round(stats.hp * hpMult * (human ? 1 : HP_MULT))
     const sc = this.mapSize / MAP_SIZE // спавны тоже растягиваем под размер карты
     const spread = ((slot - (this.teamSize - 1) / 2) / Math.max(1, this.teamSize)) * 1000 * sc
     const c = this.mapSize / 2

@@ -158,6 +158,11 @@ import { TANK_CLASSES } from './config.js'
 // как экспорт на случай внешних ссылок. Менять баланс — в tank.stats, не тут.
 export const HP_SCALE = 19
 export const DMG_SCALE = 6
+// ДИНАМИКА БОЯ: HP всех танков ×HP_MULT (фидбек 2026-06-24 «никого не убить, TTK ~13 выстрелов,
+// динамика просела» — урон ПРАВИЛЬНЫЙ, режем только HP на 30%). tank.stats.hp = сетка владельца
+// (5500 и т.д.), а в бой/ТТХ идёт ×0.70 (T-14 5500→3850, T-7 3200→2240 → ~9 выстрелов/килл).
+// Боты ×HP_MULT тем же (shared/config.js + sim.js). Хочешь динамичнее/толще — крутить тут+config.
+export const HP_MULT = 0.7
 export function combatStats(tank) {
   const s = tank.stats // абсолютные боевые числа (см. комментарий выше)
   const cls = TANK_CLASSES[tank.classId] || TANK_CLASSES.medium
@@ -170,7 +175,7 @@ export function combatStats(tank) {
     accel: Math.round(maxSpeed * 2.5), // снаппи-разгон: скорости ниже, но старт отзывчивый
     turnRate: +((s.mnv * Math.PI) / 180).toFixed(3), // °/с → рад/с (сим крутит в радианах)
     vision: Math.round(s.view),
-    hp: Math.round(s.hp),
+    hp: Math.round(s.hp * HP_MULT), // −30% к HP (динамика боя; см. HP_MULT выше)
   }
 }
 
