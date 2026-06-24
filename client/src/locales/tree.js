@@ -41,6 +41,7 @@ export default {
     installed: 'Installed ★',
     locked: 'locked',
     pickInHangar: 'SELECT',
+    picked: '✓ ACTIVE',
     camo: 'Camo',
     // CTA исследования
     meetConditions: 'MEET THE CONDITIONS ABOVE',
@@ -79,6 +80,7 @@ export default {
     installed: 'Установлен ★',
     locked: 'закрыто',
     pickInHangar: 'ВЫБРАТЬ',
+    picked: '✓ ВЫБРАН',
     camo: 'Камуфляж',
     meetConditions: 'ВЫПОЛНИ УСЛОВИЯ ВЫШЕ',
     need: 'НУЖНО',
