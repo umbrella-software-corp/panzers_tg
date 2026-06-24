@@ -131,11 +131,14 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     // медали: боевые по итогам + карьерные по серверным агрегатам (награда за первое получение)
     p.srvKills = (p.srvKills | 0) + (kills || 0)
     const awarded = new Set(Array.isArray(p.medalsAwarded) ? p.medalsAwarded : [])
-    // blockedDmg/lightKills/rating сервер из sim не знает → эти медали под авторитетностью
-    // не начисляются (мелочь, ~200-300 кр; уточним позже отдельным каналом)
+    // РЕЙТИНГОВЫЕ медали (legend@1500 / grandmaster@1800) награждаем по рейтингу профиля —
+    // фидбек @Z_86_V «рейтинг есть, наград нет!»: раньше тут стоял rating:0, поэтому медали
+    // ПОКАЗывались (клиент считает по stats.rating), но сервер НЕ выдавал награду (4000кр).
+    // Награда только КРЕДИТЫ (гемы за медали выключены #26, см.144) → чит-риск кредит-онли минимален.
+    // battles/kills — серверные счётчики (авторитетно); rating — из профиля (клиентский, но дёшев).
     const earned = [
       ...E.battleMedalIds({ kills, damage, blockedDmg: 0, lightKills: 0, survived, victory: result === 'victory' }),
-      ...E.careerMedalIds({ battles: p.srvBattles | 0, kills: p.srvKills | 0, rating: 0 }),
+      ...E.careerMedalIds({ battles: p.srvBattles | 0, kills: p.srvKills | 0, rating: (p.stats && p.stats.rating) || 0 }),
     ]
     for (const id of earned) {
       if (awarded.has(id)) continue
