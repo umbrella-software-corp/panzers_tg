@@ -5,20 +5,24 @@
 const DEG = Math.PI / 180
 
 export const TANK_CLASSES = {
+  // БОТЫ: tier-5-нормированная база под role-based сетку владельца (2026-06-24). Эффективные
+  // статы = база × botTierHpMult/DmgMult(тир игрока). Урон ещё × BOT_DMG_MULT (боты мягче).
+  // Профиль прицела (sectorDeg/sweepPeriod/toleranceDeg/range) не трогаем. Менять синхронно
+  // с meta.js (статы игрока) и client/src/game/config.js (зеркало).
   light: {
     id: 'light',
     label: 'Лёгкий',
     sectorDeg: 58,
     sweepPeriod: 1.9,
     toleranceDeg: 5.5,
-    reload: 2.2,
-    damage: 120, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 319) — синхрон с meta DMG_SCALE 6
-    hp: 1160, // HP НЕ трогаем (фидбек: режем только урон, танки живут дольше)
+    reload: 6.0, // выстр/мин ~10 (быстрый разведчик)
+    damage: 130,
+    hp: 1500,
     range: 560,
-    vision: 440, // обзор урезан (был 520 — «слишком далеко»); ЧИСЛА ПОД ПЛЕЙТЕСТ
-    maxSpeed: 116,
-    accel: 300,
-    turnRate: 2.6,
+    vision: 340,
+    maxSpeed: 65,
+    accel: 163,
+    turnRate: 1.15,
   },
   medium: {
     id: 'medium',
@@ -26,14 +30,14 @@ export const TANK_CLASSES = {
     sectorDeg: 46,
     sweepPeriod: 2.5,
     toleranceDeg: 4,
-    reload: 3.4,
-    damage: 185, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 493)
-    hp: 1740, // HP без изменений
+    reload: 7.0,
+    damage: 155,
+    hp: 2000,
     range: 600,
-    vision: 380, // обзор урезан (был 440)
-    maxSpeed: 88,
-    accel: 210,
-    turnRate: 1.8,
+    vision: 330,
+    maxSpeed: 58,
+    accel: 145,
+    turnRate: 1.0,
   },
   heavy: {
     id: 'heavy',
@@ -41,14 +45,14 @@ export const TANK_CLASSES = {
     sectorDeg: 30,
     sweepPeriod: 3.8,
     toleranceDeg: 3.5,
-    reload: 5.0,
-    damage: 283, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 754)
-    hp: 2610, // HP без изменений
+    reload: 8.0,
+    damage: 165,
+    hp: 2300,
     range: 640,
-    vision: 310, // обзор урезан (был 360)
-    maxSpeed: 62,
-    accel: 150,
-    turnRate: 1.2,
+    vision: 295,
+    maxSpeed: 42,
+    accel: 105,
+    turnRate: 0.7,
   },
 }
 
@@ -185,15 +189,16 @@ export const BOT_TANK_TIER = {
   kv1: 5, is2: 6, tgr: 5, tgr2: 6, per: 5, abr: 8, t14: 10,
 }
 const clampTier = (t) => Math.max(1, Math.min(10, Math.round(t) || 5))
-// масштаб боевой силы бота под ТИР боя. Форма повторяет combatStats игрока
-// (hp ∝ 60+hp★·14, урон ∝ 14+dmg★·4.5), нормирована к тиру 5 = текущая «плоская»
-// сила бота → мид-тир без регрессии. Боты остаются мягче игрока (BOT_DMG_MULT);
-// здесь ТОЛЬКО тировая шкала HP/урона: хай-тир игрок не вытаптывает плоских ботов,
-// лоу-тир не упирается в стену. Инвариант честного засвета НЕ трогаем. ПОД ПЛЕЙТЕСТ.
-export const botTierHpMult = (tier) => (60 + 14 * clampTier(tier)) / (60 + 14 * 5)
-export const botTierDmgMult = (tier) => (14 + 4.5 * clampTier(tier)) / (14 + 4.5 * 5)
-export const BOT_DMG_MULT = 0.45
-export const BOT_SPEED_MULT = 0.85
+// масштаб боевой силы бота под ТИР боя — повторяет role-based КРИВУЮ владельца (средние
+// HP/урон по тиру, нормированы к тиру 5 = база TANK_CLASSES). Хай-тир игрок не вытаптывает
+// плоских ботов, лоу-тир не упирается в стену. Боты мягче игрока (BOT_DMG_MULT). Инвариант
+// честного засвета НЕ трогаем. Менять синхронно с meta.js. ПОД ПЛЕЙТЕСТ.
+const BOT_HP_CURVE = [0, 0.35, 0.42, 0.57, 0.68, 1.0, 1.27, 1.33, 1.69, 2.03, 2.37]
+const BOT_DMG_CURVE = [0, 0.32, 0.43, 0.6, 0.77, 1.0, 1.36, 1.53, 1.79, 2.09, 2.38]
+export const botTierHpMult = (tier) => BOT_HP_CURVE[clampTier(tier)] || 1
+export const botTierDmgMult = (tier) => BOT_DMG_CURVE[clampTier(tier)] || 1
+export const BOT_DMG_MULT = 0.5 // боты бьют ~половину игрока (PvE-fair); поднять = жёстче
+export const BOT_SPEED_MULT = 0.9
 // РАССРЕДОТОЧЕНИЕ (анти-толпа): бот мягко отталкивается от союзника ближе SEP_RADIUS
 // (в дополнение к жёсткому _collide на касании) — толпа у одной точки/цели расходится.
 export const BOT_SEP_RADIUS = 130

@@ -37,48 +37,48 @@ export const visibleNations = () => NATIONS.filter((n) => !HIDDEN_NATIONS.includ
 // и игрок понимал: прогресс сохранён, просто временно недоступна (фидбек тикет #26).
 export const hiddenNations = () => NATIONS.filter((n) => HIDDEN_NATIONS.includes(n.id))
 
-// Статы 0..10 (dmg/rof/spd/mnv/view/hp) — шкала растянута на 10 уровней
-// до новейших машин: тир-1 — честное днище (1-3), топ-10 — 9-10.
-// Профильные просадки только у тяжёлых: темп/ход в обмен на dmg+hp.
-// Из них же считаются РЕАЛЬНЫЕ боевые статы (combatStats) — у каждого
-// танка свой бой, а не общий по классу.
+// Статы = АБСОЛЮТНЫЕ боевые числа (role-based сетка владельца 2026-06-24): dmg урон,
+// rof выстр/мин, spd скорость (км/ч), mnv манёвр (°/с), view обзор (м), hp прочность.
+// Это база на 100% экипаже без модулей/спец. combatStats отдаёт их «как есть»; ТТХ-панель
+// показывает ровно эти цифры. Прогрессия тиров заложена в самих числах (т1 ~50 урона /
+// 750 hp → т10 ~380 / 5000+). Менять баланс — ТУТ, синхронно с ботами (config.js).
 export const MAX_TIER = 10
 export const TANKS_BY_NATION = {
   ussr: [
-    { id: 't26', tier: 1, cls: 'Лёгкий', stats: { dmg: 1, rof: 3, spd: 3, mnv: 3, view: 2, hp: 1 } },
-    { id: 'bt7', tier: 2, cls: 'Лёгкий', stats: { dmg: 2, rof: 4, spd: 5, mnv: 4, view: 3, hp: 2 }, cost: 1500 },
-    { id: 't34', tier: 3, cls: 'Средний', stats: { dmg: 3, rof: 5, spd: 5, mnv: 4, view: 4, hp: 3 }, cost: 4000 },
-    { id: 't3485', tier: 4, cls: 'Средний', stats: { dmg: 4, rof: 5, spd: 5, mnv: 5, view: 5, hp: 4 }, cost: 10000 },
-    { id: 'kv1', tier: 5, cls: 'Тяжёлый', stats: { dmg: 6, rof: 3, spd: 3, mnv: 3, view: 4, hp: 6 }, cost: 25000 },
-    { id: 'is2', tier: 6, cls: 'Тяжёлый', stats: { dmg: 7, rof: 3, spd: 4, mnv: 4, view: 5, hp: 7 }, cost: 62000 },
-    { id: 't72', tier: 7, cls: 'Средний', stats: { dmg: 7, rof: 6, spd: 7, mnv: 6, view: 7, hp: 6 }, cost: 155000 },
-    { id: 't90', tier: 8, cls: 'Средний', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 7 }, cost: 390000 },
-    { id: 't80u', tier: 9, cls: 'Средний', stats: { dmg: 8, rof: 7, spd: 9, mnv: 8, view: 8, hp: 7 }, cost: 980000 },
-    { id: 't14', tier: 10, cls: 'Тяжёлый', stats: { dmg: 10, rof: 7, spd: 8, mnv: 7, view: 10, hp: 10 }, cost: 2500000 },
+    { id: 't26', tier: 1, cls: 'Лёгкий', stats: { dmg: 50, rof: 14.0, spd: 50, mnv: 45, view: 250, hp: 750 } },
+    { id: 'bt7', tier: 2, cls: 'Лёгкий', stats: { dmg: 60, rof: 13.0, spd: 75, mnv: 70, view: 330, hp: 850 }, cost: 1500 },
+    { id: 't34', tier: 3, cls: 'Средний', stats: { dmg: 90, rof: 11.0, spd: 60, mnv: 55, view: 300, hp: 1200 }, cost: 4000 },
+    { id: 't3485', tier: 4, cls: 'Средний', stats: { dmg: 110, rof: 10.0, spd: 63, mnv: 60, view: 310, hp: 1400 }, cost: 10000 },
+    { id: 'kv1', tier: 5, cls: 'Тяжёлый', stats: { dmg: 150, rof: 8.0, spd: 40, mnv: 35, view: 280, hp: 2100 }, cost: 25000 },
+    { id: 'is2', tier: 6, cls: 'Тяжёлый', stats: { dmg: 220, rof: 6.5, spd: 38, mnv: 32, view: 280, hp: 2600 }, cost: 62000 },
+    { id: 't72', tier: 7, cls: 'Средний', stats: { dmg: 240, rof: 8.0, spd: 68, mnv: 65, view: 350, hp: 3200 }, cost: 155000 },
+    { id: 't90', tier: 8, cls: 'Средний', stats: { dmg: 280, rof: 8.5, spd: 62, mnv: 58, view: 360, hp: 3800 }, cost: 390000 },
+    { id: 't80u', tier: 9, cls: 'Средний', stats: { dmg: 320, rof: 8.0, spd: 75, mnv: 70, view: 370, hp: 4500 }, cost: 980000 },
+    { id: 't14', tier: 10, cls: 'Тяжёлый', stats: { dmg: 360, rof: 7.5, spd: 72, mnv: 68, view: 420, hp: 5500 }, cost: 2500000 },
   ],
   ger: [
-    { id: 'pz2', tier: 1, cls: 'Лёгкий', stats: { dmg: 1, rof: 4, spd: 3, mnv: 3, view: 2, hp: 1 } },
-    { id: 'pz3', tier: 2, cls: 'Лёгкий', stats: { dmg: 2, rof: 4, spd: 4, mnv: 4, view: 3, hp: 2 }, cost: 1500 },
-    { id: 'pz4', tier: 3, cls: 'Средний', stats: { dmg: 3, rof: 4, spd: 4, mnv: 4, view: 4, hp: 3 }, cost: 4000 },
-    { id: 'pnt', tier: 4, cls: 'Средний', stats: { dmg: 4, rof: 4, spd: 5, mnv: 4, view: 6, hp: 4 }, cost: 10000 },
-    { id: 'tgr', tier: 5, cls: 'Тяжёлый', stats: { dmg: 6, rof: 3, spd: 3, mnv: 3, view: 5, hp: 6 }, cost: 25000 },
-    { id: 'tgr2', tier: 6, cls: 'Тяжёлый', stats: { dmg: 7, rof: 3, spd: 4, mnv: 3, view: 5, hp: 7 }, cost: 62000 },
-    { id: 'leo1', tier: 7, cls: 'Средний', stats: { dmg: 7, rof: 6, spd: 8, mnv: 7, view: 7, hp: 5 }, cost: 155000 },
-    { id: 'leo2', tier: 8, cls: 'Средний', stats: { dmg: 8, rof: 7, spd: 8, mnv: 7, view: 9, hp: 8 }, cost: 390000 },
-    { id: 'leo2a7', tier: 9, cls: 'Средний', stats: { dmg: 9, rof: 7, spd: 8, mnv: 7, view: 9, hp: 9 }, cost: 980000 },
-    { id: 'kf51', tier: 10, cls: 'Средний', stats: { dmg: 10, rof: 8, spd: 9, mnv: 8, view: 10, hp: 9 }, cost: 2500000 },
+    { id: 'pz2', tier: 1, cls: 'Лёгкий', stats: { dmg: 50, rof: 14.5, spd: 48, mnv: 45, view: 260, hp: 750 } },
+    { id: 'pz3', tier: 2, cls: 'Лёгкий', stats: { dmg: 70, rof: 13.0, spd: 50, mnv: 50, view: 280, hp: 900 }, cost: 1500 },
+    { id: 'pz4', tier: 3, cls: 'Средний', stats: { dmg: 95, rof: 11.0, spd: 48, mnv: 52, view: 300, hp: 1250 }, cost: 4000 },
+    { id: 'pnt', tier: 4, cls: 'Средний', stats: { dmg: 130, rof: 9.0, spd: 50, mnv: 55, view: 330, hp: 1500 }, cost: 10000 },
+    { id: 'tgr', tier: 5, cls: 'Тяжёлый', stats: { dmg: 160, rof: 8.0, spd: 38, mnv: 40, view: 310, hp: 2200 }, cost: 25000 },
+    { id: 'tgr2', tier: 6, cls: 'Тяжёлый', stats: { dmg: 210, rof: 6.5, spd: 35, mnv: 36, view: 300, hp: 2800 }, cost: 62000 },
+    { id: 'leo1', tier: 7, cls: 'Средний', stats: { dmg: 240, rof: 7.5, spd: 70, mnv: 70, view: 360, hp: 2300 }, cost: 155000 },
+    { id: 'leo2', tier: 8, cls: 'Средний', stats: { dmg: 280, rof: 7.5, spd: 68, mnv: 65, view: 370, hp: 3300 }, cost: 390000 },
+    { id: 'leo2a7', tier: 9, cls: 'Средний', stats: { dmg: 330, rof: 7.0, spd: 70, mnv: 68, view: 390, hp: 4200 }, cost: 980000 },
+    { id: 'kf51', tier: 10, cls: 'Средний', stats: { dmg: 380, rof: 6.5, spd: 72, mnv: 70, view: 420, hp: 4800 }, cost: 2500000 },
   ],
   usa: [
-    { id: 'm2l', tier: 1, cls: 'Лёгкий', stats: { dmg: 1, rof: 4, spd: 4, mnv: 3, view: 2, hp: 1 } },
-    { id: 'stu', tier: 2, cls: 'Лёгкий', stats: { dmg: 2, rof: 5, spd: 5, mnv: 5, view: 3, hp: 2 }, cost: 1500 },
-    { id: 'sher', tier: 3, cls: 'Средний', stats: { dmg: 3, rof: 4, spd: 4, mnv: 4, view: 4, hp: 3 }, cost: 4000 },
-    { id: 'e8', tier: 4, cls: 'Средний', stats: { dmg: 4, rof: 5, spd: 5, mnv: 5, view: 5, hp: 4 }, cost: 10000 },
-    { id: 'per', tier: 5, cls: 'Тяжёлый', stats: { dmg: 5, rof: 4, spd: 4, mnv: 4, view: 5, hp: 5 }, cost: 25000 },
-    { id: 'm48', tier: 6, cls: 'Средний', stats: { dmg: 6, rof: 5, spd: 5, mnv: 5, view: 6, hp: 5 }, cost: 62000 },
-    { id: 'm60', tier: 7, cls: 'Средний', stats: { dmg: 7, rof: 6, spd: 6, mnv: 6, view: 7, hp: 6 }, cost: 155000 },
-    { id: 'abr', tier: 8, cls: 'Тяжёлый', stats: { dmg: 9, rof: 6, spd: 7, mnv: 6, view: 9, hp: 10 }, cost: 390000 },
-    { id: 'm1a2', tier: 9, cls: 'Тяжёлый', stats: { dmg: 10, rof: 6, spd: 7, mnv: 7, view: 9, hp: 10 }, cost: 980000 },
-    { id: 'abrx', tier: 10, cls: 'Тяжёлый', stats: { dmg: 10, rof: 8, spd: 8, mnv: 7, view: 10, hp: 10 }, cost: 2500000 },
+    { id: 'm2l', tier: 1, cls: 'Лёгкий', stats: { dmg: 50, rof: 14.0, spd: 55, mnv: 55, view: 260, hp: 750 } },
+    { id: 'stu', tier: 2, cls: 'Лёгкий', stats: { dmg: 70, rof: 13.0, spd: 70, mnv: 70, view: 320, hp: 950 }, cost: 1500 },
+    { id: 'sher', tier: 3, cls: 'Средний', stats: { dmg: 95, rof: 11.0, spd: 55, mnv: 50, view: 300, hp: 1250 }, cost: 4000 },
+    { id: 'e8', tier: 4, cls: 'Средний', stats: { dmg: 120, rof: 10.0, spd: 60, mnv: 60, view: 330, hp: 1500 }, cost: 10000 },
+    { id: 'per', tier: 5, cls: 'Тяжёлый', stats: { dmg: 160, rof: 8.0, spd: 50, mnv: 45, view: 340, hp: 2150 }, cost: 25000 },
+    { id: 'm48', tier: 6, cls: 'Средний', stats: { dmg: 210, rof: 7.5, spd: 52, mnv: 55, view: 370, hp: 2800 }, cost: 62000 },
+    { id: 'm60', tier: 7, cls: 'Средний', stats: { dmg: 240, rof: 7.0, spd: 55, mnv: 52, view: 390, hp: 3100 }, cost: 155000 },
+    { id: 'abr', tier: 8, cls: 'Тяжёлый', stats: { dmg: 280, rof: 7.0, spd: 65, mnv: 60, view: 410, hp: 3800 }, cost: 390000 },
+    { id: 'm1a2', tier: 9, cls: 'Тяжёлый', stats: { dmg: 330, rof: 6.5, spd: 68, mnv: 62, view: 430, hp: 4400 }, cost: 980000 },
+    { id: 'abrx', tier: 10, cls: 'Тяжёлый', stats: { dmg: 380, rof: 6.0, spd: 75, mnv: 70, view: 460, hp: 5000 }, cost: 2500000 },
   ],
 }
 
@@ -91,12 +91,12 @@ export const TANKS_BY_NATION = {
 // что обещание из карточки не выполняется).
 export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemEvery: 10, gems: 10 }
 export const PREMIUM_TANKS = [
-  { id: 't28', nation: 'ussr', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 40, stats: { dmg: 4, rof: 6, spd: 4, mnv: 4, view: 5, hp: 5 } },
-  { id: 't54', nation: 'ussr', tier: 8, cls: 'Средний', premium: true, stars: 100, stats: { dmg: 8, rof: 7, spd: 7, mnv: 6, view: 8, hp: 8 } },
-  { id: 'pz4h', nation: 'ger', tier: 4, cls: 'Средний', premium: true, stars: 40, stats: { dmg: 4, rof: 5, spd: 5, mnv: 4, view: 5, hp: 4 } },
-  { id: 'maus', nation: 'ger', tier: 8, cls: 'Тяжёлый', premium: true, stars: 100, stats: { dmg: 9, rof: 2, spd: 2, mnv: 2, view: 5, hp: 10 } },
-  { id: 'ram', nation: 'usa', tier: 4, cls: 'Средний', premium: true, stars: 40, stats: { dmg: 3, rof: 6, spd: 5, mnv: 5, view: 4, hp: 4 } },
-  { id: 'sper', nation: 'usa', tier: 8, cls: 'Тяжёлый', premium: true, stars: 100, stats: { dmg: 9, rof: 5, spd: 5, mnv: 4, view: 6, hp: 10 } },
+  { id: 't28', nation: 'ussr', tier: 4, cls: 'Средний', premium: true, legend: true, stars: 40, stats: { dmg: 160, rof: 16.0, spd: 45, mnv: 40, view: 280, hp: 1250 } },
+  { id: 't54', nation: 'ussr', tier: 8, cls: 'Средний', premium: true, stars: 100, stats: { dmg: 240, rof: 8.5, spd: 56, mnv: 58, view: 360, hp: 1800 } },
+  { id: 'pz4h', nation: 'ger', tier: 4, cls: 'Средний', premium: true, stars: 40, stats: { dmg: 110, rof: 10.5, spd: 48, mnv: 46, view: 320, hp: 1250 } },
+  { id: 'maus', nation: 'ger', tier: 8, cls: 'Тяжёлый', premium: true, stars: 100, stats: { dmg: 490, rof: 4.0, spd: 20, mnv: 18, view: 300, hp: 5000 } },
+  { id: 'ram', nation: 'usa', tier: 4, cls: 'Средний', premium: true, stars: 40, stats: { dmg: 160, rof: 15.0, spd: 48, mnv: 50, view: 310, hp: 1300 } },
+  { id: 'sper', nation: 'usa', tier: 8, cls: 'Тяжёлый', premium: true, stars: 100, stats: { dmg: 240, rof: 7.5, spd: 45, mnv: 42, view: 340, hp: 2200 } },
 ].map(withClass) // withClass: classId + локализованные геттеры name/desc (прем-танки тоже)
 // ----- ДОП. ТЕХНИКА: ПТ-САУ + лёгкие/тяжёлые из борда (ветки/нации игры) -----
 // Пока «просто доступны»: НЕ в TANKS_BY_NATION (линейное дерево исследований не
@@ -105,27 +105,27 @@ export const PREMIUM_TANKS = [
 // дизайне борда, в экономике отдельной категории нет. Спрайты уже в sprites/.
 export const EXTRA_TANKS = [
   // СССР
-  { id: 't70', nation: 'ussr', tier: 2, cls: 'Лёгкий', stats: { dmg: 2, rof: 4, spd: 6, mnv: 5, view: 3, hp: 2 } },
-  { id: 'su76m', nation: 'ussr', tier: 3, cls: 'ПТ-САУ', stats: { dmg: 4, rof: 3, spd: 4, mnv: 3, view: 4, hp: 2 } },
-  { id: 'su85', nation: 'ussr', tier: 5, cls: 'ПТ-САУ', stats: { dmg: 6, rof: 3, spd: 4, mnv: 3, view: 5, hp: 4 } },
-  { id: 'su100', nation: 'ussr', tier: 6, cls: 'ПТ-САУ', stats: { dmg: 7, rof: 3, spd: 4, mnv: 3, view: 6, hp: 5 } },
-  { id: 'kv2', nation: 'ussr', tier: 6, cls: 'Тяжёлый', stats: { dmg: 8, rof: 1, spd: 2, mnv: 2, view: 4, hp: 7 } },
-  { id: 'isu152', nation: 'ussr', tier: 7, cls: 'ПТ-САУ', stats: { dmg: 9, rof: 2, spd: 3, mnv: 3, view: 5, hp: 6 } },
+  { id: 't70', nation: 'ussr', tier: 2, cls: 'Лёгкий', stats: { dmg: 55, rof: 14.3, spd: 78, mnv: 76, view: 330, hp: 700 } },
+  { id: 'su76m', nation: 'ussr', tier: 3, cls: 'ПТ-САУ', stats: { dmg: 115, rof: 8.6, spd: 51, mnv: 44, view: 300, hp: 1000 } },
+  { id: 'su85', nation: 'ussr', tier: 5, cls: 'ПТ-САУ', stats: { dmg: 195, rof: 6.2, spd: 41, mnv: 34, view: 310, hp: 1700 } },
+  { id: 'su100', nation: 'ussr', tier: 6, cls: 'ПТ-САУ', stats: { dmg: 265, rof: 5.3, spd: 39, mnv: 30, view: 300, hp: 2200 } },
+  { id: 'kv2', nation: 'ussr', tier: 6, cls: 'Тяжёлый', stats: { dmg: 245, rof: 5.8, spd: 33, mnv: 28, view: 270, hp: 3200 } },
+  { id: 'isu152', nation: 'ussr', tier: 7, cls: 'ПТ-САУ', stats: { dmg: 300, rof: 5.7, spd: 66, mnv: 59, view: 370, hp: 2300 } },
   // Германия
-  { id: 'stug3', nation: 'ger', tier: 4, cls: 'ПТ-САУ', stats: { dmg: 5, rof: 4, spd: 4, mnv: 3, view: 5, hp: 3 } },
-  { id: 'hetzer', nation: 'ger', tier: 4, cls: 'ПТ-САУ', stats: { dmg: 5, rof: 4, spd: 4, mnv: 3, view: 4, hp: 3 } },
-  { id: 'nashorn', nation: 'ger', tier: 6, cls: 'ПТ-САУ', stats: { dmg: 8, rof: 3, spd: 4, mnv: 3, view: 6, hp: 3 } },
-  { id: 'jagdpanther', nation: 'ger', tier: 7, cls: 'ПТ-САУ', stats: { dmg: 8, rof: 4, spd: 5, mnv: 4, view: 6, hp: 5 } },
-  { id: 'ferdinand', nation: 'ger', tier: 8, cls: 'ПТ-САУ', stats: { dmg: 9, rof: 3, spd: 3, mnv: 3, view: 6, hp: 8 } },
-  { id: 'grille15', nation: 'ger', tier: 10, cls: 'ПТ-САУ', stats: { dmg: 10, rof: 4, spd: 6, mnv: 5, view: 8, hp: 5 } },
+  { id: 'stug3', nation: 'ger', tier: 4, cls: 'ПТ-САУ', stats: { dmg: 150, rof: 7.6, spd: 55, mnv: 49, view: 320, hp: 1150 } },
+  { id: 'hetzer', nation: 'ger', tier: 4, cls: 'ПТ-САУ', stats: { dmg: 150, rof: 7.6, spd: 55, mnv: 49, view: 320, hp: 1150 } },
+  { id: 'nashorn', nation: 'ger', tier: 6, cls: 'ПТ-САУ', stats: { dmg: 265, rof: 5.3, spd: 39, mnv: 30, view: 300, hp: 2200 } },
+  { id: 'jagdpanther', nation: 'ger', tier: 7, cls: 'ПТ-САУ', stats: { dmg: 300, rof: 5.7, spd: 66, mnv: 59, view: 370, hp: 2300 } },
+  { id: 'ferdinand', nation: 'ger', tier: 8, cls: 'ПТ-САУ', stats: { dmg: 350, rof: 5.6, spd: 62, mnv: 52, view: 380, hp: 2900 } },
+  { id: 'grille15', nation: 'ger', tier: 10, cls: 'ПТ-САУ', stats: { dmg: 465, rof: 4.9, spd: 70, mnv: 59, view: 430, hp: 4100 } },
   // США
-  { id: 'm3lee', nation: 'usa', tier: 3, cls: 'Средний', stats: { dmg: 3, rof: 4, spd: 4, mnv: 3, view: 4, hp: 3 } },
-  { id: 'chaffee', nation: 'usa', tier: 4, cls: 'Лёгкий', stats: { dmg: 3, rof: 5, spd: 7, mnv: 6, view: 6, hp: 3 } },
-  { id: 'm10', nation: 'usa', tier: 4, cls: 'ПТ-САУ', stats: { dmg: 5, rof: 4, spd: 5, mnv: 4, view: 5, hp: 3 } },
-  { id: 'jumbo', nation: 'usa', tier: 5, cls: 'Тяжёлый', stats: { dmg: 5, rof: 4, spd: 3, mnv: 3, view: 5, hp: 7 } },
-  { id: 'm36', nation: 'usa', tier: 5, cls: 'ПТ-САУ', stats: { dmg: 6, rof: 4, spd: 5, mnv: 4, view: 5, hp: 4 } },
-  { id: 'hellcat', nation: 'usa', tier: 6, cls: 'ПТ-САУ', stats: { dmg: 6, rof: 4, spd: 8, mnv: 6, view: 6, hp: 3 } },
-  { id: 't30', nation: 'usa', tier: 9, cls: 'ПТ-САУ', stats: { dmg: 10, rof: 2, spd: 4, mnv: 3, view: 7, hp: 8 } },
+  { id: 'm3lee', nation: 'usa', tier: 3, cls: 'Средний', stats: { dmg: 95, rof: 11.0, spd: 54, mnv: 52, view: 300, hp: 1250 } },
+  { id: 'chaffee', nation: 'usa', tier: 4, cls: 'Лёгкий', stats: { dmg: 95, rof: 10.7, spd: 70, mnv: 70, view: 360, hp: 1150 } },
+  { id: 'm10', nation: 'usa', tier: 4, cls: 'ПТ-САУ', stats: { dmg: 150, rof: 7.6, spd: 55, mnv: 49, view: 320, hp: 1150 } },
+  { id: 'jumbo', nation: 'usa', tier: 5, cls: 'Тяжёлый', stats: { dmg: 180, rof: 6.8, spd: 34, mnv: 32, view: 280, hp: 2550 } },
+  { id: 'm36', nation: 'usa', tier: 5, cls: 'ПТ-САУ', stats: { dmg: 195, rof: 6.2, spd: 41, mnv: 34, view: 310, hp: 1700 } },
+  { id: 'hellcat', nation: 'usa', tier: 6, cls: 'ПТ-САУ', stats: { dmg: 265, rof: 5.3, spd: 55, mnv: 50, view: 320, hp: 1700 } },
+  { id: 't30', nation: 'usa', tier: 9, cls: 'ПТ-САУ', stats: { dmg: 410, rof: 5.3, spd: 68, mnv: 57, view: 410, hp: 3500 } },
 ].map((t) => withClass({ ...t, extra: true }))
 export const EXTRA_TANK_IDS = new Set(EXTRA_TANKS.map((t) => t.id))
 export const TANKS = [...Object.values(TANKS_BY_NATION).flat(), ...PREMIUM_TANKS, ...EXTRA_TANKS].map(withClass)
@@ -147,33 +147,30 @@ for (const k of ['dmg', 'rof', 'spd', 'mnv', 'view', 'hp']) Object.definePropert
 // Сектор/линия сведения/допуск — характер класса; остальное считается из
 // дисплейных статов 0..10, так что КАЖДЫЙ танк в бою ощущается по-своему.
 import { TANK_CLASSES } from './config.js'
-// КРУПНЫЕ ЧИСЛА (как в больших танковых играх): HP сильно вверх (×HP_SCALE),
-// урон слабее (×DMG_SCALE) → бои «мясистее», ~6-8 выстрелов на килл. Базовые
-// аркадные числа в формулах домножаются на масштаб. ТЕ ЖЕ множители зашиты в
-// hp/damage классов в shared/config.js и client/src/game/config.js (TANK_CLASSES,
-// статы ботов) — менять СИНХРОННО, иначе боты и игроки разъедутся по шкале.
-// HP игрока ПОДНЯТ 14.5→19 (фидбек «снесли за 3 выстрела» — танки были слишком хрупкие).
-// HP ботов (config.js TANK_CLASSES) НАМЕРЕННО оставлен на 14.5 → игрок чуть толще бота
-// (прощает новичка/ветерана), PvP симметричен (оба игрока ×19). Танки ощущаются «беефер».
+// АБСОЛЮТНАЯ БАЛАНСНАЯ СЕТКА (role-based, по таблицам владельца 2026-06-24): tank.stats —
+// это РЕАЛЬНЫЕ боевые числа, а не шкала 0-10. combatStats отдаёт их «как есть» (+ профиль
+// класса). ТТХ-панель (statReal) показывает ровно эти цифры. Базовые = 100% экипаж, без
+// модулей/спец — модули/экипаж множат сверху (loadoutStats). Боты (shared+client config.js
+// TANK_CLASSES + botTier-мульты) калиброваны под ТУ ЖЕ кривую — менять синхронно.
+// Поля stats: dmg урон, rof выстр/мин, spd скорость (км/ч ≈ ед/с сима), mnv манёвр (°/с),
+// view обзор (м), hp прочность.
+// HP_SCALE/DMG_SCALE — легаси (масштаб 0-10), больше не применяются в combatStats; оставлены
+// как экспорт на случай внешних ссылок. Менять баланс — в tank.stats, не тут.
 export const HP_SCALE = 19
-// Урон ИГРОКА (combatStats) множится здесь. 16 > HP_SCALE(14.5) — игрок бьёт ЧУТЬ
-// сильнее ботов (намеренный перевес: ~+10%, убийство за ~3 выстрела), чтобы агрессия
-// и точность вознаграждались. Урон БОТОВ — в TANK_CLASSES.damage (config.js, тоже ×14.5
-// с 2026-06-18) × BOT_DMG_MULT(0.45): боты остаются мягче, но кусачие → надо маневрировать.
-export const DMG_SCALE = 6 // урон РЕАЛИСТИЧНЫЙ (тир-10 ~354): было 16 (~944) → «все жили 1-2 выстрела». HP НЕ трогаем (×HP_SCALE) — танки живут дольше (фидбек). Боты: TANK_CLASSES.damage урезан тем же ×0.375 (config.js ×2)
+export const DMG_SCALE = 6
 export function combatStats(tank) {
-  const s = tank.stats
+  const s = tank.stats // абсолютные боевые числа (см. комментарий выше)
   const cls = TANK_CLASSES[tank.classId] || TANK_CLASSES.medium
-  const maxSpeed = 42 + s.spd * 8.5 // танки тяжелее, не «гоночные» (порезано ~28%)
+  const maxSpeed = s.spd // км/ч таблицы = ед/с сима (тяжи реально медленные — by design)
   return {
     ...cls, // id/label/sectorDeg/sweepPeriod/toleranceDeg/range — профиль класса
-    damage: Math.round((14 + s.dmg * 4.5) * DMG_SCALE),
-    reload: +(6.4 - s.rof * 0.5).toFixed(2),
+    damage: Math.round(s.dmg),
+    reload: +(60 / s.rof).toFixed(2), // выстр/мин → секунды перезарядки
     maxSpeed,
-    accel: Math.round(maxSpeed * 1.1), // разгон ~1с до полной — масса чувствуется
-    turnRate: +(0.55 + s.mnv * 0.12).toFixed(2), // танк, а не машинка
-    vision: 240 + s.view * 26, // обзор урезан ~15% (был 280+view*32 — «слишком далеко»); под плейтест
-    hp: Math.round((60 + s.hp * 14) * HP_SCALE),
+    accel: Math.round(maxSpeed * 2.5), // снаппи-разгон: скорости ниже, но старт отзывчивый
+    turnRate: +((s.mnv * Math.PI) / 180).toFixed(3), // °/с → рад/с (сим крутит в радианах)
+    vision: Math.round(s.view),
+    hp: Math.round(s.hp),
   }
 }
 

@@ -16,20 +16,23 @@ import { t } from '../i18n.js'
 const DEG = Math.PI / 180
 
 export const TANK_CLASSES = {
+  // Зеркало shared/config.js (role-based сетка 2026-06-24). Для ИГРОКА combatStats перебивает
+  // damage/hp/reload/maxSpeed/accel/turnRate/vision (остаётся только профиль прицела); поля
+  // держим синхронными с shared, чтобы не путать. Менять синхронно: meta.js + 2×config.js.
   light: {
     id: 'light',
     label: 'Лёгкий',
     sectorDeg: 58,
     sweepPeriod: 1.9,
     toleranceDeg: 5.5,
-    reload: 2.2,
-    damage: 120, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 319) — синхрон с shared/meta DMG_SCALE 6
-    hp: 1160, // HP без изменений (режем только урон)
+    reload: 6.0,
+    damage: 130,
+    hp: 1500,
     range: 560,
-    vision: 520,
-    maxSpeed: 160,
-    accel: 380,
-    turnRate: 1.6,
+    vision: 340,
+    maxSpeed: 65,
+    accel: 163,
+    turnRate: 1.15,
   },
   medium: {
     id: 'medium',
@@ -37,14 +40,14 @@ export const TANK_CLASSES = {
     sectorDeg: 46,
     sweepPeriod: 2.5,
     toleranceDeg: 4,
-    reload: 3.4,
-    damage: 185, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 493)
-    hp: 1740, // HP без изменений
+    reload: 7.0,
+    damage: 155,
+    hp: 2000,
     range: 600,
-    vision: 440,
-    maxSpeed: 120,
-    accel: 270,
-    turnRate: 1.2,
+    vision: 330,
+    maxSpeed: 58,
+    accel: 145,
+    turnRate: 1.0,
   },
   heavy: {
     id: 'heavy',
@@ -52,14 +55,14 @@ export const TANK_CLASSES = {
     sectorDeg: 30,
     sweepPeriod: 3.8,
     toleranceDeg: 3.5,
-    reload: 5.0,
-    damage: 283, // РЕАЛИСТИЧНЫЙ урон (×0.375 от 754)
-    hp: 2610, // HP без изменений
+    reload: 8.0,
+    damage: 165,
+    hp: 2300,
     range: 640,
-    vision: 360,
-    maxSpeed: 85,
-    accel: 190,
-    turnRate: 0.85,
+    vision: 295,
+    maxSpeed: 42,
+    accel: 105,
+    turnRate: 0.7,
   },
 }
 
@@ -114,8 +117,8 @@ export const ENEMY_AI = {
 // Состав команды ботов по индексу (5 слотов) и понижающие коэффициенты
 // (бот стреляет стабильно по кд, поэтому слабее игрока на выстрел).
 export const BOT_CLASS_MIX = ['light', 'medium', 'heavy', 'medium', 'light']
-export const BOT_DMG_MULT = 0.45
-export const BOT_SPEED_MULT = 0.85
+export const BOT_DMG_MULT = 0.5
+export const BOT_SPEED_MULT = 0.9
 
 // Перевод параметров класса в радианы для движка.
 export function classToRadians(cls) {
