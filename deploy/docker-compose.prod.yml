@@ -40,6 +40,8 @@ services:
       - server_data:/app/server/data
     expose:
       - "8080"
+    networks:
+      - internal
 
   web:
     image: ${IMAGE_PREFIX}-web:${IMAGE_TAG}
@@ -52,6 +54,10 @@ services:
       # automatic TLS. Change the env var (+ rebuild for VITE_API_URL) to move
       # domains — nothing is hardcoded.
       DOMAIN: ${DOMAIN}
+      # Optional Grafana subdomain routed through this same Caddy (prod only).
+      # Empty/unset on envs without monitoring → the grafana block stays inert
+      # (Caddyfile gives it a harmless internal default).
+      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-}
     volumes:
       # Persist the Let's Encrypt account + issued certs, else every restart
       # re-requests certs and eventually hits rate limits.
@@ -59,6 +65,19 @@ services:
       - caddy_config:/config
     depends_on:
       - server
+    networks:
+      # `internal` — talk to the server. `edge` — let the (prod-only) monitoring
+      # stack's `grafana` container attach here so Caddy can proxy grafana.panzers.tg.
+      # This stack OWNS `edge` (created as `panzers_edge`); the monitoring compose
+      # joins it as external. On staging there's no monitoring → `edge` is just an
+      # empty auto-created network, nothing to set up.
+      - internal
+      - edge
+
+networks:
+  internal:
+  edge:
+    name: panzers_edge
 
 volumes:
   server_data:

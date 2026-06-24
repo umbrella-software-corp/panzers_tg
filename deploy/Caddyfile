@@ -59,3 +59,13 @@
 		file_server
 	}
 }
+
+# Grafana (monitoring stack) on its own subdomain, fronted by this same edge.
+# GRAFANA_DOMAIN is set only where monitoring runs (prod: grafana.panzers.tg). On
+# envs without it the default `localhost:2998` makes this an inert internal-only
+# block (no public address, no ACME) — staging is unaffected. `grafana` resolves
+# over the shared `panzers-edge` network (see docker-compose.prod.yml).
+{$GRAFANA_DOMAIN:localhost:2998} {
+	encode zstd gzip
+	reverse_proxy grafana:3000
+}

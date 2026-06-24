@@ -133,6 +133,7 @@ jobs:
           BUILD_ID=${{ steps.meta.outputs.build_id }}
 
           DOMAIN=${{ vars.DOMAIN }}
+          GRAFANA_DOMAIN=${{ vars.GRAFANA_DOMAIN }}
           WEBAPP_URL=${{ vars.WEBAPP_URL }}
 
           BOT_TOKEN=${{ secrets.BOT_TOKEN }}
