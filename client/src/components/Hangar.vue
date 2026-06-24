@@ -2,10 +2,10 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, tankStat } from '../store.js'
+import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, tankStat, claimPushBonus } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
-import { haptic } from '../tg.js'
+import { haptic, requestWriteAccess, isFromTelegram } from '../tg.js'
 import { apiUsed3D } from '../api.js'
 import { preload3D } from '../game/NetGame3D.js'
 import Tank3DView from './ui/Tank3DView.vue'
@@ -77,6 +77,24 @@ function openFeedbackSheet() {
   track('feedback_offer_opened', { from_screen: 'hangar' })
   haptic('light')
   feedbackOpen.value = true
+}
+
+// ОХВАТ ПУШЕЙ: ~81% не дали боту право писать (pushBlocked) → рассылка возврата уходит
+// «в 0», в т.ч. ~80 АКТИВНЫХ игроков недосягаемы. Постоянный заметный баннер «🔔 +N💎» —
+// чтобы активный мог дать доступ В ЛЮБОЙ момент (не только раз-в-5-дней попапом, который
+// легко смахнуть). Прячется сразу после выдачи (pushBonusClaimed реактивен).
+// ВАЖЕН ПОРЯДОК: реактивные profile.* читаем ПЕРВЫМИ, isFromTelegram() (НЕреактивна) —
+// последней. Иначе при isFromTelegram()===false на первом расчёте && оборвётся до чтения
+// profile.*, зависимости не отследятся, и баннер не появится даже когда флаги изменятся.
+const notifOffer = computed(() => !profile.pushBonusClaimed && profile.trainingDone && isFromTelegram())
+async function enableNotifs() {
+  haptic('light')
+  track('push_bonus_offered', { reason: 'banner', tokens: serverConfig.pushBonusTokens || 25 })
+  const ok = await requestWriteAccess()
+  track('push_access_result', { granted: !!ok, reason: 'banner' })
+  if (!ok) { track('push_bonus_declined', { stage: 'access', reason: 'banner' }); return }
+  const granted = await claimPushBonus() // сервер верифицирует доступ реальной отправкой + жетоны
+  if (granted && granted.tokens) track('push_bonus_claimed', { tokens: granted.tokens, reason: 'banner' })
 }
 
 // «N в сети» показываем ТОЛЬКО в поиске боя (Matchmaking.vue), на главной убрано —
@@ -386,8 +404,21 @@ onMounted(() => {
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
     </div>
 
+    <!-- ВКЛЮЧИ УВЕДОМЛЕНИЯ → +N💎: постоянный заметный вход, чтобы вырастить охват пушей
+         (81% не дали боту право писать → рассылка возврата уходит «в 0»). Прячется после выдачи. -->
+    <button v-if="notifOffer" class="chbanner chbanner--notif" @click="enableNotifs">
+      <span class="chb-icon">🔔</span>
+      <span class="chb-text">
+        <span class="chb-title">{{ t('hangar.notifBanner') }}</span>
+        <span class="chb-reward">
+          <PzIcon name="token" :size="12" /> +{{ serverConfig.pushBonusTokens || 25 }}
+        </span>
+      </span>
+      <span class="chb-cta">▸</span>
+    </button>
+
     <!-- «нам важно ваше мнение» → написать в саппорт → бонус жетонов -->
-    <button v-if="feedbackOffer" class="chbanner" @click="openFeedbackSheet">
+    <button v-if="feedbackOffer && !notifOffer" class="chbanner" @click="openFeedbackSheet">
       <span class="chb-icon">💬</span>
       <span class="chb-text">
         <span class="chb-title">{{ t('feedback.banner') }}</span>
@@ -999,6 +1030,16 @@ onMounted(() => {
   50% {
     box-shadow: 0 0 12px 0 rgba(255, 193, 7, 0.35);
   }
+}
+/* баннер уведомлений — синий (цвет «колокольчика»), отличается от амбер-фидбека */
+.chbanner--notif {
+  border-color: #57b6f0;
+  background: linear-gradient(90deg, rgba(87, 182, 240, 0.18), rgba(87, 182, 240, 0.05));
+  animation: chb-pulse-notif 2.4s ease-in-out infinite;
+}
+@keyframes chb-pulse-notif {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(87, 182, 240, 0); }
+  50% { box-shadow: 0 0 12px 0 rgba(87, 182, 240, 0.4); }
 }
 .chb-icon {
   font-size: 18px;
