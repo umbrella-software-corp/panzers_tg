@@ -601,7 +601,7 @@ async function handleApi(req, res) {
     // Весь load prev→merge→save под локом: иначе между чтением prev и записью merged
     // мог влезть grants-apply (слил очередь) — и мы бы воскресили уже выданную выдачу
     // из prev.pendingGrants → двойное начисление. Лок сериализует это с grants-apply.
-    const savedAt = await withProfileLock(user.uid, async () => {
+    const saved = await withProfileLock(user.uid, async () => {
     const prev = (await loadProfile(user.uid)) || {}
     const merged = {
       ...body.profile,
@@ -657,8 +657,13 @@ async function handleApi(req, res) {
     // СЕРВЕРНО-АВТОРИТЕТНАЯ ЭКОНОМИКА (флаг ВКЛ): деньги/танки/модули/перки ведёт сервер
     // (начисление за бой + валидируемые эндпоинты покупок), клиентский сейв их НЕ пишет —
     // это и закрывает чит «правлю localStorage». При OFF — поведение как было.
-    if (await econ.econAuthority()) Object.assign(merged, econ.econPreserve(prev, body.profile))
-    return await saveProfile(user.uid, merged)
+    const econAuth = await econ.econAuthority()
+    if (econAuth) Object.assign(merged, econ.econPreserve(prev, body.profile))
+    const at = await saveProfile(user.uid, merged)
+    // под econAuthority ВОЗВРАЩАЕМ серверные econ-поля (раньше отдавали только updatedAt → клиент
+    // отставал: XP/кредиты копились на сервере, на экран не доходили — #29 «опыта не давали»).
+    // Клиент адоптит их сразу после сейва (store apiSaveProfile), без отдельного GET-синка.
+    return { at, econ: econAuth ? { credits: merged.credits | 0, tokens: merged.tokens | 0, goldAmmo: merged.goldAmmo | 0, owned: merged.owned, modules: merged.modules, branchXp: merged.branchXp, freeXp: merged.freeXp, premTankBattles: merged.premTankBattles | 0 } : null }
     })
     // БЭКСТОП РЕФЕРАЛА из ПОДПИСАННОГО start_param (#29 @Z_86_V «приглашение друзей»):
     // клиентский /api/referred зависит от тайминга initData на медленных телефонах и от
@@ -670,7 +675,7 @@ async function handleApi(req, res) {
     if (refM) registerReferral(user, refM[1]).catch(() => {})
     // updatedAt — версия записи (серверные часы); клиент хранит её и на реоткрытии
     // сверяет: продвинулся ли сервер с тех пор (другое устройство) или нет.
-    return json(res, 200, { ok: true, updatedAt: typeof savedAt === 'number' ? savedAt : 0 })
+    return json(res, 200, { ok: true, updatedAt: saved && typeof saved.at === 'number' ? saved.at : 0, econ: (saved && saved.econ) || undefined })
   }
   if (req.url === '/api/grants-apply' && req.method === 'POST') {
     // АТОМАРНО применить очередь админ-выдач к серверному профилю и очистить её —

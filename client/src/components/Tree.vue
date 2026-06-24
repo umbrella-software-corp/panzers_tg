@@ -463,7 +463,7 @@ watch(selected, (t) => {
                СРАЗУ при выборе свотча (dockCamo) — раньше было непонятно, как танк будет выглядеть. -->
           <div class="camo-preview3d">
             <Tank3DView v-if="threeD" :url="dockModelUrl" :camo="dockCamo || ''" :seed="dockSeed" :scale="dockScale" class="cp3d-host" />
-            <TankImg v-else :tank-id="selected.id" :camo="dockCamo || ''" :size="170" :hangar="true" />
+            <TankImg v-else :tank-id="selected.id" :camo="dockCamo || ''" :size="120" :hangar="true" />
           </div>
           <div class="camo-dots pz-noscroll">
             <button
@@ -754,11 +754,11 @@ watch(selected, (t) => {
   align-items: center;
   justify-content: center;
   margin: 4px 0 8px;
-  min-height: 120px;
+  min-height: 96px;
   border-radius: 10px;
   background: radial-gradient(120% 90% at 50% 35%, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.25));
 }
-.cp3d-host { width: 100%; height: 190px; }
+.cp3d-host { width: 100%; height: 132px; } /* компактнее (было 190) — док не вылезал за экран (#29) */
 .camo-dots { display: flex; align-items: center; gap: 7px; overflow-x: auto; }
 .camo-cell {
   position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
