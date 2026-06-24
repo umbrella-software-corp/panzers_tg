@@ -160,7 +160,7 @@ export const HP_SCALE = 19
 // сильнее ботов (намеренный перевес: ~+10%, убийство за ~3 выстрела), чтобы агрессия
 // и точность вознаграждались. Урон БОТОВ — в TANK_CLASSES.damage (config.js, тоже ×14.5
 // с 2026-06-18) × BOT_DMG_MULT(0.45): боты остаются мягче, но кусачие → надо маневрировать.
-export const DMG_SCALE = 16
+export const DMG_SCALE = 6 // урон РЕАЛИСТИЧНЫЙ (тир-10 ~354): было 16 (~944) → «все жили 1-2 выстрела». HP НЕ трогаем (×HP_SCALE) — танки живут дольше (фидбек). Боты: TANK_CLASSES.damage урезан тем же ×0.375 (config.js ×2)
 export function combatStats(tank) {
   const s = tank.stats
   const cls = TANK_CLASSES[tank.classId] || TANK_CLASSES.medium
