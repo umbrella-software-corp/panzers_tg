@@ -8,43 +8,63 @@
 // {name}) или ФУНКЦИЕЙ (params) => string — функции закрывают сложные случаи:
 // русские множественные числа, род («повреждён/повреждена»), конкатенацию.
 import { dicts } from './locales/index.js'
+import { resolveClientLocale } from 'panzer-tg-shared/lang.js'
 
 const FALLBACK = 'en'
 let _locale = FALLBACK // выставляется initLocale() до mount (см. main.js)
 
-// ru* → 'ru', всё остальное → 'en'. Источники по приоритету: ?lang= (для dev/QA),
-// ЯЗЫК КАМПАНИИ из start_param, Telegram language_code, navigator.language. Любой
-// нераспознанный код → английский.
-export function detectLocale() {
-  try {
-    const forced = new URL(location.href).searchParams.get('lang')
-    if (forced === 'ru' || forced === 'en') return forced
-  } catch {
-    /* нет location — серверный/тестовый контекст */
-  }
-  // Язык РЕКЛАМНОЙ кампании из start_param (?startapp=…). Telegram Ads (§4.3) требует,
-  // чтобы язык destination совпадал с языком объявления/канала. Зритель (в т.ч.
-  // модератор) может быть с любым языком телефона — поэтому рекламные ссылки кодируют
-  // язык суффиксом: src_ads_ru → русский, src_ads_en → английский. Это перекрывает
-  // авто-детект по телефону, но ТОЛЬКО для трафика с явным тегом языка.
+function tgLaunchUser() {
   try {
     const tg = window.Telegram && window.Telegram.WebApp
-    const sp = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || ''
-    if (/(^|[_-])ru$/i.test(sp)) return 'ru'
-    if (/(^|[_-])en$/i.test(sp)) return 'en'
+    const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user
+    if (u) return u
   } catch {
     /* нет Telegram */
   }
-  let code = ''
   try {
-    code =
-      (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user && window.Telegram.WebApp.initDataUnsafe.user.language_code) ||
-      (typeof navigator !== 'undefined' && navigator.language) ||
-      ''
+    const hash = (window.__PZ_TG_HASH || window.location.hash || '').replace(/^#/, '')
+    const initData = new URLSearchParams(hash).get('tgWebAppData') || ''
+    const userJson = initData ? new URLSearchParams(initData).get('user') : ''
+    return userJson ? JSON.parse(userJson) : null
   } catch {
-    /* нет Telegram/navigator */
+    return null
   }
-  return String(code).toLowerCase().startsWith('ru') ? 'ru' : 'en'
+}
+
+function tgLaunchStartParam() {
+  try {
+    const tg = window.Telegram && window.Telegram.WebApp
+    const sp = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param
+    if (sp) return String(sp)
+  } catch {
+    /* нет Telegram */
+  }
+  try {
+    const hash = (window.__PZ_TG_HASH || window.location.hash || '').replace(/^#/, '')
+    const initData = new URLSearchParams(hash).get('tgWebAppData') || ''
+    return initData ? new URLSearchParams(initData).get('start_param') || '' : ''
+  } catch {
+    return ''
+  }
+}
+
+// ru* → 'ru', всё остальное → 'en'. Источники по приоритету: ?lang= (для dev/QA),
+// персональный оверрайд аккаунта, ЯЗЫК КАМПАНИИ из start_param, Telegram language_code,
+// navigator.language. Любой нераспознанный код → английский.
+export function detectLocale() {
+  let forced = ''
+  try {
+    forced = new URL(location.href).searchParams.get('lang') || ''
+  } catch {
+    /* нет location — серверный/тестовый контекст */
+  }
+  let nav = ''
+  try {
+    nav = (typeof navigator !== 'undefined' && navigator.language) || ''
+  } catch {
+    /* нет navigator */
+  }
+  return resolveClientLocale({ forcedParam: forced, telegramUser: tgLaunchUser(), startParam: tgLaunchStartParam(), navigatorLanguage: nav })
 }
 
 // вызвать ОДИН раз на старте (main.js), до createApp().mount() — чтобы первый
