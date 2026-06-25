@@ -1,0 +1,96 @@
+# Стек наблюдаемости panzers (нагрузка контейнеров + хоста).
+# Долгоживущий, ПРОД-ОНЛИ, НЕ деплоится app-пайплайном — поднимается вручную:
+#   cd /opt/panzers-monitoring && cp .env.example .env && <задать пароль> && \
+#   docker compose --env-file .env up -d
+#
+# Компоненты:
+#   cadvisor       — метрики ПО КАЖДОМУ контейнеру (CPU/RAM/сеть/диск) = «нагрузка на под»
+#   node-exporter  — метрики хоста (CPU/RAM/диск/load average)
+#   victoriametrics— хранилище + скрейп обоих (Prometheus-совместимое, лёгкое)
+#   grafana        — дашборды; наружу — через app-Caddy на grafana.panzers.tg
+#
+# Сеть `edge` (внешняя) — это сеть APP-стека `panzers_edge` (её создаёт app-compose).
+# grafana подключается к ней, чтобы app-Caddy (web) дотягивался до него и проксировал
+# grafana.panzers.tg. → Мониторинг поднимаем ПОСЛЕ app-стека (на cutover), когда
+# сеть panzers_edge уже существует. Стейджа это не касается (там мониторинга нет).
+
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.103.0
+    restart: unless-stopped
+    command:
+      - "-storageDataPath=/vmdata"
+      - "-retentionPeriod=30d"
+      - "-httpListenAddr=:8428"
+      - "-promscrape.config=/etc/vm/scrape.yml"
+    volumes:
+      - vmdata:/vmdata
+      - ./victoriametrics/scrape.yml:/etc/vm/scrape.yml:ro
+    networks: [monitoring]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    restart: unless-stopped
+    privileged: true
+    # cgroup v2: cAdvisor must share the HOST cgroup namespace to see other
+    # containers' cgroups (/system.slice/docker-<hash>.scope); with the default
+    # private ns it sees only host services. Requires Docker's classic overlay2
+    # graphdriver (bootstrap pins it via daemon.json) — under the Docker 29
+    # containerd image store cAdvisor can't resolve the RW layer and skips
+    # containers entirely.
+    cgroup: host
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    command:
+      - "-housekeeping_interval=15s"
+      - "-docker_only=false"
+    networks: [monitoring]
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - "--path.rootfs=/host"
+    networks: [monitoring]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://grafana.panzers.tg}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # За реверс-прокси (Caddy) — доверяем его X-Forwarded-* заголовкам.
+      GF_SERVER_ENFORCE_DOMAIN: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    networks:
+      monitoring:
+      # Под алиасом `grafana` app-Caddy (web) дотягивается до него и проксирует
+      # grafana.panzers.tg. Без публикации портов на хост (наружу — только через Caddy).
+      edge:
+        aliases: [grafana]
+    depends_on: [victoriametrics]
+
+networks:
+  monitoring:
+  edge:
+    # Сеть app-стека (panzers_edge). Должна существовать → app-стек поднят.
+    external: true
+    name: panzers_edge
+
+volumes:
+  vmdata:
+  grafanadata:

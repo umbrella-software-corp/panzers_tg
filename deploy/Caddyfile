@@ -1,0 +1,71 @@
+# Panzer TG edge: static SPA + reverse proxy to the game server + first-party
+# Amplitude proxy + automatic HTTPS (Let's Encrypt). Baked into the web image
+# (client/Dockerfile). {$DOMAIN} is substituted from the container env at start,
+# so stg (stg.panzers.tg) and prod (panzers.tg) share one file. A multi-host
+# value like "panzers.tg, www.panzers.tg" expands into a multi-address block.
+{
+	email blagov94@gmail.com
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API + WebSockets + admin page → game server (:8080 on the internal docker
+	# network). X-Real-IP is REQUIRED: the server reads it for the per-IP socket
+	# cap (MAX_PER_IP). Caddy is the edge, so {remote_host} is the real client IP;
+	# without this header every player looks like Caddy's IP and the cap nukes the
+	# whole online after MAX_PER_IP sockets. /admin (no trailing slash) + /admin/*
+	# both go to the server — else the SPA fallback would swallow the admin page.
+	@api path /api/* /ws /admin /admin/*
+	handle @api {
+		reverse_proxy server:8080 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Amplitude first-party proxy: the client posts events to our own domain
+	# (/amp/2/httpapi); Caddy forwards them to api2.amplitude.com so tracker
+	# blockers (EasyPrivacy cuts api2.amplitude.com directly) don't see a third
+	# party. handle_path strips /amp → upstream gets /2/httpapi. Caddy auto-adds
+	# X-Forwarded-For (real player IP → Amplitude geo).
+	handle_path /amp/* {
+		reverse_proxy https://api2.amplitude.com {
+			header_up Host api2.amplitude.com
+			header_up Referer ""
+		}
+	}
+
+	# Hashed bundles + sprites are immutable AND must 404 on a miss (NOT fall back to
+	# index.html — else a stale client requesting a removed asset gets HTML served as
+	# .js and cached immutably for a year; the old nginx used try_files $uri =404 for
+	# exactly this).
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+	handle /sprites/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv
+		file_server
+	}
+
+	# Everything else → SPA. index.html must revalidate so a fresh deploy is picked up
+	# on next open (Telegram WebView caches aggressively otherwise).
+	handle {
+		root * /srv
+		header Cache-Control "no-cache, no-store, must-revalidate"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Grafana (monitoring stack) on its own subdomain, fronted by this same edge.
+# GRAFANA_DOMAIN is set only where monitoring runs (prod: grafana.panzers.tg). On
+# envs without it the default `localhost:2998` makes this an inert internal-only
+# block (no public address, no ACME) — staging is unaffected. `grafana` resolves
+# over the shared `panzers-edge` network (see docker-compose.prod.yml).
+{$GRAFANA_DOMAIN:localhost:2998} {
+	encode zstd gzip
+	reverse_proxy grafana:3000
+}

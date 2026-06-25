@@ -13,7 +13,11 @@ try {
 } catch {
   /* не git-репо / git недоступен — ок, хватит времени */
 }
-const BUILD_ID = `${gitHash}.${Date.now()}`
+// В Docker .git нет (gitHash='nogit'), а сервер крутится ОТДЕЛЬНЫМ образом и не видит
+// наш dist/build-id.txt — поэтому в CI единый BUILD_ID пробрасывается в ОБА образа
+// (web build-arg VITE_BUILD_ID + server env BUILD_ID), чтобы version-gate (#23) пережил
+// разделение клиента и сервера. Локально переменной нет → поведение как раньше.
+const BUILD_ID = process.env.VITE_BUILD_ID || `${gitHash}.${Date.now()}`
 
 export default defineConfig({
   plugins: [

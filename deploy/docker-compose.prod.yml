@@ -1,0 +1,86 @@
+# Prod / staging stack: pre-built GHCR images, pull-only. CI builds & pushes the
+# images; the VPS just pulls and restarts (deploy/remote-deploy.sh). All values —
+# IMAGE_PREFIX, IMAGE_TAG, BUILD_ID, DOMAIN and the app secrets — come from
+# /opt/panzers/.env, which the deploy workflow writes from the GitHub Environment
+# (staging/production) before invoking the deploy. IMAGE_PREFIX follows the repo
+# owner (ghcr.io/<owner>/panzers_tg) so a GitHub ownership transfer needs no edit.
+name: panzers
+
+services:
+  server:
+    image: ${IMAGE_PREFIX}-server:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      # Same build id baked into the web bundle → version-gate (#23) works across
+      # the client/server image split. Falls back to the image tag if unset.
+      BUILD_ID: ${BUILD_ID:-${IMAGE_TAG}}
+      WEBAPP_URL: ${WEBAPP_URL}
+      # Telegram bot (raw API + getUpdates long-poll for Stars payments). Empty on
+      # an env without its own bot → dev-mode (instant grants, stub auth). NOTE:
+      # stg and prod MUST use DIFFERENT BOT_TOKENs — one getUpdates consumer per
+      # token, else they steal each other's updates (409 Conflict).
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      BOT_USERNAME: ${BOT_USERNAME:-}
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
+      SUPPORT_BOT_TOKEN: ${SUPPORT_BOT_TOKEN:-}
+      SUPPORT_CHAT_ID: ${SUPPORT_CHAT_ID:-}
+      CHANNEL_ID: ${CHANNEL_ID:-}
+      CHANNEL_URL: ${CHANNEL_URL:-}
+      # Force IPv4 for outbound — some VPS hosts have broken outbound IPv6, which
+      # traps Telegram API calls (getUpdates/sendMessage) in timeouts. Harmless
+      # where IPv6 works.
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    volumes:
+      # File-based store (profiles/clans/payments/tournaments) — MUST persist
+      # across redeploys, else every deploy wipes player data. db.js writes to
+      # /app/server/data.
+      - server_data:/app/server/data
+    expose:
+      - "8080"
+    networks:
+      - internal
+
+  web:
+    image: ${IMAGE_PREFIX}-web:${IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Substituted into the Caddyfile as {$DOMAIN}. Drives the site address +
+      # automatic TLS. Change the env var (+ rebuild for VITE_API_URL) to move
+      # domains — nothing is hardcoded.
+      DOMAIN: ${DOMAIN}
+      # Optional Grafana subdomain routed through this same Caddy (prod only).
+      # On envs without monitoring GRAFANA_DOMAIN is empty in .env → compose `:-`
+      # substitutes a harmless internal address so the Caddy block stays inert AND
+      # Caddy never receives an empty site address (which would fail to start).
+      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-localhost:2998}
+    volumes:
+      # Persist the Let's Encrypt account + issued certs, else every restart
+      # re-requests certs and eventually hits rate limits.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+    networks:
+      # `internal` — talk to the server. `edge` — let the (prod-only) monitoring
+      # stack's `grafana` container attach here so Caddy can proxy grafana.panzers.tg.
+      # This stack OWNS `edge` (created as `panzers_edge`); the monitoring compose
+      # joins it as external. On staging there's no monitoring → `edge` is just an
+      # empty auto-created network, nothing to set up.
+      - internal
+      - edge
+
+networks:
+  internal:
+  edge:
+    name: panzers_edge
+
+volumes:
+  server_data:
+  caddy_data:
+  caddy_config:

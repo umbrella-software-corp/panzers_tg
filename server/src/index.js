@@ -26,9 +26,11 @@ import { dirname, join } from 'node:path'
 // ID ТЕКУЩЕЙ СБОРКИ клиента (vite пишет client/dist/build-id.txt). Отдаём в /api/config
 // → клиент сверяет со своим вкомпиленным __BUILD_ID__ и перезагружается, если устарел
 // (залипший бандл в кэше Telegram/браузера). Читаем 1 раз: сервер рестартует на деплое.
-let BUILD_ID = ''
+// В Docker сервер и клиент — РАЗНЫЕ образы, dist/build-id.txt тут нет: CI отдаёт тот же
+// BUILD_ID через env (тот же, что вкомпилен в web-бандл). Локально env нет → читаем файл.
+let BUILD_ID = process.env.BUILD_ID || ''
 try {
-  BUILD_ID = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist', 'build-id.txt'), 'utf8').trim()
+  if (!BUILD_ID) BUILD_ID = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'client', 'dist', 'build-id.txt'), 'utf8').trim()
 } catch {
   /* нет файла (dev / сборка без плагина) — гейт просто не сработает */
 }
