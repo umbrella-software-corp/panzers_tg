@@ -3,13 +3,14 @@
 // как в макете — «Сводка» и «По целям» (по-целевой лог урона из движка).
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref, onMounted } from 'vue'
-import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText, CREW_MAX_LEVEL, CREW_LEVEL_XP } from '../store.js'
+import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText, researchProgress, CREW_MAX_LEVEL, CREW_LEVEL_XP } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID, FREE_XP_SHARE, CREW_XP_SHARE } from '../game/meta.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
 import PzIcon from './ui/PzIcon.vue'
 import Medal from './ui/Medal.vue'
 import MedalSheet from './MedalSheet.vue'
+import ResearchBar from './ui/ResearchBar.vue'
 
 const selMedal = ref(null) // открытая модалка медали (тап по значку)
 const firstBonus = ref(0) // бонус за первый завершённый бой (выдаётся один раз тут)
@@ -41,6 +42,8 @@ const branchLabel = computed(() => (NATIONS.find((n) => n.id === nationOf(profil
 const won = computed(() => props.state.result === 'victory')
 // «следующая цель» — нудж к следующему бою (хук удержания, та же логика что в ангаре)
 const goalText = computed(() => nextGoalText(nextGoal()))
+// видимый прогресс к след. танку (#29 «начисление не работает» = на деле идёт, но не видно)
+const research = computed(() => researchProgress())
 // изменение боевого рейтинга за этот бой (wn8 уже пересчитан в store)
 const ratingDelta = computed(() => profile.stats.lastWn8Delta || 0)
 const ratingNow = computed(() => profile.stats.wn8 || 0)
@@ -235,7 +238,8 @@ function setPage(i) {
 
     <!-- действия -->
     <div style="width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 10px; margin-top: 18px; margin-bottom: auto">
-      <div v-if="goalText" class="next-goal">▸ {{ goalText }}</div>
+      <ResearchBar v-if="research" :prog="research" :gained="branchXp" />
+      <div v-else-if="goalText" class="next-goal">▸ {{ goalText }}</div>
       <button class="pz-cta pz-cta--hazard" @click="emit('rematch')">{{ t('results.rematch') }}</button>
       <button class="pz-btn2" @click="track('results_hangar_clicked', { result: state.result, end_reason: state.endReason || null }); emit('hangar')">{{ t('common.toHangar') }}</button>
     </div>
