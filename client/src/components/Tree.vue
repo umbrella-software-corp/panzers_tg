@@ -572,6 +572,11 @@ watch(selected, (t) => {
             <span v-if="s.value" class="ul-value">{{ s.value }}</span>
           </div>
         </div>
+        <!-- ТТХ ДО исследования: оценить машину, прежде чем вкладывать опыт (фидбек «ттх неисследованного танка надо смотреть») -->
+        <div class="dock-ttx-h pz-pixel">{{ tr('hangar.ttx') }}</div>
+        <div class="dock-ttx">
+          <StatRow v-for="s in premStats(selected)" :key="s.key" :label="s.label" :value="s.value" :display="s.display" />
+        </div>
         <!-- переход к недостающему шагу: пред. танк или его модули -->
         <button v-if="gotoStep" class="pz-btn2 goto-step" @click="goToStep(gotoStep.id)">→ {{ gotoStep.label }}</button>
         <!-- не хватает только опыта ветки, но есть свободный → кнопка ВЛОЖИТЬ в слоте «Исследовать»
@@ -747,6 +752,8 @@ watch(selected, (t) => {
 }
 /* выбор камуфляжа прямо в Ангаре (перенесён с главной) */
 .dock-camo-h { font-size: 8px; color: var(--amber); letter-spacing: 0.12em; }
+.dock-ttx-h { font-size: 8px; color: var(--amber); letter-spacing: 0.12em; margin-top: 4px; }
+.dock-ttx { display: flex; flex-direction: column; gap: 6px; padding: 2px 0; }
 /* превью камуфляжа на танке (3D-модель крутится / 2D-спрайт) */
 .camo-preview3d {
   width: 100%;
