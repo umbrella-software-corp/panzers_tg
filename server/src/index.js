@@ -708,7 +708,23 @@ async function handleApi(req, res) {
         }
         // ДОНАТ-КРЕЙТ: ролл здесь (авторитетно, под локом) — мутирует p (баланс/owned/
         // camoOwned/pity), собираем награду для ревила. Деньги уже списаны Telegram.
-        if (g.kind === 'crate') { const rw = econ.rollNationCrate(p, g.nation); if (rw) crates.push(rw) }
+        if (g.kind === 'crate') {
+          const rw = econ.rollNationCrate(p, g.nation)
+          if (rw) {
+            crates.push(rw)
+            // лог выпавшего по charge — чтобы рефанд откатил ИМЕННО то, что выпало
+            // (награда крейта рандомная, статичный PRODUCTS её не знает). Держим последние 50.
+            if (g.charge) {
+              if (!p.crateLog || typeof p.crateLog !== 'object') p.crateLog = {}
+              p.crateLog[g.charge] = { ...rw, at: g.at || Date.now() }
+              const ks = Object.keys(p.crateLog)
+              if (ks.length > 50) {
+                ks.sort((a, b) => (p.crateLog[a].at || 0) - (p.crateLog[b].at || 0))
+                for (const k of ks.slice(0, ks.length - 50)) delete p.crateLog[k]
+              }
+            }
+          }
+        }
         n++
       }
       p.pendingGrants = []
