@@ -625,14 +625,14 @@ export class BattleSim {
         keepCur = !(cand && cand.id !== cur.id && candScore < scoreOf(cur, cd) * (1 - BOT_BRAIN.switchMargin))
       } else {
         if (br.lostSince === 0) br.lostSince = this.t // только потеряли — засекаем
-        keepCur = this.t - br.lostSince < BOT_BRAIN.giveUpSec // ещё помним (доводка/добивание)
+        keepCur = this.t - br.lostSince < BOT_BRAIN.giveUpSec && !cand // ещё помним — НО видимая угроза (cand) вытесняет призрак
       }
     }
     let target, visible
     if (forced) { target = forced; visible = this._botSees(b, forced, ai) }
     else if (keepCur) { target = cur; visible = br.lostSince === 0 }
     else { target = cand; visible = !!cand; if (cand) br.lostSince = 0 }
-    if (visible && target) br.lastSeen = { x: target.x, y: target.y }
+    if (target && (visible || forced)) br.lastSeen = { x: target.x, y: target.y } // освежаем память; для focus — «колл-аут» команды (цель в её засвете)
     const newId = target ? target.id : null
     if (newId !== br.targetId) this.brainStats.targetSwitches++
     br.targetId = newId
@@ -698,7 +698,12 @@ export class BattleSim {
     const cap = br.objCapId != null ? this._capById(br.objCapId) : null
     const target = br.targetId != null ? this.byId.get(br.targetId) : null
     const tAlive = !!(target && target.alive)
-    const aimAng = tAlive ? Math.atan2(target.y - b.y, target.x - b.x) : null
+    // ЧЕСТНАЯ ПАМЯТЬ: цель сейчас НЕ видим → целимся/едем по последней ВИДЕННОЙ позиции (lastSeen),
+    // а не по живым координатам невидимого врага. Видим → освежаем lastSeen этим тиком.
+    const tVis = tAlive && this._botSees(b, target, ai)
+    if (tVis) br.lastSeen = { x: target.x, y: target.y }
+    const aimPos = tVis ? target : tAlive ? br.lastSeen || target : null
+    const aimAng = aimPos ? Math.atan2(aimPos.y - b.y, aimPos.x - b.x) : null
     const steerTo = (a) => {
       if (b.avoidT > 0) a += b.avoidDir * 1.5
       const m = b.botTurn * dt
@@ -708,8 +713,8 @@ export class BattleSim {
 
     switch (br.state) {
       case 'retreat': {
-        // ранен — отходим к rally; цель есть → пятимся носом на врага (отстрел на отходе)
-        if (tAlive) { steerTo(aimAng); move = -0.85 }
+        // ранен — отходим к rally; ВИДИМ цель → пятимся носом на врага (отстрел на отходе)
+        if (tVis) { steerTo(aimAng); move = -0.85 }
         else { steerTo(Math.atan2(rally.y - b.y, rally.x - b.x)); move = 0.9 }
         break
       }
@@ -719,7 +724,7 @@ export class BattleSim {
         if (onCap) {
           // держим точку: враг в пределах cap.r·defendLeash → доворот на него и огонь; дальше
           // — смотрим в сторону вражеской базы (ждём подход, НЕ гонимся за целью = лиш)
-          const tNear = tAlive && Math.hypot(target.x - cap.x, target.y - cap.y) <= cap.r * BOT_BRAIN.defendLeash
+          const tNear = tVis && Math.hypot(target.x - cap.x, target.y - cap.y) <= cap.r * BOT_BRAIN.defendLeash
           const watch = this.bases[1 - b.team]
           steerTo(tNear ? aimAng : Math.atan2(watch.y - b.y, watch.x - b.x))
           move = 0
@@ -738,12 +743,12 @@ export class BattleSim {
           if (inCover) { steerTo(aimAng != null ? aimAng : b.hull); move = 0 }
           else { steerTo(Math.atan2(cover.y - b.y, cover.x - b.x)); move = 1 }
         } else {
-          move = this._huntMove(b, br, target, tAlive, ai, aimAng, steerTo) // ствол готов — выходим бить
+          move = this._huntMove(b, br, target, tVis, ai, aimPos, steerTo) // ствол готов — выходим бить
         }
         break
       }
       case 'hunt': {
-        move = this._huntMove(b, br, target, tAlive, ai, aimAng, steerTo)
+        move = this._huntMove(b, br, target, tVis, ai, aimPos, steerTo)
         break
       }
       default: {
@@ -769,16 +774,17 @@ export class BattleSim {
     return move !== 0
   }
 
-  // ОХОТНИК: фланговый заход + МЁРТВАЯ ЗОНА по дистанции (backBand..advBand) — между ними
-  // держим позицию (move 0), без газ-дёрга у idealRange. Возвращает газ [-0.5..1].
-  _huntMove(b, br, target, tAlive, ai, aimAng, steerTo) {
-    if (!tAlive) return 0 // цель умерла между think — стоим, think переоценит
-    const d = Math.hypot(target.x - b.x, target.y - b.y)
+  // ОХОТНИК: фланговый заход + МЁРТВАЯ ЗОНА по дистанции (backBand..advBand). Цель лишь в ПАМЯТИ
+  // (не видим) → едем к последней виденной позиции обычным ходом, без спринта «в упор» и без огня.
+  _huntMove(b, br, target, tVis, ai, aimPos, steerTo) {
+    if (!aimPos) return 0 // нет цели/памяти — стоим, think переоценит
+    const d = Math.hypot(aimPos.x - b.x, aimPos.y - b.y)
     br.targetDist = d
-    steerTo(aimAng + (d > ai.idealRange ? 0.5 : 0.14) * br.flank) // фланг вдали; у дистанции боя — ствол на цель
-    // не засвечен у человека → поджимаем (засветиться и честно драться), а не камп на дистанции
+    steerTo(Math.atan2(aimPos.y - b.y, aimPos.x - b.x) + (d > ai.idealRange ? 0.5 : 0.14) * br.flank) // фланг вдали; у дистанции — ствол на цель
+    if (!tVis) return d > ai.idealRange * 0.6 ? 1 : 0 // цель в памяти — доезжаем к lastSeen, не сближаемся «в упор»
+    // цель ВИДНА — честные сближатели + мёртвая зона по дистанции
     const blindToHuman = target.human && this.t >= ai.graceSec && !(this._spotted[target.team] && this._spotted[target.team].has(b.id))
-    if (blindToHuman && d > ai.idealRange * 0.5) return 1
+    if (blindToHuman && d > ai.idealRange * 0.5) return 1 // не засвечен у человека → поджимаем (засветиться)
     if (br.focusShooter && d > ai.idealRange * 0.72) return 1 // focus-приказ — закрываемся ДОБИТЬ (концентрация)
     if (br.rush && d > ai.idealRange * 0.85) return 1 // добиваем — сближаемся до боевой (не в упор)
     if (d > ai.idealRange * BOT_BRAIN.advBand) return 1 // дальше зоны — сближаемся
