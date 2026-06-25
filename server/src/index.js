@@ -1500,7 +1500,7 @@ function roomTick(room) {
           humans: room.humans.length,
           stats_count: stats.length,
         })
-        const mine = stats.find((s) => s.id === h.id) // мой юнит в итоговой таблице
+        const _mu = room.sim.byOwner.get(h.id); const mine = _mu ? { kills: _mu.kills, damage: Math.round(_mu.damageDealt), alive: _mu.alive } : null // FIX #29: мой юнит по byOwner (s.id в stats = unit.id ≠ h.id → раньше mine=null → у ВСЕХ 0 урона/0 фрагов → afk-награда)
         logEvent(h.uid, 'battle_end', {
           room: room.id,
           win: room.sim.winner === h.team,
