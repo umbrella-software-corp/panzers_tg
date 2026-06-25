@@ -587,6 +587,24 @@ export function nextGoalText(g) {
   return ''
 }
 
+// ПРОГРЕСС К СЛЕДУЮЩЕМУ ТАНКУ ветки текущего танка — для видимой полосы «X / need»
+// (фидбек #29: «начисление не работает» = на деле опыт идёт, но не видно, что до танка
+// рукой подать). null, если в этой нации всё открыто. ready=true — опыта уже хватает.
+export function researchProgress() {
+  const next = tanksOfNation(nationOf(profile.selectedTank)).find((tk) => !isOwned(tk.id))
+  if (!next) return null
+  const need = researchXpNeed(next)
+  const have = Math.max(0, Math.floor(branchXpOf(next)))
+  return {
+    name: next.name,
+    have: Math.min(have, need),
+    need,
+    left: Math.max(0, need - have),
+    pct: need > 0 ? Math.min(1, have / need) : 1,
+    ready: canUnlock(next),
+  }
+}
+
 export async function buyTank(tank) {
   if (econOn()) {
     const r = await apiBuyTank(tank.id).catch(() => null)

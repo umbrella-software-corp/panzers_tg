@@ -2,7 +2,7 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, tankStat, claimPushBonus } from '../store.js'
+import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, researchProgress, tankStat, claimPushBonus } from '../store.js'
 import { squad } from '../game/squad.js'
 import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, statBar, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
 import { haptic, requestWriteAccess, isFromTelegram } from '../tg.js'
@@ -16,6 +16,7 @@ import CurrencyBar from './ui/CurrencyBar.vue'
 import BottomNav from './ui/BottomNav.vue'
 import StatRow from './ui/StatRow.vue'
 import PzIcon from './ui/PzIcon.vue'
+import ResearchBar from './ui/ResearchBar.vue'
 import SquadSheet from './SquadSheet.vue'
 import TasksSheet from './TasksSheet.vue'
 import FeedbackSheet from './FeedbackSheet.vue'
@@ -202,6 +203,8 @@ const firstSession = computed(() => (profile.stats?.battles || 0) === 0)
 // «следующая цель» — хук удержания: явный следующий шаг (забрать задачи / открыть танк /
 // копить опыт / вложить свободный). Тап ведёт к действию. Новичку (0 боёв) не показываем.
 const goal = computed(() => (firstSession.value ? null : nextGoal()))
+// видимый прогресс к след. танку (#29: опыт идёт, но игрок не видит → «не начисляется»)
+const research = computed(() => (firstSession.value ? null : researchProgress()))
 function goGoal(g) {
   if (!g) return
   track('next_goal_clicked', { kind: g.kind })
@@ -396,6 +399,11 @@ onMounted(() => {
       <button v-if="!firstSession" class="toolpill" @click="openSquadSheet" :class="{ on: inParty }">{{ t('hangar.platoon') }}</button>
     </div>
 
+    <!-- ПРОГРЕСС К СЛЕДУЮЩЕМУ ТАНКУ — видно, что опыт идёт (#29 «начисление не работает») -->
+    <button v-if="research" class="rbar-tap" @click="track('next_goal_clicked', { kind: 'research' }); haptic('light'); emit('go', 'tree')">
+      <ResearchBar :prog="research" />
+    </button>
+
     <!-- ТТХ-шторка -->
     <div v-if="ttx" class="pz-plate" style="margin: 0 14px 8px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; animation: pz-slide-up 0.22s ease">
       <StatRow v-for="s in ttxStats" :key="s.key" :label="s.label" :value="s.value" :base="s.base" :display="s.display" :display-up="s.displayUp" />
@@ -488,6 +496,21 @@ onMounted(() => {
   justify-content: center;
   flex-wrap: wrap;
   padding: 2px 12px 0;
+}
+/* обёртка-кнопка полосы прогресса к след. танку — сброс стилей кнопки, тап ведёт в Ангар */
+.rbar-tap {
+  display: block;
+  width: auto;
+  margin: 8px 14px 0;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.rbar-tap:active {
+  transform: scale(0.99);
 }
 .toolpill {
   font-family: var(--font-display);

@@ -27,6 +27,9 @@ export default {
     goalUnlock: ({ name }) => `${name} ready to research!`,
     goalResearch: ({ name, n }) => `${name}: ${n} more branch XP`,
     goalFreeXp: ({ n }) => `invest ${n} free XP`,
+    toNextTank: 'TO NEXT TANK',
+    researchLeft: ({ n }) => `${n} XP to go`,
+    researchReady: 'ready to research!',
     // статистика выбранного танка (ведёт в Рейтинг → Профиль)
     statsLabel: 'ON TANK',
     statBattles: 'battles',
@@ -58,6 +61,9 @@ export default {
     goalUnlock: ({ name }) => `${name} — можно открыть!`,
     goalResearch: ({ name, n }) => `${name}: ещё ${n} опыта ветки`,
     goalFreeXp: ({ n }) => `вложи ${n} свободного опыта`,
+    toNextTank: 'ДО СЛЕДУЮЩЕГО ТАНКА',
+    researchLeft: ({ n }) => `ещё ${n} опыта`,
+    researchReady: 'можно открыть!',
     // статистика выбранного танка (ведёт в Рейтинг → Профиль)
     statsLabel: 'НА ТАНКЕ',
     statBattles: 'боёв',
