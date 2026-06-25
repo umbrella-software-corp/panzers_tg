@@ -29,6 +29,9 @@ const DRY_RUN = process.env.PUSH_DRY_RUN === '1' // тест: не слать р
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const playButton = (lang) => ({ inline_keyboard: [[{ text: t('playButton', lang), web_app: { url: WEBAPP_URL } }]] })
+// кнопка под пушем про НАГРАДУ (дейлик/возврат) — название под действие («Забрать награду»),
+// а не «В БОЙ»: награда уже ждёт в ангаре. «В БОЙ» оставляем для боевых пушей (друг в бою).
+const rewardButton = (lang) => ({ inline_keyboard: [[{ text: t('rewardButton', lang), web_app: { url: WEBAPP_URL } }]] })
 
 const api = (method, body) =>
   fetch(`https://api.telegram.org/bot${botToken()}/${method}`, {
@@ -85,7 +88,7 @@ export function friendOk(fp, now) {
 // возвращает { sent, reason } — reason для разбивки в админке: почему НЕ ушло
 // ('cooldown' = уже получал за сутки, 'blocked' = заблокировал/не запускал бота,
 // 'off' = /stop, 'sent' = отправлено). Раньше был голый boolean — отсюда непонятное «0 из N».
-async function sendPush(uid, body, { now = Date.now(), force = false } = {}) {
+async function sendPush(uid, body, { now = Date.now(), force = false, button = playButton } = {}) {
   const chatId = tgIdOf(uid)
   if (!chatId) return { sent: false, reason: 'no-tg' }
   const p = await loadProfile(uid)
@@ -108,7 +111,7 @@ async function sendPush(uid, body, { now = Date.now(), force = false } = {}) {
     await markPush({ lastPushAt: now })
     return { sent: true, reason: 'dry' }
   }
-  const res = await api('sendMessage', { chat_id: chatId, text, reply_markup: playButton(lang), disable_web_page_preview: true })
+  const res = await api('sendMessage', { chat_id: chatId, text, reply_markup: button(lang), disable_web_page_preview: true })
   if (res && res.ok) {
     await markPush({ lastPushAt: now })
     return { sent: true, reason: 'sent' }
@@ -141,7 +144,7 @@ export async function runDailyDigest(now = Date.now(), { dry = false } = {}) {
   if (!dry) {
     for (const row of targets) {
       const daysAway = Math.floor((now - (row.lastSeen || now)) / DAY)
-      const r = await sendPush(row.uid, (lang, p) => digestText(p, daysAway, lang), { now })
+      const r = await sendPush(row.uid, (lang, p) => digestText(p, daysAway, lang), { now, button: rewardButton })
       if (r.sent) {
         sent++
         digestProgress.sent = sent
@@ -167,7 +170,7 @@ export async function sendTestDigest(uid, now = Date.now()) {
   const r = await sendPush(
     uid,
     (lang, p) => digestText(p, Math.floor((now - ((p && p.lastSeen) || now)) / DAY), lang),
-    { now, force: true },
+    { now, force: true, button: rewardButton },
   )
   return { ok: r.sent, reason: r.sent ? null : 'не отправлено (' + r.reason + ' — нет профиля / pushOff / заблокировал бота)' }
 }
@@ -242,7 +245,7 @@ export async function claimPushBonus(uid) {
       : '🔔 Уведомления включены! Лови награду — загляни в игру.'
     if (hasBot()) {
       // верификация: реально ли дали доступ? пробуем написать. 403/нельзя → доступа нет.
-      const res = await api('sendMessage', { chat_id: tgIdOf(uid), text: confirmText, reply_markup: playButton(lang), disable_web_page_preview: true })
+      const res = await api('sendMessage', { chat_id: tgIdOf(uid), text: confirmText, reply_markup: rewardButton(lang), disable_web_page_preview: true })
       if (!(res && res.ok)) return { ok: false, reason: 'not-granted' } // бот по-прежнему не может писать
     } // без бота (dev) — считаем, что доступ дан, чтобы прокликать флоу
     p.pushBlocked = false

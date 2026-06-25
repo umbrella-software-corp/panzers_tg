@@ -30,6 +30,7 @@ const DICT = {
     greet: 'Panzer TG — 7×7 tank battles right inside Telegram. Hit "Play" and roll out! 🎖',
     greetButton: '🎮 Play',
     playButton: '🎮 BATTLE',
+    rewardButton: '🎁 Claim reward', // пуши о награде/дейлике (digest, бонус за уведомления)
     stopConfirm: 'Notifications off 🔕 To turn them back on — send /start',
     // пуши
     // возврат-пуши, тиры по дням отсутствия (см. notifications.digestText) + персонализация
@@ -82,6 +83,7 @@ const DICT = {
     greet: 'Panzer TG — танковые бои 7×7 прямо в Telegram. Жми «Играть» и в бой! 🎖',
     greetButton: '🎮 Играть',
     playButton: '🎮 В БОЙ',
+    rewardButton: '🎁 Забрать награду', // пуши о награде/дейлике (digest, бонус за уведомления)
     stopConfirm: 'Уведомления выключены 🔕 Включить снова — отправь /start',
     // возврат-пуши, тиры по дням отсутствия (см. notifications.digestText) + персонализация
     digestDaily: ({ name }) => `🎁 Командир ${name}, ежедневная награда уже в ангаре, а задачи дня обновились! Один быстрый бой — пара минут. Залетай 🔥\n\n/stop — отписаться`,
