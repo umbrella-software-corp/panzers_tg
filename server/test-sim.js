@@ -28,12 +28,13 @@ for (let i = 0; i < 5; i++) {
 const sim = new BattleSim({ teamSize: 7 })
 const N = 5000
 const t0 = performance.now()
-for (let i = 0; i < N; i++) {
+let ticks = 0
+for (; ticks < N; ticks++) {
   sim.step(DT)
   sim.takeEvents()
   if (sim.matchOver) break
 }
-const perTickMs = (performance.now() - t0) / N
+const perTickMs = (performance.now() - t0) / Math.max(1, ticks) // делим на ФАКТИЧЕСКИЕ тики (матч мог кончиться раньше N)
 
 // --- размер снапшота ---
 const sim2 = new BattleSim({ teamSize: 7 })

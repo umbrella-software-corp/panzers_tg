@@ -163,7 +163,7 @@ export class BattleSim {
     // СЛОИСТЫЙ ИИ: командир (план команды, ленивая инициализация в _stepDirector) и
     // счётчики поведения за бой → aiSummary() (джиттер/координация/санити точности).
     this.director = null
-    this.brainStats = { botSeconds: 0, turnFlips: 0, throttleReversals: 0, targetSwitches: 0, focusOrders: 0, focusKills: 0, capDefenseEngagements: 0, botShots: 0, botHits: 0 }
+    this.brainStats = { team: [this._newBotStats(), this._newBotStats()] } // ПО КОМАНДАМ (телеметрия ally/enemy в PvE)
   }
 
   // следующий ник бота из перемешанного пула; если исчерпан — случайный из BOT_NICKS
@@ -460,24 +460,27 @@ export class BattleSim {
     for (const team of [0, 1]) this.director.team[team] = this._planTeam(team, this.director.team[team])
   }
 
-  // интенсивность координации: PvP — полная (1, честная симметрия); PvE (враги соло-
-  // игрока) — демпфер от coordIntensity (пол) до 1 по ветеранству, под мягким стартом
-  // почти выключена (новичка не закатываем коллективным фокусом). bot-vs-bot — полная.
+  // интенсивность координации (только команда, не точность). PvP/bot-vs-bot — полная (1). В PvE
+  // (по просьбе владельца, 2026-06-25): ВРАГИ координируются ВЫШЕ союзников — иначе союзные боты тащат
+  // и винрейт стоит на ~94% (Amplitude). Союзники помогают новичку, но НЕ выигрывают матч за ветерана.
   _coordIntensity(team) {
-    const pve = this.humanTeams.size > 0 && !this.humanTeams.has(team)
-    if (!pve) return 1
+    const hasHumans = this.humanTeams.size > 0
+    if (!hasHumans) return 1 // bot-vs-bot — полная (бенчмарк)
+    if (this.humanTeams.has(team)) return Math.min(1, 0.35 + 0.3 * this.vet) // СОЮЗНИКИ игрока: помогают, но НЕ тащат
+    // ВРАГИ соло-игрока (PvE): почти выключены под мягким стартом → к 1.0 по ветеранству (фокус/фланг/пуш человека)
     if (this.softStart) return BOT_BRAIN.coordIntensity * (1 - this.softFactor)
     return BOT_BRAIN.coordIntensity + (1 - BOT_BRAIN.coordIntensity) * this.vet
   }
 
-  // фаза боя по АБСОЛЮТНОМУ времени (матч ~110с): cleanup перекрывает всё, эндшпиль — по
-  // времени/счёту/cap-lock. opening<12 ≤ contact<35 ≤ midfight<85 ≤ endgame.
+  // фаза боя по АБСОЛЮТНОМУ времени, ПО РЕЖИМУ (capture ~100с, annihilation ~133с): cleanup перекрывает
+  // всё, эндшпиль — по времени/счёту/cap-lock. opening < contact < midfight ≤ endgame.
   _phaseFor(aliveEnemy) {
     if (aliveEnemy <= 2) return 'cleanup' // мало врагов — «найти и добить»
+    const ph = BOT_BRAIN.phasesByMode[this.mode] || BOT_BRAIN.phasesByMode.capture
     const near = this.score[0] >= SCORE_LIMIT - BOT_BRAIN.nearScoreGap || this.score[1] >= SCORE_LIMIT - BOT_BRAIN.nearScoreGap
-    if (this.t >= BOT_BRAIN.midfightSec || this.matchTime < BOT_BRAIN.lateSec || near || this.capLockTeam !== null) return 'endgame'
-    if (this.t >= BOT_BRAIN.contactSec) return 'midfight'
-    if (this.t >= BOT_BRAIN.openingSec) return 'contact'
+    if (this.t >= ph.midfight || this.matchTime < BOT_BRAIN.lateSec || near || this.capLockTeam !== null) return 'endgame'
+    if (this.t >= ph.contact) return 'midfight'
+    if (this.t >= ph.opening) return 'contact'
     return 'opening'
   }
 
@@ -500,6 +503,7 @@ export class BattleSim {
     const aliveBots = this.units.filter((u) => u.alive && u.team === team && !u.human)
     const phase = this._phaseFor(aliveEnemy)
     const intensity = this._coordIntensity(team)
+    this.brainStats.team[team].coordSum += intensity; this.brainStats.team[team].coordN++ // для телеметрии coord_intensity
 
     // осанка по счёту/точкам/живым
     const ownedCaps = this.caps.filter((c) => c.owner === team).length
@@ -529,21 +533,29 @@ export class BattleSim {
       const near = aliveBots
         .slice()
         .sort((a, b) => (a.x - focusCand.x) ** 2 + (a.y - focusCand.y) ** 2 - ((b.x - focusCand.x) ** 2 + (b.y - focusCand.y) ** 2))
-      const shooters = new Set(near.slice(0, maxShooters).map((b) => b.id))
-      if (prev && prev.focus && prev.focus.targetId === focusCand.id && this.t < prev.focus.until) {
-        focus = { targetId: focusCand.id, until: prev.focus.until, shooters } // гистерезис: тот же приказ
+      const persisting = prev && prev.focus && prev.focus.targetId === focusCand.id && this.t < prev.focus.until
+      if (persisting) {
+        // СТАБИЛЬНОСТЬ состава: сохраняем ЖИВЫХ прежних стрелков, дозаполняем ближайшими ТОЛЬКО при выбытии —
+        // не пересобираем набор каждый план (иначе forced-цель скачет у разных ботов → возвращается джиттер).
+        const shooters = new Set([...prev.focus.shooters].filter((id) => { const u = this.byId.get(id); return u && u.alive && u.team === team }))
+        for (const fb of near) { if (shooters.size >= maxShooters) break; shooters.add(fb.id) }
+        focus = { targetId: focusCand.id, until: prev.focus.until, shooters }
       } else {
+        const shooters = new Set(near.slice(0, maxShooters).map((b) => b.id))
         focus = { targetId: focusCand.id, until: this.t + 3 * intensity, shooters }
-        this.brainStats.focusOrders++
+        this.brainStats.team[team].focusOrders++
       }
     }
 
-    // защита: своя точка, к которой подошёл враг (в радиусе cap.r·2) — нужны защитники
+    // ЗАЩИТА: ЧЕСТНЫЕ сигналы (не серверное «чутьё» на скрытого фланкера) — враг В ЗАСВЕТЕ КОМАНДЫ рядом
+    // с точкой ИЛИ точка реально contested (захватывается врагом / враг физически в круге). Это объективная
+    // информация режима, доступная обеим сторонам, а не знание скрытого подхода.
     const defend = new Set()
     for (const cap of this.caps) {
       if (cap.owner !== team) continue
-      const threat = this.units.some((e) => e.alive && e.team === other && (e.x - cap.x) ** 2 + (e.y - cap.y) ** 2 < (cap.r * 2) ** 2)
-      if (threat) defend.add(cap.id)
+      const spottedNear = this.units.some((e) => e.alive && e.team === other && spotted && spotted.has(e.id) && (e.x - cap.x) ** 2 + (e.y - cap.y) ** 2 < (cap.r * 2) ** 2)
+      const contested = cap.capper === other || this.units.some((e) => e.alive && e.team === other && (e.x - cap.x) ** 2 + (e.y - cap.y) ** 2 <= cap.r ** 2)
+      if (spottedNear || contested) defend.add(cap.id)
     }
 
     // rally: центроид своих точек, иначе своя база
@@ -656,7 +668,10 @@ export class BattleSim {
     else { target = cand; visible = !!cand; if (cand) br.lostSince = 0 }
     if (target && (visible || forced)) br.lastSeen = { x: target.x, y: target.y } // освежаем память; для focus — «колл-аут» команды (цель в её засвете)
     const newId = target ? target.id : null
-    if (newId !== br.targetId) this.brainStats.targetSwitches++
+    if (newId !== br.targetId) {
+      if (br.targetId != null && newId != null) this.brainStats.team[b.team].targetSwitches++ // A→B — реальное метание
+      else this.brainStats.team[b.team].acquireRelease++ // null↔цель — вход/выход из контакта
+    }
     br.targetId = newId
     br.focusShooter = forced != null // назначен в focus-расчёт → закрывается ДОБИТЬ цель (концентрация огня)
 
@@ -671,25 +686,24 @@ export class BattleSim {
     // ОТХОД по архетипу: штурмовик/танк (retreatFrac≈0) НЕ отступают; снайпер/охотник/поддержка кайтят
     const retreatHp = b.maxHp * (arche.retreatFrac + (b.id % 5) * 0.012) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
     const canRetreat = arche.retreatFrac > 0
+    // ЗАЩИТА ТОЧКИ — НЕЗАВИСИМО от наличия видимой цели: если своя точка под атакой (честный сигнал
+    // командира), defender держит её и «вслепую» (раньше без target уходил в advance — дыра).
+    const cap = br.objCapId != null ? this._capById(br.objCapId) : null
+    const defendCap = (br.role === 'capper' || br.role === 'anchor') && cap && cap.owner === b.team && plan && plan.defend && plan.defend.has(cap.id)
 
     // СОСТОЯНИЕ (коммит до следующего think; retreat — таймер-коммит, не газ-реверс каждый тик)
     if (canRetreat && !brave && b.hp < retreatHp && !rush) {
       if (br.state !== 'retreat') br.stateUntil = this.t + BOT_BRAIN.regroupSec
       else if (this.t >= br.stateUntil) br.stateUntil = this.t + BOT_BRAIN.regroupSec // всё ещё ранен — продлеваем
       br.state = 'retreat'; br.cover = null
+    } else if (defendCap) {
+      if (br.state !== 'defend') this.brainStats.team[b.team].capDefenseEngagements++
+      br.state = 'defend'; br.cover = null
     } else if (target) {
-      const cap = br.objCapId != null ? this._capById(br.objCapId) : null
-      const defendCap = (br.role === 'capper' || br.role === 'anchor') && cap && cap.owner === b.team && plan && plan.defend && plan.defend.has(cap.id)
-      if (defendCap) {
-        if (br.state !== 'defend') this.brainStats.capDefenseEngagements++
-        br.state = 'defend'; br.cover = null
-      } else {
-        // пик-трейд из укрытия как СОСТОЯНИЕ (решаем на каденции think, не каждый тик — это
-        // и есть крупнейший фикс дрожи: раньше cover пересчитывался ежекадрово)
-        const bush = arche.cover > 0.25 && b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 120 + 200 * arche.cover) : null // укрытие по архетипу: снайпер/охотник прячутся, штурмовик нет
-        if (bush) { br.state = 'peek'; br.cover = { x: bush.x, y: bush.y, r: bush.r } }
-        else { br.state = 'hunt'; br.cover = null }
-      }
+      // пик-трейд из укрытия как СОСТОЯНИЕ (по архетипу; решаем на каденции think, не каждый тик)
+      const bush = arche.cover > 0.25 && b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 120 + 200 * arche.cover) : null // укрытие по архетипу: снайпер/охотник прячутся, штурмовик нет
+      if (bush) { br.state = 'peek'; br.cover = { x: bush.x, y: bush.y, r: bush.r } }
+      else { br.state = 'hunt'; br.cover = null }
     } else {
       br.state = 'advance'; br.cover = null // нет цели — к объективу/поиску
     }
@@ -836,7 +850,7 @@ export class BattleSim {
     if (!canFire) return
     b.fireCd = b.stats.reload
     b.revealT = FIRE_REVEAL_SEC // демаскировка выстрелом (симметрия)
-    this.brainStats.botShots++
+    this.brainStats.team[b.team].botShots++
     // шанс попадания: база режется дистанцией, ходом цели (уворот) и кустом — НЕ трогаем
     let chance = ai.hitChance
     chance *= 1 - ai.hitFalloff * Math.min(1, bestD / ai.fireRange)
@@ -847,12 +861,12 @@ export class BattleSim {
     const hit = Math.random() < Math.min(0.85, chance) // потолок — не 100% даже в упор
     let killed = false, dealt = 0, outcome = null
     if (hit) {
-      this.brainStats.botHits++
+      this.brainStats.team[b.team].botHits++
       const shotA = Math.atan2(target.y - b.y, target.x - b.x)
       const r = this._resolveHit(b, target, b.botDamage, shotA)
       dealt = r.dealt; killed = r.killed; outcome = r.outcome // броня цели: рикошет/непробитие
       const plan = this.director && this.director.team[b.team]
-      if (killed && plan && plan.focus && plan.focus.targetId === target.id) this.brainStats.focusKills++ // добили focus-цель
+      if (killed && plan && plan.focus && plan.focus.targetId === target.id) this.brainStats.team[b.team].focusKills++ // добили focus-цель
     }
     // ТЕАТР ПРОМАХОВ (verbatim): мимо — трассер вбок и за цель, чтобы игрок ВИДЕЛ промах
     let ex = target.x, ey = target.y
@@ -898,7 +912,8 @@ export class BattleSim {
     const enemyBot = !this.softStart && !this.humanTeams.has(b.team)
     if (b.fireCd > 0) b.fireCd -= dt
     const px = b.x, py = b.y, ph = b.hull
-    this.brainStats.botSeconds += dt
+    const bs = this.brainStats.team[b.team]
+    bs.botSeconds += dt
 
     if (this.t >= b.brain.nextThinkT) this._botThink(b, ai, enemyBot) // переоценка намерения
     const wantMove = this._botExecute(b, dt, ai, enemyBot) // ведём к намерению (каждый тик)
@@ -908,10 +923,10 @@ export class BattleSim {
     // что offline-проба ai-probe (знак вдоль корпуса). Цель дизайна — их падение vs baseline.
     const dHull = angleDiff(b.hull, ph)
     const ts = Math.abs(dHull) > 0.004 ? Math.sign(dHull) : 0
-    if (ts !== 0) { if (b.brain._lastTurnSign && ts !== b.brain._lastTurnSign) this.brainStats.turnFlips++; b.brain._lastTurnSign = ts }
+    if (ts !== 0) { if (b.brain._lastTurnSign && ts !== b.brain._lastTurnSign) bs.turnFlips++; b.brain._lastTurnSign = ts }
     const along = (b.x - px) * Math.cos(b.hull) + (b.y - py) * Math.sin(b.hull)
     const ms = Math.abs(along) > 0.3 ? Math.sign(along) : 0
-    if (ms !== 0) { if (b.brain._lastMoveSign && ms !== b.brain._lastMoveSign) this.brainStats.throttleReversals++; b.brain._lastMoveSign = ms }
+    if (ms !== 0) { if (b.brain._lastMoveSign && ms !== b.brain._lastMoveSign) bs.throttleReversals++; b.brain._lastMoveSign = ms }
 
     // РАССРЕДОТОЧЕНИЕ (анти-толпа): мягко расталкиваем СЛИШКОМ близких союзников (verbatim)
     let sepX = 0, sepY = 0
@@ -1113,13 +1128,34 @@ export class BattleSim {
     this.winner = this.score[0] === this.score[1] ? null : this.score[0] > this.score[1] ? 0 : 1
   }
 
-  // СВОДКА ИИ за бой (для аналитики bot_ai_summary): джиттер (цель дизайна — падение vs
-  // baseline ~111/~81), координация (рост сложности через тактику) и санити точности
-  // (hitChance НЕ трогали → bot_hit_rate должен держаться baseline).
-  aiSummary() {
-    const s = this.brainStats
+  _newBotStats() {
+    return { botSeconds: 0, turnFlips: 0, throttleReversals: 0, targetSwitches: 0, acquireRelease: 0, focusOrders: 0, focusKills: 0, capDefenseEngagements: 0, botShots: 0, botHits: 0, coordSum: 0, coordN: 0 }
+  }
+
+  // сводка ОДНОЙ команды (нормировка джиттера на бот-минуту)
+  _teamSummary(t) {
+    const s = this.brainStats.team[t]
     const perMin = s.botSeconds > 0 ? 60 / s.botSeconds : 0
     return {
+      turn_flips_min: +(s.turnFlips * perMin).toFixed(1),
+      throttle_reversals_min: +(s.throttleReversals * perMin).toFixed(1),
+      target_switches_min: +(s.targetSwitches * perMin).toFixed(1), // только A→B (реальное метание)
+      acquire_release_min: +(s.acquireRelease * perMin).toFixed(1), // null↔цель (вход/выход из контакта)
+      focus_orders: s.focusOrders,
+      focus_kills: s.focusKills,
+      cap_defense_engagements: s.capDefenseEngagements,
+      bot_shots: s.botShots,
+      bot_hit_rate: s.botShots ? +(s.botHits / s.botShots).toFixed(3) : 0, // санити: точность НЕ трогали
+      coord_intensity: s.coordN ? +(s.coordSum / s.coordN).toFixed(2) : 0,
+    }
+  }
+
+  // СВОДКА ИИ за бой (для аналитики bot_ai_summary). РАЗДЕЛЕНА ПО СТОРОНАМ — чтобы видеть «умные враги
+  // vs сильные союзники» (ключевой балансный вопрос PvE). PvE: ally = команда человека, enemy = боты-враги;
+  // PvP/bot-vs-bot: team0/team1. Джиттер — цель дизайна (вниз); bot_hit_rate — санити (точность не трогали).
+  aiSummary() {
+    const pve = this.humanTeams.size === 1
+    const out = {
       end_reason: this.endReason,
       winner: this.winner,
       score_a: this.score[0],
@@ -1129,17 +1165,19 @@ export class BattleSim {
       match_t: Math.round(this.t),
       vet: +this.vet.toFixed(2),
       soft_factor: +this.softFactor.toFixed(2),
-      pve: this.humanTeams.size === 1,
-      turn_flips_min: +(s.turnFlips * perMin).toFixed(1),
-      throttle_reversals_min: +(s.throttleReversals * perMin).toFixed(1),
-      target_switches_min: +(s.targetSwitches * perMin).toFixed(1),
-      focus_orders: s.focusOrders,
-      focus_kills: s.focusKills,
-      cap_defense_engagements: s.capDefenseEngagements,
-      bot_shots: s.botShots,
-      bot_hits: s.botHits,
-      bot_hit_rate: s.botShots ? +(s.botHits / s.botShots).toFixed(3) : 0,
+      pve,
     }
+    if (pve) {
+      const ally = [...this.humanTeams][0]
+      const a = this._teamSummary(ally), e = this._teamSummary(1 - ally)
+      for (const k in a) out['ally_' + k] = a[k]
+      for (const k in e) out['enemy_' + k] = e[k]
+    } else {
+      const t0 = this._teamSummary(0), t1 = this._teamSummary(1)
+      for (const k in t0) out['team0_' + k] = t0[k]
+      for (const k in t1) out['team1_' + k] = t1[k]
+    }
+    return out
   }
 
   // --- геометрия ---
