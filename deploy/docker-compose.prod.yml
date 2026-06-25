@@ -55,9 +55,10 @@ services:
       # domains — nothing is hardcoded.
       DOMAIN: ${DOMAIN}
       # Optional Grafana subdomain routed through this same Caddy (prod only).
-      # Empty/unset on envs without monitoring → the grafana block stays inert
-      # (Caddyfile gives it a harmless internal default).
-      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-}
+      # On envs without monitoring GRAFANA_DOMAIN is empty in .env → compose `:-`
+      # substitutes a harmless internal address so the Caddy block stays inert AND
+      # Caddy never receives an empty site address (which would fail to start).
+      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-localhost:2998}
     volumes:
       # Persist the Let's Encrypt account + issued certs, else every restart
       # re-requests certs and eventually hits rate limits.
