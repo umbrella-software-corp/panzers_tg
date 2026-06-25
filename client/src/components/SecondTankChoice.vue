@@ -4,7 +4,7 @@
 // (grantFreeTank — в обход обычного гейта прокачки). Остальные открываются позже
 // обычным путём в «Развитии», так что выбор не эксклюзивный, просто «первый бесплатно».
 import { ref, computed } from 'vue'
-import { TANK_BY_ID, nationOf, STAT_LABELS, isHiddenNation } from '../game/meta.js'
+import { TANK_BY_ID, nationOf, STAT_LABELS, isHiddenNation, statBar } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -18,7 +18,8 @@ const OPTIONS = ['bt7', 'pz3', 'stu'].map((id) => TANK_BY_ID[id]).filter((t) => 
 const sel = ref(OPTIONS[0] ? OPTIONS[0].id : null)
 const selTank = computed(() => TANK_BY_ID[sel.value] || OPTIONS[0])
 const nationLabel = (id) => t('game.nations.' + nationOf(id))
-const stats = computed(() => Object.entries(selTank.value.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v })))
+// value — заполнение бара (0..10, нормализовано из абсолюта); display — само число (60, 850…)
+const stats = computed(() => Object.entries(selTank.value.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: statBar(k, v), display: v })))
 
 function choose(id) {
   haptic('light')
@@ -47,7 +48,7 @@ function confirm() {
       </div>
 
       <div class="st-stats">
-        <StatRow v-for="s in stats" :key="s.key" :label="s.label" :value="s.value" />
+        <StatRow v-for="s in stats" :key="s.key" :label="s.label" :value="s.value" :display="s.display" />
       </div>
 
       <button class="pz-cta st-cta" @click="confirm">{{ t('onboarding.secondTank.cta', { name: selTank.name }) }} ▸</button>

@@ -29,6 +29,9 @@ import {
   botTierDmgMult,
   BOT_DMG_MULT,
   BOT_SPEED_MULT,
+  HP_MULT,
+  ARCHETYPE,
+  archetypeOf,
   BOT_SEP_RADIUS,
   BOT_SEP_PUSH,
   BOT_SPOT_VISION,
@@ -199,7 +202,9 @@ export class BattleSim {
     }
     const hpMult = botTier ? botTierHpMult(botTier) : 1
     const dmgMult = botTier ? botTierDmgMult(botTier) : 1
-    const unitHp = Math.round(stats.hp * hpMult) // у людей hpMult=1 (botTier null)
+    // HP: ботам ×HP_MULT (−30% динамика). ЛЮДЯМ НЕ домножаем — у них stats.hp уже ×HP_MULT из
+    // клиентского combatStats (иначе двойной минус). hpMult=1 у людей (botTier null).
+    const unitHp = Math.round(stats.hp * hpMult * (human ? 1 : HP_MULT))
     const sc = this.mapSize / MAP_SIZE // спавны тоже растягиваем под размер карты
     const spread = ((slot - (this.teamSize - 1) / 2) / Math.max(1, this.teamSize)) * 1000 * sc
     const c = this.mapSize / 2
@@ -239,6 +244,8 @@ export class BattleSim {
       botDamage: Math.round(stats.damage * this.botDmgMult * dmgMult * (1 + (VET.dmgMult - 1) * this.vet)),
       botSpeed: stats.maxSpeed * BOT_SPEED_MULT,
       botTurn: stats.turnRate * 0.9,
+      // АРХЕТИП поведения (роль машины: штурмовик/танк/снайпер/охотник/поддержка). Только бот.
+      arche: human ? null : archetypeOf(botTankId, stats.id),
       fireCd: 1 + slot * 0.2,
       stuckT: 0,
       avoidT: 0,
@@ -592,11 +599,26 @@ export class BattleSim {
     const br = b.brain
     br.nextThinkT = this.t + BOT_BRAIN.thinkSec + (b.id % 7) * 0.01 // сдвиг по id — не все думают в один тик
     const plan = this.director && this.director.team[b.team]
+    const arche = b.arche || ARCHETYPE.assault // личность машины: дистанция/отход/укрытие/выбор цели/агрессия
+    // давить-добивать: cleanup всегда; в аннигиляции ещё endgame+push (не balanced/hold — иначе
+    // ранний вайп). Без плана — старый порог (annihilation, последние 45с). Нужен в выборе цели ниже.
+    const rush = plan
+      ? plan.phase === 'cleanup' || (this.mode === 'annihilation' && plan.phase === 'endgame' && plan.posture === 'push')
+      : this.mode === 'annihilation' && this.matchTime < 45
+    br.rush = rush
     const enemyFocus = enemyBot ? ENEMY_EDGE.humanFocus : 0
+    const hpW = Math.min(0.7, 0.45 * arche.hpFocus) // вес добивания подранка (финишер-охотник выше)
     const scoreOf = (f, d) => {
       const hpFrac = f.maxHp ? Math.max(0, Math.min(1, f.hp / f.maxHp)) : 1
-      let s = d * (0.55 + 0.45 * hpFrac) // подранок «ближе» по скору → команда добивает
+      let s = d * (1 - hpW + hpW * hpFrac) // подранок «ближе» по скору → команда добивает
       if (f.human) s *= Math.max(0.3, 1 - 0.25 * this.vet - enemyFocus) // фокус на живом игроке (vet + PvE-эдж)
+      // анти-догпайл/группировка ПО АРХЕТИПУ (rush off): поддержка (crowd<0) липнет, остальные рассредотачиваются
+      if (!rush && arche.crowd) {
+        let mates = 0
+        const crowdR2 = (ai.idealRange * 1.5) ** 2
+        for (const a of this.units) if (a.alive && a.team === b.team && a.id !== b.id && (a.x - f.x) ** 2 + (a.y - f.y) ** 2 < crowdR2) mates++
+        s *= Math.max(0.2, 1 + arche.crowd * mates)
+      }
       return s
     }
     // лучший видимый кандидат (БЕЗ покадрового анти-догпайла — распределение теперь у командира)
@@ -645,18 +667,13 @@ export class BattleSim {
       else if (assigned == null && this.mode !== 'capture') br.objCapId = null // аннигиляция — без лэйн
     }
 
-    // давить-добивать: cleanup всегда; в аннигиляции ещё endgame+push (не в balanced/hold —
-    // иначе слишком ранний вайп). Без плана — старый порог (annihilation, последние 45с).
-    const rush = plan
-      ? plan.phase === 'cleanup' || (this.mode === 'annihilation' && plan.phase === 'endgame' && plan.posture === 'push')
-      : this.mode === 'annihilation' && this.matchTime < 45
-    br.rush = rush
-
     const brave = b.id % 3 === 0 || (this.vet >= 0.5 && b.id % 2 === 1) || (enemyBot && ENEMY_EDGE.braveShare && b.id % 2 === 0)
-    const retreatHp = b.maxHp * (0.22 + (b.id % 6) * 0.025) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
+    // ОТХОД по архетипу: штурмовик/танк (retreatFrac≈0) НЕ отступают; снайпер/охотник/поддержка кайтят
+    const retreatHp = b.maxHp * (arche.retreatFrac + (b.id % 5) * 0.012) * (1 - 0.4 * this.vet) * (enemyBot ? ENEMY_EDGE.retreatMult : 1)
+    const canRetreat = arche.retreatFrac > 0
 
     // СОСТОЯНИЕ (коммит до следующего think; retreat — таймер-коммит, не газ-реверс каждый тик)
-    if (!brave && b.hp < retreatHp && !rush) {
+    if (canRetreat && !brave && b.hp < retreatHp && !rush) {
       if (br.state !== 'retreat') br.stateUntil = this.t + BOT_BRAIN.regroupSec
       else if (this.t >= br.stateUntil) br.stateUntil = this.t + BOT_BRAIN.regroupSec // всё ещё ранен — продлеваем
       br.state = 'retreat'; br.cover = null
@@ -669,7 +686,7 @@ export class BattleSim {
       } else {
         // пик-трейд из укрытия как СОСТОЯНИЕ (решаем на каденции think, не каждый тик — это
         // и есть крупнейший фикс дрожи: раньше cover пересчитывался ежекадрово)
-        const bush = b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 220) : null
+        const bush = arche.cover > 0.25 && b.fireCd > 0 && b.hp >= retreatHp && !rush ? this._nearestBush(b.x, b.y, 120 + 200 * arche.cover) : null // укрытие по архетипу: снайпер/охотник прячутся, штурмовик нет
         if (bush) { br.state = 'peek'; br.cover = { x: bush.x, y: bush.y, r: bush.r } }
         else { br.state = 'hunt'; br.cover = null }
       }
@@ -778,17 +795,24 @@ export class BattleSim {
   // (не видим) → едем к последней виденной позиции обычным ходом, без спринта «в упор» и без огня.
   _huntMove(b, br, target, tVis, ai, aimPos, steerTo) {
     if (!aimPos) return 0 // нет цели/памяти — стоим, think переоценит
+    const arche = b.arche || ARCHETYPE.assault
+    const idR = Math.min(ai.fireRange * 0.95, ai.idealRange * arche.distMult) // боевая дистанция по архетипу (снайпер кайтит, штурмовик жмёт)
     const d = Math.hypot(aimPos.x - b.x, aimPos.y - b.y)
     br.targetDist = d
-    steerTo(Math.atan2(aimPos.y - b.y, aimPos.x - b.x) + (d > ai.idealRange ? 0.5 : 0.14) * br.flank) // фланг вдали; у дистанции — ствол на цель
-    if (!tVis) return d > ai.idealRange * 0.6 ? 1 : 0 // цель в памяти — доезжаем к lastSeen, не сближаемся «в упор»
-    // цель ВИДНА — честные сближатели + мёртвая зона по дистанции
+    // КОММИТ В ВЫСТРЕЛ: цель ВИДНА, ствол готов (или вот-вот) и в радиусе огня → наводимся ПРЯМО
+    // (не флангуем), иначе бот кружит и почти не стреляет. tVis уже гарантирует чистую линию.
+    const commitShot = tVis && b.fireCd <= 0.35 && d <= ai.fireRange
+    const flankW = d > idR ? 0.3 + 0.4 * (1 - arche.push) : 0.14 // фланг шире у нежмущих (охотник), уже у напористых (штурмовик)
+    steerTo(Math.atan2(aimPos.y - b.y, aimPos.x - b.x) + (commitShot ? 0 : flankW * br.flank))
+    if (!tVis) return d > idR * 0.6 ? 1 : 0 // цель в памяти — доезжаем к lastSeen, не сближаемся «в упор»
+    // цель ВИДНА — честные сближатели + мёртвая зона по архетип-дистанции
     const blindToHuman = target.human && this.t >= ai.graceSec && !(this._spotted[target.team] && this._spotted[target.team].has(b.id))
-    if (blindToHuman && d > ai.idealRange * 0.5) return 1 // не засвечен у человека → поджимаем (засветиться)
-    if (br.focusShooter && d > ai.idealRange * 0.72) return 1 // focus-приказ — закрываемся ДОБИТЬ (концентрация)
-    if (br.rush && d > ai.idealRange * 0.85) return 1 // добиваем — сближаемся до боевой (не в упор)
-    if (d > ai.idealRange * BOT_BRAIN.advBand) return 1 // дальше зоны — сближаемся
-    if (d < ai.idealRange * BOT_BRAIN.backBand) return -0.5 // ближе зоны — чуть назад
+    if (blindToHuman && d > idR * 0.5) return 1 // не засвечен у человека → поджимаем (засветиться)
+    if (br.focusShooter && d > idR * 0.72) return 1 // focus-приказ — закрываемся ДОБИТЬ (концентрация)
+    if (br.rush && d > ai.idealRange * 0.85) return 1 // добиваем — все сближаются (архетип не мешает)
+    const backoff = idR * (0.4 + 0.5 * (1 - arche.push)) // ближе backoff держащий-дистанцию (снайпер) кайтит; штурмовик почти нет
+    if (d > idR * BOT_BRAIN.advBand) return 1 // дальше своей дистанции — сближаемся
+    if (d < backoff) return -0.5 // ближе своей дистанции — отъезжаем (кайт)
     return 0 // мёртвая зона — держим (без дёрга)
   }
 

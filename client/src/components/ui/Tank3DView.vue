@@ -13,6 +13,9 @@ const props = defineProps({
   seed: { type: Number, default: 7 }, // зерно узора (обычно хэш tankId) — стабильно у всех клиентов
   scale: { type: Number, default: 1 }, // относительный размер по классу (meta.tankSizeScale)
 })
+// 'drag' — был реальный поворот пальцем (а не тап). Hangar глушит по нему навигацию
+// в Ангар (иначе @click по сцене уводил на вкладку и танк «не крутился»).
+const emit = defineEmits(['drag'])
 const host = ref(null)
 const loading = ref(true) // показываем «загрузка модели…» пока GLB не отрисован (платформа не выглядит пустой)
 let THREE, renderer, scene, camera, model, raf
@@ -33,10 +36,18 @@ onMounted(async () => {
   renderer.setSize(W, H)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   host.value.appendChild(renderer.domElement)
-  // КРИТично для вращения на ТАЧ: без touch-action:none на самой канве браузер считает
-  // драг по ней скроллом и НЕ шлёт pointermove → танк не крутится на телефоне (в превью
-  // синтетические события шли мимо этого, потому «работало»). Ставим на DOM-элемент.
+  // ВРАЩЕНИЕ — ЖЕЛЕЗОБЕТОННО: вешаем TOUCH+MOUSE на WINDOW в CAPTURE-фазе и гейтим по зоне канвы
+  // (inCanvas). Так касание ловится, ДАЖЕ если поверх канвы лежит невидимый оверлей/скрим/рамка
+  // (которые перехватывали клик и танк «не крутился» на реальном устройстве, хотя в превью —
+  // синтетика прямо на канву — крутился). Capture = срабатывает ДО любого обработчика-перехватчика.
   renderer.domElement.style.touchAction = 'none'
+  window.addEventListener('touchstart', onTouchStart, { capture: true, passive: false })
+  window.addEventListener('touchmove', onTouchMove, { capture: true, passive: false })
+  window.addEventListener('touchend', onTouchEnd, true)
+  window.addEventListener('touchcancel', onTouchEnd, true)
+  window.addEventListener('mousedown', onMouseDown, true)
+  window.addEventListener('mousemove', onMouseMove, true)
+  window.addEventListener('mouseup', onMouseUp, true)
   scene = new THREE.Scene()
   camera = new THREE.PerspectiveCamera(34, W / H, 0.1, 100)
   camera.position.set(0, 4.2, 4.6); camera.lookAt(0, 0.1, 0)
@@ -108,7 +119,9 @@ async function show() {
   const size = new THREE.Vector3(); box.getSize(size)
   const center = new THREE.Vector3(); box.getCenter(center)
   m.position.sub(center) // центр в начало координат
-  // нормализуем к опорному размеру и применяем относительный размер класса (лёгкий/тяж)
+  // РАЗМЕР = опорная база × относительный размер танка (props.scale = tankSizeScale = реальная
+  // длина корпуса / SIZE_REF). Камера ФИКСИРОВАНА → у каждого танка СВОЙ видимый размер: лёгкий
+  // мелкий, тяж крупный (фидбек «у каждого свой размер»). База 3.0 (НЕ уменьшаем — «не меньше»).
   m.scale.setScalar((3.0 / (Math.max(size.x, size.y, size.z) || 1)) * props.scale)
   applyCamo(m, props.camo, props.seed) // перекраска камуфляжем (процедурно, без PNG)
   const wrap = new THREE.Group(); wrap.add(m)
@@ -127,26 +140,52 @@ async function show() {
 // DRAG-TO-ROTATE: горизонталь крутит танк (Y), вертикаль — лёгкий наклон (X, ограничен,
 // не переворачиваем). Инерция после отпускания (см. loop). touch-action:none — палец на
 // танке вращает, а не скроллит страницу.
-function onPointerDown(e) {
-  dragging = true; velY = 0; lastPX = e.clientX; lastPY = e.clientY
-  try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* ok */ }
-}
-function onPointerMove(e) {
+let moved = 0 // суммарный путь пальца за жест — отличаем поворот от тапа
+// общая логика драга (вызывается из touch И mouse — координаты экрана x,y)
+function dragStart(x, y) { dragging = true; velY = 0; moved = 0; lastPX = x; lastPY = y }
+function dragMove(x, y) {
   if (!dragging) return
-  const dx = e.clientX - lastPX, dy = e.clientY - lastPY
-  lastPX = e.clientX; lastPY = e.clientY
+  const dx = x - lastPX, dy = y - lastPY
+  lastPX = x; lastPY = y
+  moved += Math.abs(dx) + Math.abs(dy)
+  if (moved > 6) emit('drag') // порог: явный поворот, а не дрожь пальца на тапе
   dragY += dx * 0.011
   velY = Math.max(-0.3, Math.min(0.3, dx * 0.011)) // кап скорости флика (не разгоняем бесконечно)
   dragX = Math.max(-0.3, Math.min(0.5, dragX + dy * 0.006)) // наклон ограничен (взгляд чуть сверху/сбоку)
 }
-function onPointerUp(e) {
-  dragging = false
-  try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ok */ }
+function dragEnd() { dragging = false }
+// касание/курсор в ЗОНЕ канвы? (window-listener ловит весь экран — крутим только над танком)
+function inCanvas(x, y) {
+  if (!renderer || !renderer.domElement) return false
+  const r = renderer.domElement.getBoundingClientRect()
+  return r.width > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
 }
+// TOUCH (мобайл — главный путь; window+capture, гейт по зоне канвы)
+function onTouchStart(e) { const t = e.touches[0]; if (t && inCanvas(t.clientX, t.clientY)) dragStart(t.clientX, t.clientY) }
+function onTouchMove(e) {
+  const t = e.touches[0]
+  if (!dragging || !t) return
+  if (e.cancelable) e.preventDefault() // глушим скролл страницы под пальцем на танке
+  dragMove(t.clientX, t.clientY)
+}
+function onTouchEnd() { dragEnd() }
+// MOUSE (десктоп)
+function onMouseDown(e) { if (inCanvas(e.clientX, e.clientY)) dragStart(e.clientX, e.clientY) }
+function onMouseMove(e) { if (dragging) dragMove(e.clientX, e.clientY) }
+function onMouseUp() { dragEnd() }
 
 watch(() => [props.url, props.camo, props.seed, props.scale], () => show())
 onBeforeUnmount(() => {
   disposed = true; cancelAnimationFrame(raf)
+  try {
+    window.removeEventListener('touchstart', onTouchStart, { capture: true })
+    window.removeEventListener('touchmove', onTouchMove, { capture: true })
+    window.removeEventListener('touchend', onTouchEnd, true)
+    window.removeEventListener('touchcancel', onTouchEnd, true)
+    window.removeEventListener('mousedown', onMouseDown, true)
+    window.removeEventListener('mousemove', onMouseMove, true)
+    window.removeEventListener('mouseup', onMouseUp, true)
+  } catch { /* ok */ }
   if (this_ro) try { this_ro.disconnect() } catch { /* ok */ }
   if (renderer) {
     try { renderer.forceContextLoss() } catch { /* ok */ } // освобождаем WebGL-контекст (иначе утечка → 3D перестаёт создаваться)
@@ -157,15 +196,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="host"
-    class="tank3d"
-    @pointerdown="onPointerDown"
-    @pointermove="onPointerMove"
-    @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
-    @pointerleave="onPointerUp"
-  >
+  <!-- обработчики вращения навешены ПРЯМО на канву в onMounted (addEventListener,
+       passive:false) — надёжнее на iOS, чем @pointer на host через bubbling -->
+  <div ref="host" class="tank3d">
     <div v-if="loading" class="tank3d-load"><span class="tank3d-spin"></span>загрузка модели…</div>
   </div>
 </template>

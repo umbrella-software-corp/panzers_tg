@@ -8,7 +8,7 @@ import { NetGame3D } from '../game/NetGame3D.js'
 import { MAP_BY_ID, MAPS } from '../game/maps.js'
 import { DEFAULT_CLASS, CRIT_LABELS } from '../game/config.js'
 import { profile, party, spendGoldAmmo, addBattleResult, tankCamo } from '../store.js'
-import { TANK_BY_ID, PREM_TANK, GOLD_AMMO_MULT, battleMedalXp } from '../game/meta.js'
+import { TANK_BY_ID, PREM_TANK, GOLD_AMMO_MULT, battleMedalXp, battleReward, contribScore, battleEfficiency } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import { track } from '../analytics.js'
 import { t as tr } from '../i18n.js' // alias: `t` встречается как локальная переменная ниже
@@ -439,10 +439,16 @@ const reward = computed(() => {
   // урон/фраги/медали, а не флэт-база). Кредиты ∝ опыту («относительно опыта — кредиты»).
   const dmg = s.damageDealt || 0
   const medalXp = battleMedalXp({ kills: s.kills, damage: dmg, blockedDmg: s.blockedDmg || 0, lightKills: s.lightKills || 0, survived: !s.deaths, victory: win })
-  const xp = (win ? 150 : draw ? 90 : 60) + s.kills * 55 + Math.round(dmg / 8) + medalXp + (s.bonusXp || 0) // дел. 22→8: компенсация ресейла урона ×0.375 (XP/кредиты просели). ЗЕРКАЛО shared/economy.battleReward
+  // ЭКОНОМИКА V1: база по ТИРУ × коэффициент эффективности. Превью — по СВОЕМУ вкладу (avg≈tier·300);
+  // сервер досчитает ранг best/MVP + премиум-множители → фактическая награда может быть ВЫШЕ. ЗЕРКАЛО economy.
+  const tier = (TANK_BY_ID[profile.selectedTank] || {}).tier || 1
+  const result = win ? 'victory' : draw ? 'draw' : 'defeat'
+  const eff = battleEfficiency({ score: contribScore({ damage: dmg, kills: s.kills }), avg: tier * 300 })
+  const rw = battleReward({ tier, result, efficiency: eff })
+  const xp = rw.xp + medalXp + (s.bonusXp || 0) // опыт ветки V1 + медали (бонус)
   return {
     xp,
-    silver: Math.round(xp * 1.25),
+    silver: rw.credits,
     kills: s.kills,
     allyScore: s.allyScore,
     // для задач дня

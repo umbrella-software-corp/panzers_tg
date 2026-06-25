@@ -18,7 +18,7 @@ export const tankResearchXp = (tier) => TIER_XP[tier] || 0
 // ---------- СВОБОДНЫЙ ОПЫТ (free XP) ----------
 // Доля боевого опыта, уходящая в СВОБОДНЫЙ пул (а не в ветку/экипаж). Свободный опыт
 // можно вложить в ЛЮБУЮ нацию для исследования (см. spendFreeXp). ЗЕРКАЛО meta.js.
-export const FREE_XP_SHARE = 0.1
+export const FREE_XP_SHARE = 0.05 // экономика V1: свободный опыт = 5% от опыта ветки (было 10%)
 // Доля боевого опыта (от остатка после свободного), уходящая в ЭКИПАЖ; остальное — в
 // ветку. Было 0.5 — экипаж качался слишком быстро (фидбек #26); срезали до 0.3, а
 // высвобожденное идёт в ветку (танки открываются чуть быстрее). ЗЕРКАЛО meta.js.
@@ -29,7 +29,9 @@ export const NATION_IDS = ['ussr', 'ger', 'usa']
 // ---------- модули: 5 слотов × 3 уровня ----------
 export const MODULE_SLOTS = ['gun', 'tur', 'eng', 'trk', 'rad']
 export const MODULE_MAX = 3
-export const moduleCost = (tier, level) => tier * (level === 2 ? 40 : 80)
+// цена модуля растёт КВАДРАТично по тиру (награда за бой тоже растёт) — ощутимый слив, не копейки.
+// tier²·50/110: т5 1250/2750, т7 2450/5390, т10 5000/11000. ЗЕРКАЛО meta.js — менять В ОБОИХ.
+export const moduleCost = (tier, level) => Math.round(tier * tier * (level === 2 ? 50 : 110))
 export const modLevel = (modules, tankId, modId) => ((modules || {})[tankId] || {})[modId] || 1
 export const modsMaxedCount = (modules, tankId) => MODULE_SLOTS.filter((m) => modLevel(modules, tankId, m) >= MODULE_MAX).length
 
@@ -90,20 +92,41 @@ export function canUnlockTank(owned, modules, tankId, branchXp) {
 }
 
 // ---------- награда за бой из АВТОРИТЕТНЫХ серверных чисел ----------
-// result: 'victory'|'draw'|'defeat'; kills/damage — из sim; allyScore — счёт команды.
-// Возвращает { credits, xp } (БЕЗ премиум-множителей — их накидывает сервер по premiumUntil/прем-танку).
-export function battleReward({ result, kills = 0, damage = 0 }) {
-  // ЗЕРКАЛО client Battle.vue reward. Опыт решает РЕЗУЛЬТАТ боя (урон/фраги), не флэт-база
-  // (фидбек: «давалось одинаково и немного»). Кредиты ∝ опыту. Опыт за медали — отдельно
-  // (battleMedalXp), складывается в grantBattle (сервер) / reward (клиент).
+// ════ ЭКОНОМИКА БОЯ V1 (таблицы владельца 2026-06-25): награды по ТИРУ × коэффициент
+// ЭФФЕКТИВНОСТИ × премиум. Свободный опыт = 5% от опыта ветки. ЗЕРКАЛО client meta.js/Battle.vue.
+// База кредитов/опыта-ветки по тиру (победа/поражение). Ничья = поражение (не выиграл).
+export const REWARD_BY_TIER = {
+  1: { winCr: 150, lossCr: 100, winXp: 50, lossXp: 30 },
+  2: { winCr: 300, lossCr: 200, winXp: 80, lossXp: 50 },
+  3: { winCr: 600, lossCr: 400, winXp: 120, lossXp: 80 },
+  4: { winCr: 1200, lossCr: 800, winXp: 180, lossXp: 120 },
+  5: { winCr: 2500, lossCr: 1500, winXp: 270, lossXp: 180 },
+  6: { winCr: 5000, lossCr: 3000, winXp: 400, lossXp: 270 },
+  7: { winCr: 8000, lossCr: 5000, winXp: 600, lossXp: 400 },
+  8: { winCr: 12000, lossCr: 8000, winXp: 900, lossXp: 600 },
+  9: { winCr: 18000, lossCr: 12000, winXp: 1300, lossXp: 900 },
+  10: { winCr: 25000, lossCr: 18000, winXp: 1900, lossXp: 1300 },
+}
+// коэффициент эффективности боя (AFK→MVP). Применяется к кредитам И опыту ветки.
+export const EFFICIENCY = { afk: 0.5, weak: 0.8, avg: 1.0, good: 1.3, best: 1.6, mvp: 2.0 }
+export const KILL_WEIGHT = 300 // вес фрага в score (урон + фраги·300) для ранжирования
+export const contribScore = (b) => Math.max(0, (b.damage || 0) + (b.kills || 0) * KILL_WEIGHT)
+// score игрока + контекст боя (teamMax/matchMax/avg) → множитель 0.5..2.0.
+export function battleEfficiency({ score = 0, teamMax = 0, matchMax = 0, avg = 0 } = {}) {
+  if (score <= 0) return EFFICIENCY.afk // ничего не сделал
+  if (matchMax > 0 && score >= matchMax) return EFFICIENCY.mvp // лучший в бою
+  if (teamMax > 0 && score >= teamMax) return EFFICIENCY.best // лучший в команде
+  if (avg > 0) return score >= avg * 1.3 ? EFFICIENCY.good : score >= avg * 0.6 ? EFFICIENCY.avg : EFFICIENCY.weak
+  return EFFICIENCY.avg
+}
+// НАГРАДА ЗА БОЙ V1: база по тиру × эффективность. freeXp = 5% от опыта ветки. БЕЗ премиум-
+// множителей (их накидывает grantBattle/Battle.vue: аккаунт +50%, прем-танк +25%). { credits, xp, freeXp }.
+export function battleReward({ tier = 1, result = 'defeat', efficiency = 1 }) {
+  const t = REWARD_BY_TIER[Math.max(1, Math.min(10, tier | 0))] || REWARD_BY_TIER[1]
   const win = result === 'victory'
-  const draw = result === 'draw'
-  const baseXp = win ? 150 : draw ? 90 : 60
-  // делитель урона 22→8: после ресейла урона ×0.375 (DMG_SCALE 16→6) член damage/22 просел
-  // на −62% → XP/кредиты за бой упали (фидбек #23 «начисление опыта/кредитов хромает»).
-  // 22×0.375≈8 восстанавливает XP-от-урона к доресейловому уровню. ЗЕРКАЛО Battle.vue.
-  const xp = Math.max(0, baseXp + kills * 55 + Math.round((damage || 0) / 8))
-  return { credits: Math.round(xp * 1.25), xp }
+  const credits = Math.round((win ? t.winCr : t.lossCr) * efficiency)
+  const xp = Math.round((win ? t.winXp : t.lossXp) * efficiency)
+  return { credits, xp, freeXp: Math.round(xp * FREE_XP_SHARE) }
 }
 // суммарный опыт за боевые медали этого боя. ЗЕРКАЛО meta.js battleMedalXp.
 export function battleMedalXp(b) {
@@ -118,7 +141,7 @@ export function battleMedalXp(b) {
   return xp
 }
 export const PREMIUM_BONUS = 0.5 // премиум-аккаунт: +50% к кредитам/опыту (бенчмарк Blitz, тикет #29)
-export const PREM_TANK = { xpMult: 0.05, creditMult: 0.05, gemEvery: 10, gems: 10 }
+export const PREM_TANK = { xpMult: 0.25, creditMult: 0.25, gemEvery: 10, gems: 10 } // V1: прем-техника +25% кредиты/опыт ветки
 
 // ---------- воинские звания (по серверному числу боёв srvBattles) ----------
 // ЗЕРКАЛО meta.js RANKS. Награда за каждое новое звание — один раз.

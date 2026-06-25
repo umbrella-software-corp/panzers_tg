@@ -288,6 +288,24 @@ const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew'
   // (иначе тур/тренировка/выбор 2-го танка «переоткрываются» — #26 «плашка не убирается»)
   'onboarded', 'trainingDone', 'secondTankChosen']
 
+// АДОПТ серверных econ-полей из ответа POST /api/profile (под econAuthority сервер их ведёт:
+// XP/кредиты копятся на сервере за бой, раньше клиент их не получал при синке → «опыта не
+// давали», #29). Берём авторитетные значения → клиент всегда показывает то, что на сервере.
+function adoptServerEcon(e) {
+  if (!e || !econOn()) return
+  // числа: Vue не триггерит watch при том же значении → безопасно ставить напрямую
+  if (typeof e.credits === 'number') profile.credits = e.credits
+  if (typeof e.tokens === 'number') profile.tokens = e.tokens
+  if (typeof e.goldAmmo === 'number') profile.goldAmmo = e.goldAmmo
+  if (typeof e.freeXp === 'number') profile.freeXp = e.freeXp
+  if (typeof e.premTankBattles === 'number') profile.premTankBattles = e.premTankBattles
+  // объекты/массивы: ставим ТОЛЬКО при реальном отличии контента — иначе новая ссылка дёрнет
+  // deep-watch (даже при том же содержимом) → дебаунс-сейв → снова адопт → ЦИКЛ сейвов.
+  if (Array.isArray(e.owned) && JSON.stringify(e.owned) !== JSON.stringify(profile.owned)) profile.owned = e.owned
+  if (e.modules && JSON.stringify(e.modules) !== JSON.stringify(profile.modules || {})) profile.modules = e.modules
+  if (e.branchXp && JSON.stringify(e.branchXp) !== JSON.stringify(profile.branchXp || {})) profile.branchXp = e.branchXp
+}
+
 // локальный кеш — мгновенно; на сервер — с дебаунсом (офлайн не мешает игре)
 let pushTimer = null
 watch(
@@ -300,7 +318,7 @@ watch(
     clearTimeout(pushTimer)
     pushTimer = setTimeout(() => {
       const rev = dirtyRev
-      apiSaveProfile(JSON.parse(JSON.stringify(profile))).then((r) => { if (r && r.ok) { clearDirtyIf(rev); rememberSrvAt(r.updatedAt) } }).catch(() => {})
+      apiSaveProfile(JSON.parse(JSON.stringify(profile))).then((r) => { if (r && r.ok) { clearDirtyIf(rev); rememberSrvAt(r.updatedAt); adoptServerEcon(r.econ) } }).catch(() => {})
     }, 1500)
   },
   { deep: true },
@@ -319,7 +337,7 @@ export function flushProfile() {
   const rev = dirtyRev
   // на success снимаем dirty + помним версию; на выгрузке .then может не успеть —
   // тогда dirty остаётся, и на реоткрытии локальный прогресс будет предпочтён (безопасно).
-  apiSaveProfileFlush(snap).then((r) => { if (r && r.ok) { clearDirtyIf(rev); rememberSrvAt(r.updatedAt) } })
+  apiSaveProfileFlush(snap).then((r) => { if (r && r.ok) { clearDirtyIf(rev); rememberSrvAt(r.updatedAt); adoptServerEcon(r.econ) } })
 }
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {

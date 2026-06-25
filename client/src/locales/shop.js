@@ -63,6 +63,7 @@ export default {
     crateDup: ({ name }) => `${name} — already owned →`,
     crateCrystals: 'crystals',
     crateFreeXp: 'free XP',
+    crateDelayed: 'Reward is on the way — it will arrive shortly',
     // тосты / лейблы покупок
     notEnoughTokens: 'Not enough tokens',
     payUnavailable: 'Payment unavailable',
@@ -127,6 +128,7 @@ export default {
     crateDup: ({ name }) => `${name} — уже есть →`,
     crateCrystals: 'кристаллов',
     crateFreeXp: 'свободного опыта',
+    crateDelayed: 'Награда уже в пути — придёт через минуту',
     notEnoughTokens: 'Не хватает жетонов',
     payUnavailable: 'Оплата недоступна',
     serverUnavailable: 'Сервер недоступен',

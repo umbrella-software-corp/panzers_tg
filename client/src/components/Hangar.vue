@@ -2,10 +2,10 @@
 // Ангар-сцена (порт HangarSceneScreen): отсек-гараж, top-down танк, нации,
 // ТТХ-шторка, карусель танков, кнопки ВЗВОД и В БОЙ, нижняя навигация.
 import { ref, computed, watch, onMounted } from 'vue'
-import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, tankStat } from '../store.js'
+import { profile, party, selectTank, isOwned, buyTank, canUnlock, crewLevel, crewProgress, setCamo, buyCamo, camoUnlocked, tankCamo, tasksClaimable, tankModLevel, setBattleMode, isPremium, premiumDaysLeft, loadoutStats, serverConfig, nextGoal, nextGoalText, tankStat, claimPushBonus } from '../store.js'
 import { squad } from '../game/squad.js'
-import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
-import { haptic } from '../tg.js'
+import { tanksOfNation, TANK_BY_ID, NATIONS, nationOf, STAT_LABELS, CAMOS, CAMO_BY_ID, MODULE_COMBAT, combatStats, statReal, statBar, tankModelUrl, tankSizeScale, isHiddenNation } from '../game/meta.js'
+import { haptic, requestWriteAccess, isFromTelegram } from '../tg.js'
 import { apiUsed3D } from '../api.js'
 import { preload3D } from '../game/NetGame3D.js'
 import Tank3DView from './ui/Tank3DView.vue'
@@ -77,6 +77,24 @@ function openFeedbackSheet() {
   track('feedback_offer_opened', { from_screen: 'hangar' })
   haptic('light')
   feedbackOpen.value = true
+}
+
+// ОХВАТ ПУШЕЙ: ~81% не дали боту право писать (pushBlocked) → рассылка возврата уходит
+// «в 0», в т.ч. ~80 АКТИВНЫХ игроков недосягаемы. Постоянный заметный баннер «🔔 +N💎» —
+// чтобы активный мог дать доступ В ЛЮБОЙ момент (не только раз-в-5-дней попапом, который
+// легко смахнуть). Прячется сразу после выдачи (pushBonusClaimed реактивен).
+// ВАЖЕН ПОРЯДОК: реактивные profile.* читаем ПЕРВЫМИ, isFromTelegram() (НЕреактивна) —
+// последней. Иначе при isFromTelegram()===false на первом расчёте && оборвётся до чтения
+// profile.*, зависимости не отследятся, и баннер не появится даже когда флаги изменятся.
+const notifOffer = computed(() => !profile.pushBonusClaimed && profile.trainingDone && isFromTelegram())
+async function enableNotifs() {
+  haptic('light')
+  track('push_bonus_offered', { reason: 'banner', tokens: serverConfig.pushBonusTokens || 25 })
+  const ok = await requestWriteAccess()
+  track('push_access_result', { granted: !!ok, reason: 'banner' })
+  if (!ok) { track('push_bonus_declined', { stage: 'access', reason: 'banner' }); return }
+  const granted = await claimPushBonus() // сервер верифицирует доступ реальной отправкой + жетоны
+  if (granted && granted.tokens) track('push_bonus_claimed', { tokens: granted.tokens, reason: 'banner' })
 }
 
 // «N в сети» показываем ТОЛЬКО в поиске боя (Matchmaking.vue), на главной убрано —
@@ -163,21 +181,18 @@ function quickPick(id) {
 }
 
 // ТТХ с учётом прокачки: дизайн-стата × модуль × экипаж (как в loadoutStats).
-// base — исходное, value — с прокачкой; шторка рисует прирост, а не статику.
-const STAT_MOD = { dmg: 'gun', hp: 'tur', spd: 'eng', mnv: 'trk', view: 'rad' }
+// base — исходное (метка), value — с прокачкой; шторка рисует прирост, а не статику.
+// loadoutStats уже учитывает модули+экипаж → отдельный множитель m/STAT_MOD не нужен.
 const ttxStats = computed(() => {
   const t = tank.value
-  const ck = 1 + (crewLevel() - 1) * 0.01 // экипаж баффает ход/манёвр/обзор/темп
   const real = loadoutStats(t.id) // реальные боевые статы с прокачкой (как в бою)
   const baseReal = combatStats(t) // без модулей/экипажа — для прироста
-  return Object.entries(t.stats).map(([k, base]) => {
-    let m = 1
-    const mod = STAT_MOD[k]
-    if (mod) m *= MODULE_COMBAT[mod][tankModLevel(t.id, mod) - 1]
-    if (k === 'spd' || k === 'mnv' || k === 'view' || k === 'rof') m *= ck
-    const rv = statReal(real, k) // крупное реальное число (HP 2088, урон 297…)
-    const up = rv - statReal(baseReal, k) // прирост от прокачки в реальных единицах
-    return { key: k, label: STAT_LABELS[k], base, value: Math.min(10, +(base * m).toFixed(1)), display: rv, displayUp: up > 0 ? +up.toFixed(k === 'rof' ? 1 : 0) : null }
+  return Object.entries(t.stats).map(([k]) => {
+    const rv = statReal(real, k) // крупное реальное число С прокачкой (HP 5450, урон 297…)
+    const rvBase = statReal(baseReal, k) // без прокачки — для метки базы и прироста
+    const up = rv - rvBase
+    // бары нормализуем из АБСОЛЮТНЫХ чисел (statBar): value — с прокачкой, base — метка базы
+    return { key: k, label: STAT_LABELS[k], base: statBar(k, rvBase), value: statBar(k, rv), display: rv, displayUp: up > 0 ? +up.toFixed(k === 'rof' ? 1 : 0) : null }
   })
 })
 const locked = computed(() => !threeD.value && !isOwned(tank.value.id)) // в 3D-эксперименте 3 танка не залочены
@@ -236,6 +251,13 @@ function swipeEnd(e) {
   const dx = x - _swipeX; _swipeX = null
   if (Math.abs(dx) > 44) switchTank(dx < 0 ? 1 : -1)
 }
+// тап по сцене танка → Ангар (tree). НО в 3D палец по танку = ПОВОРОТ: Tank3DView
+// эмитит 'drag' при реальном вращении → глушим навигацию, иначе танк «не крутился»
+// (любое касание уводило на вкладку). Тап без поворота — по-прежнему открывает Ангар.
+let _tankDragged = false
+function onTankDown() { _tankDragged = false }
+function onTankDrag() { _tankDragged = true }
+function onTankTap() { if (_tankDragged) { _tankDragged = false; return } emit('go', 'tree') }
 const fmt = (n) => n.toLocaleString('ru-RU')
 const inParty = computed(() => squad.active || !!party.token) // в лобби взвода или уже в бою с ним
 // друг зашёл по ссылке (squad стал активен) → авто-открываем шторку взвода, чтобы он видел лобби
@@ -306,11 +328,11 @@ onMounted(() => {
         <div class="bay-hazard"></div>
       </div>
 
-      <!-- тень + танк. Тап по танку → Ангар (там меняешь машину и камо) -->
-      <div class="tank-wrap" data-tut="tank" @click="emit('go', 'tree')">
+      <!-- тень + танк. Тап → Ангар; драг в 3D → ПОВОРОТ танка (навигацию глушим, см. onTankTap) -->
+      <div class="tank-wrap" data-tut="tank" @pointerdown="onTankDown" @click="onTankTap">
         <div class="tank-shadow"></div>
-        <!-- 3D: модель ВЫБРАННОГО танка (любого), мордой к игроку; листание карусели меняет её -->
-        <Tank3DView v-if="threeD" :url="heroUrl" :camo="locked ? '' : dispCamo" :seed="heroSeed" :scale="heroScale" class="tank3d-host" :style="locked ? 'filter: brightness(0.82) saturate(0.85)' : ''" />
+        <!-- 3D: модель ВЫБРАННОГО танка (любого), мордой к игроку; крути пальцем (turntable) -->
+        <Tank3DView v-if="threeD" :url="heroUrl" :camo="locked ? '' : dispCamo" :seed="heroSeed" :scale="heroScale" class="tank3d-host" :style="locked ? 'filter: brightness(0.82) saturate(0.85)' : ''" @drag="onTankDrag" />
         <template v-else>
           <div :key="tank.id + selCamo" style="animation: pz-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4); transform: rotate(-7deg)">
             <TankImg :tank-id="tank.id" :size="300" :hangar="true" :camo="locked ? '' : dispCamo" :style="{ filter: locked ? 'grayscale(0.85) brightness(0.55)' : 'drop-shadow(0 16px 22px rgba(0,0,0,0.55))' }" />
@@ -328,9 +350,10 @@ onMounted(() => {
 
 
     <!-- ===== chrome ===== -->
-    <header style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px 6px">
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 6px">
       <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto">
-        <div class="pz-display" style="font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">PANZER <span style="color: var(--amber)">TG</span></div>
+        <!-- логотип НЕ ужимается (flex-shrink:0) — бренд не режем в многоточие даже на тесной шапке -->
+        <div class="pz-display" style="font-size: 15px; flex-shrink: 0; white-space: nowrap">PANZER <span style="color: var(--amber)">TG</span></div>
         <!-- премиум активен: корона на главной (тап → магазин) -->
         <button v-if="isPremium()" class="prem-badge pz-display" :title="t('hangar.premiumActive') + ' · ' + t('common.days', { n: premiumDaysLeft() })" @click="emit('go', 'shop')">♛ {{ t('common.premiumShort') }}</button>
       </div>
@@ -379,8 +402,21 @@ onMounted(() => {
       <div style="font-size: 11.5px; color: var(--ink-dim); line-height: 1.45; margin-top: 2px">{{ tank.desc }}</div>
     </div>
 
+    <!-- ВКЛЮЧИ УВЕДОМЛЕНИЯ → +N💎: постоянный заметный вход, чтобы вырастить охват пушей
+         (81% не дали боту право писать → рассылка возврата уходит «в 0»). Прячется после выдачи. -->
+    <button v-if="notifOffer" class="chbanner chbanner--notif" @click="enableNotifs">
+      <span class="chb-icon">🔔</span>
+      <span class="chb-text">
+        <span class="chb-title">{{ t('hangar.notifBanner') }}</span>
+        <span class="chb-reward">
+          <PzIcon name="token" :size="12" /> +{{ serverConfig.pushBonusTokens || 25 }}
+        </span>
+      </span>
+      <span class="chb-cta">▸</span>
+    </button>
+
     <!-- «нам важно ваше мнение» → написать в саппорт → бонус жетонов -->
-    <button v-if="feedbackOffer" class="chbanner" @click="openFeedbackSheet">
+    <button v-if="feedbackOffer && !notifOffer" class="chbanner" @click="openFeedbackSheet">
       <span class="chb-icon">💬</span>
       <span class="chb-text">
         <span class="chb-title">{{ t('feedback.banner') }}</span>
@@ -992,6 +1028,16 @@ onMounted(() => {
   50% {
     box-shadow: 0 0 12px 0 rgba(255, 193, 7, 0.35);
   }
+}
+/* баннер уведомлений — синий (цвет «колокольчика»), отличается от амбер-фидбека */
+.chbanner--notif {
+  border-color: #57b6f0;
+  background: linear-gradient(90deg, rgba(87, 182, 240, 0.18), rgba(87, 182, 240, 0.05));
+  animation: chb-pulse-notif 2.4s ease-in-out infinite;
+}
+@keyframes chb-pulse-notif {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(87, 182, 240, 0); }
+  50% { box-shadow: 0 0 12px 0 rgba(87, 182, 240, 0.4); }
 }
 .chb-icon {
   font-size: 18px;

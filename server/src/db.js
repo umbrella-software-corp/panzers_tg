@@ -75,13 +75,17 @@ async function paidPremiumUids() {
 // Поле rating в ответе = wn8 (клиент показывает его как «боевой рейтинг»).
 export async function leaderboard(limit = 20) {
   const all = await listProfiles()
-  const paid = await paidPremiumUids()
   const now = Date.now()
+  // КОРОНА ♛: активный премиум (premiumUntil > now). premiumUntil ЗАЩИЩЁН в merge (index.js:
+  // клиент НЕ может проставить себе сейвом профиля — `premiumUntil: prev.premiumUntil`), ставят
+  // ТОЛЬКО легит-источники: платёж Stars, АДМИН-грант, pendingGrants. Раньше тут была доп.сверка
+  // с платежами (paidPremiumUids), но она глушила АДМИН-выданный прем (тестеры без покупки —
+  // фидбек «у Katrin прем есть, а короны нет»). Дыра localStorage закрыта в merge → доверяем напрямую.
   return all
     .filter((p) => p.name && (p.battles || 0) >= RATING_MIN_BATTLES) // в рейтинг только от 5 боёв
     .sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
     .slice(0, limit)
-    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > now && paid.has(p.uid) }))
+    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > now }))
 }
 
 // публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):

@@ -8,7 +8,7 @@ import { track } from '../analytics.js'
 // `t` алиасим в `tr`: в шаблоне/скрипте уже есть локальные `t` (v-for="t in
 // PREMIUM_TANKS", premStats(t), buyPremTank(t)) — танк, не переводчик.
 import { t as tr, fmtNum } from '../i18n.js'
-import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal, TANK_BY_ID, CAMO_BY_ID } from '../game/meta.js'
+import { GOLD_AMMO_PACKS, PREMIUM_TANKS, STAT_LABELS, combatStats, statReal, statBar, TANK_BY_ID, CAMO_BY_ID } from '../game/meta.js'
 import { haptic } from '../tg.js'
 import TankImg from './ui/TankImg.vue'
 import StatRow from './ui/StatRow.vue'
@@ -71,7 +71,7 @@ async function spinCrate(nc) {
       window.Telegram.WebApp.openInvoice(r.link, (status) => {
         if (status === 'paid') {
           haptic('success')
-          setTimeout(async () => { await applyPendingGrants(); spinning.value = false }, 1300) // ждём поллинг grantProduct
+          pollCrateReveal(revealSeq, 0) // поллим grants-apply, пока ролл крейта не доедет
         } else { spinning.value = false }
       })
     } else { showToast(tr('shop.payUnavailable'), true); spinning.value = false }
@@ -80,21 +80,61 @@ async function spinCrate(nc) {
     showToast(tr('shop.serverUnavailable'), true); spinning.value = false
   }
 }
+// Ролл крейта выполняет grantProduct по ВЕБХУКУ Telegram (kind:'crate' в очередь) —
+// асинхронно, может опоздать на пару секунд. Фикс-таймаут 1.3с иногда не заставал награду
+// → ревил «пропадал». Теперь повторяем applyPendingGrants до ~15с, стоп как только пришёл
+// свежий ролл (revealSeq вырос в showCrateReveal).
+async function pollCrateReveal(startSeq, tries) {
+  try { await applyPendingGrants() } catch {}
+  if (revealSeq > startSeq) { spinning.value = false; return } // ролл доехал → ревил показан
+  if (tries >= 16) { // ~16×900мс ≈ 14с — вебхук сильно опоздал
+    spinning.value = false
+    showToast(tr('shop.crateDelayed'), false) // награда придёт на ближайшем синке
+    return
+  }
+  setTimeout(() => pollCrateReveal(startSeq, tries + 1), 900)
+}
 // РЕВИЛ донат-ящика: crateReveal (массив наград из grants-apply) → разворачиваем выпавшее
-// в карточку. Одиночная крутка = 1 награда. camo приходит строкой 'tankId_camoId'.
+// в карточки. camo приходит строкой 'tankId_camoId'. Несколько наград (мультикрутка /
+// догон очереди) показываем по очереди: текущая в crateWin, остальные в crateQueue —
+// «Забрать» открывает следующую (раньше показывалась ТОЛЬКО list[0], остальные терялись).
 const crateWin = ref(null)
-function showCrateReveal(list) {
-  if (!Array.isArray(list) || !list.length) return
-  const rw = list[0]
+const crateQueue = ref([])
+let revealSeq = 0 // счётчик пришедших роллов — поллинг spinCrate ждёт его роста
+function decorateReward(rw) {
   if (rw.camo) {
     const [tid, cid] = String(rw.camo).split('_')
     rw._camo = { tankId: tid, camoId: cid, name: (CAMO_BY_ID[cid] || {}).name || cid, tankName: (TANK_BY_ID[tid] || {}).name || tid }
   }
   if (rw.tank) rw._tankName = (TANK_BY_ID[rw.tank] || {}).name || rw.tank
-  crateWin.value = rw
-  crateReveal.value = null
-  haptic('success')
+  return rw
+}
+function trackReveal(rw) {
   track('crate_gacha_opened', { nation: rw.nation, type: rw.type, tank: rw.tank || null, tier: rw.tier || null })
+}
+function showCrateReveal(list) {
+  if (!Array.isArray(list) || !list.length) return
+  revealSeq++ // сигнал поллингу: ролл(ы) крейта доехали
+  const items = list.map(decorateReward)
+  crateReveal.value = null
+  if (crateWin.value) { crateQueue.value = crateQueue.value.concat(items); return } // карточка занята → в очередь
+  const [first, ...rest] = items
+  crateWin.value = first
+  crateQueue.value = crateQueue.value.concat(rest)
+  haptic('success')
+  trackReveal(first)
+}
+// «Забрать»: если в очереди есть ещё награды — открываем следующую, иначе закрываем
+function closeCrateWin() {
+  if (crateQueue.value.length) {
+    const next = crateQueue.value[0]
+    crateQueue.value = crateQueue.value.slice(1)
+    crateWin.value = next
+    haptic('success')
+    trackReveal(next)
+  } else {
+    crateWin.value = null
+  }
 }
 watch(crateReveal, (v) => showCrateReveal(v))
 
@@ -191,7 +231,7 @@ const buyPremium = () => buyPack({ id: 'prem' }, tr('shop.premiumLabel'))
 const premSel = ref(null) // развёрнутый ТТХ прем-танка в магазине
 const premStats = (t) => {
   const cs = combatStats(t) // реальные боевые числа (крупные) для ТТХ
-  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: v, display: statReal(cs, k) }))
+  return Object.entries(t.stats).map(([k, v]) => ({ key: k, label: STAT_LABELS[k] || k, value: statBar(k, v), display: statReal(cs, k) }))
 }
 // прем-танк за ⭐: продукт pt_<id> → grantProduct кладёт в гараж (как в «Развитии»)
 async function buyPremTank(t) {
@@ -424,7 +464,7 @@ onMounted(() => {
     <!-- РЕВИЛ ДОНАТ-ЯЩИКА: что выпало (танк/дубль/камо/кристаллы/кредиты) -->
     <Teleport to="body">
     <transition name="pz-fade">
-      <div v-if="crateWin" class="reveal-overlay" @click.self="crateWin = null">
+      <div v-if="crateWin" class="reveal-overlay" @click.self="closeCrateWin()">
         <div class="reveal-card pz-plate pz-brackets crate-reveal" :style="{ '--bk': crateWin.tank && crateWin.type !== 'dup' ? 'var(--amber-hi)' : 'var(--amber)' }">
           <div class="pz-pixel" style="font-size: 8px; color: var(--amber); letter-spacing: 0.14em; text-align: center">{{ tr('shop.nat_' + crateWin.nation) }} · {{ tr('shop.youGot') }}</div>
           <template v-if="crateWin.type === 't8' || crateWin.type === 't4'">
@@ -454,7 +494,7 @@ onMounted(() => {
             <div style="display: flex; align-items: center; justify-content: center; gap: 9px; margin: 22px 0 6px"><PzIcon name="coin" :size="32" /><span class="pz-display" style="font-size: 34px">+{{ fmt(crateWin.credits || 0) }}</span></div>
             <div style="text-align: center; font-size: 12px; color: var(--ink-dim)">{{ tr('shop.rewardCredits') }}</div>
           </template>
-          <button class="pz-cta" style="width: 100%; margin-top: 16px" @click="crateWin = null">{{ tr('shop.claim') }}</button>
+          <button class="pz-cta" style="width: 100%; margin-top: 16px" @click="closeCrateWin()">{{ tr('shop.claim') }}<span v-if="crateQueue.length" style="opacity: 0.7"> · +{{ crateQueue.length }}</span></button>
         </div>
       </div>
     </transition>

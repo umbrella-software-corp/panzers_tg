@@ -150,8 +150,19 @@ export async function refundPayment(charge) {
       const pend = Array.isArray(profile.pendingGrants) ? profile.pendingGrants : []
       const i = pend.findIndex((g) => g && g.charge === charge)
       if (i >= 0) {
+        // ещё не выдано (крейт не прокачен / покупку не забрали) — просто убираем заявку
         pend.splice(i, 1)
         profile.pendingGrants = pend
+      } else if (p.crate && profile.crateLog && profile.crateLog[charge]) {
+        // КРЕЙТ уже прокачен: откатываем ИМЕННО выпавшее (записано в grants-apply), с клампом —
+        // награда крейта рандомная, статичный PRODUCTS её не знает.
+        const rw = profile.crateLog[charge]
+        if (rw.tank && rw.type !== 'dup') profile.owned = (profile.owned || []).filter((id) => id !== rw.tank)
+        if (rw.crystals) profile.tokens = Math.max(0, (profile.tokens || 0) - rw.crystals) // кристаллы = tokens (вкл. дубль)
+        if (rw.freeXp) profile.freeXp = Math.max(0, (profile.freeXp || 0) - rw.freeXp)
+        if (rw.credits) profile.credits = Math.max(0, (profile.credits || 0) - rw.credits)
+        if (rw.camo) profile.camoOwned = (profile.camoOwned || []).filter((c) => c !== rw.camo)
+        delete profile.crateLog[charge]
       } else {
         // уже применено к балансу (или старый прямой формат) — откатываем с клампом
         if (p.credits) profile.credits = Math.max(0, (profile.credits || 0) - p.credits)

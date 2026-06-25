@@ -601,7 +601,7 @@ async function handleApi(req, res) {
     // Весь load prev→merge→save под локом: иначе между чтением prev и записью merged
     // мог влезть grants-apply (слил очередь) — и мы бы воскресили уже выданную выдачу
     // из prev.pendingGrants → двойное начисление. Лок сериализует это с grants-apply.
-    const savedAt = await withProfileLock(user.uid, async () => {
+    const saved = await withProfileLock(user.uid, async () => {
     const prev = (await loadProfile(user.uid)) || {}
     const merged = {
       ...body.profile,
@@ -657,8 +657,13 @@ async function handleApi(req, res) {
     // СЕРВЕРНО-АВТОРИТЕТНАЯ ЭКОНОМИКА (флаг ВКЛ): деньги/танки/модули/перки ведёт сервер
     // (начисление за бой + валидируемые эндпоинты покупок), клиентский сейв их НЕ пишет —
     // это и закрывает чит «правлю localStorage». При OFF — поведение как было.
-    if (await econ.econAuthority()) Object.assign(merged, econ.econPreserve(prev, body.profile))
-    return await saveProfile(user.uid, merged)
+    const econAuth = await econ.econAuthority()
+    if (econAuth) Object.assign(merged, econ.econPreserve(prev, body.profile))
+    const at = await saveProfile(user.uid, merged)
+    // под econAuthority ВОЗВРАЩАЕМ серверные econ-поля (раньше отдавали только updatedAt → клиент
+    // отставал: XP/кредиты копились на сервере, на экран не доходили — #29 «опыта не давали»).
+    // Клиент адоптит их сразу после сейва (store apiSaveProfile), без отдельного GET-синка.
+    return { at, econ: econAuth ? { credits: merged.credits | 0, tokens: merged.tokens | 0, goldAmmo: merged.goldAmmo | 0, owned: merged.owned, modules: merged.modules, branchXp: merged.branchXp, freeXp: merged.freeXp, premTankBattles: merged.premTankBattles | 0 } : null }
     })
     // БЭКСТОП РЕФЕРАЛА из ПОДПИСАННОГО start_param (#29 @Z_86_V «приглашение друзей»):
     // клиентский /api/referred зависит от тайминга initData на медленных телефонах и от
@@ -670,7 +675,7 @@ async function handleApi(req, res) {
     if (refM) registerReferral(user, refM[1]).catch(() => {})
     // updatedAt — версия записи (серверные часы); клиент хранит её и на реоткрытии
     // сверяет: продвинулся ли сервер с тех пор (другое устройство) или нет.
-    return json(res, 200, { ok: true, updatedAt: typeof savedAt === 'number' ? savedAt : 0 })
+    return json(res, 200, { ok: true, updatedAt: saved && typeof saved.at === 'number' ? saved.at : 0, econ: (saved && saved.econ) || undefined })
   }
   if (req.url === '/api/grants-apply' && req.method === 'POST') {
     // АТОМАРНО применить очередь админ-выдач к серверному профилю и очистить её —
@@ -703,7 +708,23 @@ async function handleApi(req, res) {
         }
         // ДОНАТ-КРЕЙТ: ролл здесь (авторитетно, под локом) — мутирует p (баланс/owned/
         // camoOwned/pity), собираем награду для ревила. Деньги уже списаны Telegram.
-        if (g.kind === 'crate') { const rw = econ.rollNationCrate(p, g.nation); if (rw) crates.push(rw) }
+        if (g.kind === 'crate') {
+          const rw = econ.rollNationCrate(p, g.nation)
+          if (rw) {
+            crates.push(rw)
+            // лог выпавшего по charge — чтобы рефанд откатил ИМЕННО то, что выпало
+            // (награда крейта рандомная, статичный PRODUCTS её не знает). Держим последние 50.
+            if (g.charge) {
+              if (!p.crateLog || typeof p.crateLog !== 'object') p.crateLog = {}
+              p.crateLog[g.charge] = { ...rw, at: g.at || Date.now() }
+              const ks = Object.keys(p.crateLog)
+              if (ks.length > 50) {
+                ks.sort((a, b) => (p.crateLog[a].at || 0) - (p.crateLog[b].at || 0))
+                for (const k of ks.slice(0, ks.length - 50)) delete p.crateLog[k]
+              }
+            }
+          }
+        }
         n++
       }
       p.pendingGrants = []
@@ -892,14 +913,14 @@ const STAT_CLAMP = {
   sectorDeg: [20, 80],
   sweepPeriod: [1.2, 6],
   toleranceDeg: [2, 12],
-  reload: [1.2, 8],
-  damage: [40, 700], // РЕАЛИСТИЧНЫЙ урон (DMG_SCALE 6 → тир-10 ~354, макс с прокачкой ~500): было [60,1500]. Заодно клампит старые клиенты (944→700) на время выката
-  hp: [300, 5000], // HP НЕ трогаем (фидбек: режем только урон) — диапазон прежний
+  reload: [1.0, 20], // role-based сетка: медленные тяжи (Maus rof 4 → 15с); модули/экипаж ускоряют
+  damage: [40, 1000], // абс. урон: топ ~380, Maus 490, +модули/экипаж ~+20% → запас до 1000
+  hp: [300, 9000], // T-14 5500 / Maus 5000 + модули/экипаж → запас
   range: [300, 800],
   vision: [200, 800],
-  maxSpeed: [40, 220],
-  accel: [80, 400],
-  turnRate: [0.4, 4],
+  maxSpeed: [15, 130], // км/ч сетки: Maus 20 (медленный) … топ ~75 + экипаж
+  accel: [30, 600],
+  turnRate: [0.2, 4], // Maus 18°/с → 0.31 рад/с … лёгкие ~76°/с → 1.33
 }
 function sanitizeStats(raw) {
   if (!raw || typeof raw !== 'object') return null
@@ -1455,6 +1476,12 @@ function roomTick(room) {
 
     if (room.sim.matchOver) {
       const stats = roomStats(room)
+      // ЭКОНОМИКА V1 — контекст коэффициента эффективности: вклад каждого юнита (урон+фраги·300),
+      // макс по бою (MVP), макс по команде (best), средний (good/avg/weak). Боты участвуют в ранге.
+      const scored = stats.map((s) => ({ team: s.team, sc: econ.contribScore({ damage: s.damage, kills: s.kills }) }))
+      const matchMax = scored.reduce((mx, x) => Math.max(mx, x.sc), 0)
+      const teamMax = scored.reduce((mp, x) => { mp[x.team] = Math.max(mp[x.team] || 0, x.sc); return mp }, {})
+      const avgScore = scored.length ? scored.reduce((a, x) => a + x.sc, 0) / scored.length : 0
       for (const h of room.humans) {
         send(h.ws, { type: 'match-end', winner: room.sim.winner, score: room.sim.score, reason: room.sim.endReason, stats })
       }
@@ -1490,7 +1517,10 @@ function roomTick(room) {
         // fire-and-forget: match-end уже ушёл, начисление не блокирует закрытие комнаты.
         if (room.econAuthority && !room.granted) {
           const result = room.sim.winner == null ? 'draw' : room.sim.winner === h.team ? 'victory' : 'defeat'
-          econ.grantBattle(h, { result, kills: mine ? mine.kills : 0, damage: mine ? mine.damage : 0, allyScore: room.sim.score[h.team] || 0, survived: mine ? mine.alive : false }, room.id).catch((e) => console.error('[econ] grantBattle:', e && e.message))
+          // коэффициент эффективности по вкладу игрока + рангу (AFK 0.5 … MVP 2.0)
+          const mineScore = econ.contribScore({ damage: mine ? mine.damage : 0, kills: mine ? mine.kills : 0 })
+          const efficiency = econ.battleEfficiency({ score: mineScore, teamMax: teamMax[h.team] || 0, matchMax, avg: avgScore })
+          econ.grantBattle(h, { result, kills: mine ? mine.kills : 0, damage: mine ? mine.damage : 0, efficiency, survived: mine ? mine.alive : false }, room.id).catch((e) => console.error('[econ] grantBattle:', e && e.message))
         }
       }
       // СВОДКА ИИ ботов — РАЗ на матч (командно-глобальные счётчики: джиттер/координация/санити

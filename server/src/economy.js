@@ -9,6 +9,10 @@ import { loadProfile, saveProfile, withProfileLock, getSetting, listProfiles } f
 import { logEvent } from './eventlog.js'
 import * as E from 'panzer-tg-shared/economy.js'
 
+// реэкспорт для matchOver (index.js) — считает эффективность боя по вкладу+рангу (V1)
+export const contribScore = E.contribScore
+export const battleEfficiency = E.battleEfficiency
+
 let grantSeq = 0
 const dayStr = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10)
 const clampInt = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+v || 0)))
@@ -79,34 +83,28 @@ function wallet(p) {
 // h.uid/h.tankId + авторитетные числа боя из sim. Кладёт кредиты/жетоны в pendingGrants
 // (kind 'battle' — применяется без окна «подарок»). XP клиент копит сам по своему reward
 // (xp/опыт ветки/экипажа — не деньги). result: 'victory'|'draw'|'defeat'.
-export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore = 0, survived = false }, roomId = '') {
+export async function grantBattle(h, { result, kills = 0, damage = 0, efficiency = 1, survived = false }, roomId = '') {
   if (!h || !h.uid) return null
   return withProfileLock(h.uid, async () => {
     const p = await loadProfile(h.uid)
     if (!p) return null
     let credits = 0, tokens = 0
-    const r = E.battleReward({ result, kills, damage })
-    // опыт за боевые медали этого боя (повторяемый, не разовый) — складывается в общий
-    // опыт боя, как на клиенте. blockedDmg/lightKills сервер из sim не знает → 0 (как ниже).
+    // ЭКОНОМИКА БОЯ V1: база кредитов/опыта по ТИРУ техники × коэффициент ЭФФЕКТИВНОСТИ боя
+    // (AFK 0.5 … MVP 2.0 — считается в matchOver по вкладу+рангу). Свободный = 5% от опыта ветки.
+    const r = E.battleReward({ tier: E.tankTier(h.tankId), result, efficiency })
+    // опыт за боевые медали — БОНУС сверх базы. blockedDmg/lightKills сервер из sim не знает → 0.
     const medalXp = E.battleMedalXp({ kills, damage, blockedDmg: 0, lightKills: 0, survived, victory: result === 'victory' })
-    let m = 1
-    if ((p.premiumUntil || 0) > Date.now()) m += E.PREMIUM_BONUS
+    // премиум-множители: аккаунт +50% (кредиты+опыт+свободный), прем-танк +25% (кредиты+опыт).
+    const isPrem = (p.premiumUntil || 0) > Date.now()
     const premTank = E.isPremiumTank(h.tankId)
-    if (premTank) m += E.PREM_TANK.creditMult
-    credits += Math.round((r.xp + medalXp) * 1.25 * m) // кредиты ∝ опыту (база+медали), как silver=xp*1.25
-    // ОПЫТ БОЯ за бой (с премиум-множителем). Делёж как у клиента: 10% в СВОБОДНЫЙ опыт
-    // (в любую нацию), остаток — пополам ветка текущей нации / экипаж (экипаж клиентский).
-    // Опыт ветки и свободный — серверные исследовательские валюты (тратятся на открытие).
-    const xpTotal = Math.round((r.xp + medalXp) * m)
-    const freeShare = Math.round(xpTotal * E.FREE_XP_SHARE)
-    const rest = Math.max(0, xpTotal - freeShare)
-    // crew-доля срезана (CREW_XP_SHARE 0.5→0.3): экипаж качался слишком быстро (#26),
-    // высвобожденное идёт в ветку → танки открываются чуть быстрее. ЗЕРКАЛО client bankBattleXp.
-    const crewShare = Math.round(rest * E.CREW_XP_SHARE)
-    const branchShare = rest - crewShare
-    // экипаж на МАКСЕ — крю-доля (её излишек до капа) НЕ пропадает: конвертится в КРЕДИТЫ
-    // (xp×1.25, как silver) — фидбек #26 «экипаж фулл за 25 боёв, зато кредитов не хватает».
-    // crew.xp ведёт клиент; берём его последнее значение. ЗЕРКАЛО client bankBattleXp.
+    const crMult = 1 + (isPrem ? E.PREMIUM_BONUS : 0) + (premTank ? E.PREM_TANK.creditMult : 0)
+    const xpMult = 1 + (isPrem ? E.PREMIUM_BONUS : 0) + (premTank ? E.PREM_TANK.xpMult : 0)
+    credits += Math.round(r.credits * crMult)
+    // ОПЫТ ВЕТКИ = база×эффективность×премиум + медали. СВОБОДНЫЙ = 5% от полученного опыта ветки.
+    const branchShare = Math.round((r.xp + medalXp) * xpMult)
+    const freeShare = Math.round(branchShare * E.FREE_XP_SHARE)
+    // экипаж: доля опыта ветки (бонус, качается параллельно); на максе излишек → кредиты.
+    const crewShare = Math.round(branchShare * E.CREW_XP_SHARE)
     const crewRoom = Math.max(0, (E.CREW_MAX_LEVEL - 1) * E.CREW_LEVEL_XP - ((p.crew && p.crew.xp) || 0))
     const crewOverflow = Math.max(0, crewShare - crewRoom)
     credits += Math.round(crewOverflow * 1.25) // экипаж на максе → кредиты вместо «в никуда»
@@ -131,11 +129,14 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, allyScore 
     // медали: боевые по итогам + карьерные по серверным агрегатам (награда за первое получение)
     p.srvKills = (p.srvKills | 0) + (kills || 0)
     const awarded = new Set(Array.isArray(p.medalsAwarded) ? p.medalsAwarded : [])
-    // blockedDmg/lightKills/rating сервер из sim не знает → эти медали под авторитетностью
-    // не начисляются (мелочь, ~200-300 кр; уточним позже отдельным каналом)
+    // РЕЙТИНГОВЫЕ медали (legend@1500 / grandmaster@1800) награждаем по рейтингу профиля —
+    // фидбек @Z_86_V «рейтинг есть, наград нет!»: раньше тут стоял rating:0, поэтому медали
+    // ПОКАЗывались (клиент считает по stats.rating), но сервер НЕ выдавал награду (4000кр).
+    // Награда только КРЕДИТЫ (гемы за медали выключены #26, см.144) → чит-риск кредит-онли минимален.
+    // battles/kills — серверные счётчики (авторитетно); rating — из профиля (клиентский, но дёшев).
     const earned = [
       ...E.battleMedalIds({ kills, damage, blockedDmg: 0, lightKills: 0, survived, victory: result === 'victory' }),
-      ...E.careerMedalIds({ battles: p.srvBattles | 0, kills: p.srvKills | 0, rating: 0 }),
+      ...E.careerMedalIds({ battles: p.srvBattles | 0, kills: p.srvKills | 0, rating: (p.stats && p.stats.rating) || 0 }),
     ]
     for (const id of earned) {
       if (awarded.has(id)) continue
