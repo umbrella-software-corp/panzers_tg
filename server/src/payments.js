@@ -211,34 +211,44 @@ export function startPaymentsLoop() {
       const res = await api('getUpdates', { offset, timeout: 25, allowed_updates: ['pre_checkout_query', 'message'] })
       if (res.ok) {
         for (const u of res.result) {
-          offset = u.update_id + 1
-          if (u.pre_checkout_query) {
-            await api('answerPreCheckoutQuery', { pre_checkout_query_id: u.pre_checkout_query.id, ok: true })
-          }
-          if (u.message && typeof u.message.text === 'string') {
-            const text = u.message.text.trim()
-            const chatId = u.message.chat.id
-            const uid = `tg_${chatId}`
-            const lang = pickLang(u.message.from && u.message.from.language_code)
-            if (text.startsWith('/start')) {
-              await setPushEnabled(uid, true) // /start = вовлечение → (пере)подписываем на уведомления
-              await storeLang(uid, lang) // запомнить язык для пушей/счетов
-              await greet(chatId, lang)
-            } else if (text === '/stop' || text.startsWith('/stop')) {
-              await setPushEnabled(uid, false)
-              await api('sendMessage', { chat_id: chatId, text: t('stopConfirm', lang) })
+          // КАЖДЫЙ апдейт — в своём try/catch, и offset сдвигаем ПОСЛЕ обработки (а не до).
+          // Раньше offset сдвигался В НАЧАЛЕ, а throw в середине батча ронял весь tick →
+          // остаток батча подтверждался Telegram и ТЕРЯЛСЯ НАВСЕГДА (вкл. successful_payment
+          // → оплаченные крейты без награды, баг @mr_shoma). Теперь сбой одного апдейта не
+          // роняет батч, а потерянные оплаты не «съедаются» сдвигом offset.
+          try {
+            if (u.pre_checkout_query) {
+              await api('answerPreCheckoutQuery', { pre_checkout_query_id: u.pre_checkout_query.id, ok: true })
             }
-          }
-          const sp = u.message && u.message.successful_payment
-          if (sp) {
-            const charge = sp.telegram_payment_charge_id
-            if (await paymentSeen(charge)) continue
-            const { uid, productId, name } = JSON.parse(sp.invoice_payload || '{}')
-            if (uid && productId && (await grantProduct(uid, productId, { name, charge }))) {
-              await markPayment(charge, { uid, productId, stars: sp.total_amount })
-              console.log(`[pay] ${uid} оплатил ${productId} (${sp.total_amount} XTR)`)
+            if (u.message && typeof u.message.text === 'string') {
+              const text = u.message.text.trim()
+              const chatId = u.message.chat.id
+              const uid = `tg_${chatId}`
+              const lang = pickLang(u.message.from && u.message.from.language_code)
+              if (text.startsWith('/start')) {
+                await setPushEnabled(uid, true) // /start = вовлечение → (пере)подписываем на уведомления
+                await storeLang(uid, lang) // запомнить язык для пушей/счетов
+                await greet(chatId, lang)
+              } else if (text === '/stop' || text.startsWith('/stop')) {
+                await setPushEnabled(uid, false)
+                await api('sendMessage', { chat_id: chatId, text: t('stopConfirm', lang) })
+              }
             }
+            const sp = u.message && u.message.successful_payment
+            if (sp) {
+              const charge = sp.telegram_payment_charge_id
+              if (!(await paymentSeen(charge))) { // было `continue` — но тогда offset не сдвигался; теперь if-гард
+                const { uid, productId, name } = JSON.parse(sp.invoice_payload || '{}')
+                if (uid && productId && (await grantProduct(uid, productId, { name, charge }))) {
+                  await markPayment(charge, { uid, productId, stars: sp.total_amount })
+                  console.log(`[pay] ${uid} оплатил ${productId} (${sp.total_amount} XTR)`)
+                }
+              }
+            }
+          } catch (e) {
+            console.error('[pay] update', u.update_id, e && e.message) // апдейт залогирован, не теряет остаток батча
           }
+          offset = u.update_id + 1 // ← ПОСЛЕ обработки
         }
       }
     } catch (e) {

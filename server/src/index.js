@@ -714,6 +714,9 @@ async function handleApi(req, res) {
           const rw = econ.rollNationCrate(p, g.nation)
           if (rw) {
             crates.push(rw)
+            // ЛОГ ДРОПА: что ИМЕННО выпало из ящика → видно в карточке игрока в админке
+            // (фидбек «нам бы видеть что ему выпало»; раньше логировался только факт покупки).
+            logEvent(user.uid, 'crate_roll', { nation: g.nation, type: rw.type, tank: rw.tank || null, tier: rw.tier || null, crystals: rw.crystals || 0, freeXp: rw.freeXp || 0, credits: rw.credits || 0, camo: rw.camo || null })
             // лог выпавшего по charge — чтобы рефанд откатил ИМЕННО то, что выпало
             // (награда крейта рандомная, статичный PRODUCTS её не знает). Держим последние 50.
             if (g.charge) {
