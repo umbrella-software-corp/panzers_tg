@@ -140,6 +140,14 @@ export class BattleSim {
     this._botNames = pool
     this._botNameI = 0
 
+    // СОСТАВ БОТОВ: та же РАСПРЕДЕЛЁНКА классов (3 лёгких / 3 средних / 1 тяж), но порядок
+    // по слотам мешаем КАЖДЫЙ БОЙ → составы перестают быть одинаковыми (фидбек «однообразный
+    // состав»). Сила команды та же → СЛОЖНОСТЬ не трогаем, только разнообразие.
+    this._classMix = [...BOT_CLASS_MIX]
+    for (let i = this._classMix.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0
+      ;[this._classMix[i], this._classMix[j]] = [this._classMix[j], this._classMix[i]]
+    }
     // юниты: сначала люди, затем боты до полного состава
     this.units = []
     let uid = 1
@@ -168,7 +176,7 @@ export class BattleSim {
   }
 
   _makeUnit(id, team, slot, human, h) {
-    const botClsId = BOT_CLASS_MIX[slot % BOT_CLASS_MIX.length]
+    const botClsId = (this._classMix || BOT_CLASS_MIX)[slot % BOT_CLASS_MIX.length]
     const cls = human
       ? h.stats && h.stats.sectorDeg
         ? h.stats
@@ -240,6 +248,14 @@ export class BattleSim {
       botTurn: stats.turnRate * 0.9,
       // АРХЕТИП поведения (роль машины: штурмовик/танк/снайпер/охотник/поддержка). Только бот.
       arche: human ? null : archetypeOf(botTankId, stats.id),
+      // «ХАРАКТЕР» бота: детерминированный по id разброс ТОЛЬКО позиционных черт — дистанция
+      // боя (range) и ширина флангового захода (flank). Центрирован → среднюю меткость/урон/
+      // сложность НЕ меняет, но боты перестают вести себя как клоны (кто-то брулит в упор,
+      // кто-то держит дистанцию; кто-то заходит широко, кто-то прямо). Фидбек «боты-болванки».
+      persona: human ? null : (() => {
+        const hsh = (k) => { const x = Math.sin(id * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x) }
+        return { range: 0.8 + hsh(1) * 0.4, flank: 0.6 + hsh(2) * 0.8 }
+      })(),
       fireCd: 1 + slot * 0.2,
       stuckT: 0,
       avoidT: 0,
@@ -419,7 +435,7 @@ export class BattleSim {
     // АРХЕТИП: роль машины модулирует дистанцию боя / отход / укрытие / выбор цели / агрессию.
     // idR — предпочитаемая дистанция (кап fireRange*0.95: снайпер не «зависает» вне радиуса огня).
     const arche = b.arche || ARCHETYPE.assault
-    const idR = Math.min(ai.fireRange * 0.95, ai.idealRange * arche.distMult)
+    const idR = Math.min(ai.fireRange * 0.95, ai.idealRange * arche.distMult * (b.persona ? b.persona.range : 1))
     // КОНЦОВКА annihilation (<45с): боты ФОКУСИРУЮТ (анти-догпайл off) + прут добивать — иначе
     // бой распыляется без киллов до таймера. Считаем заранее: нужно в выборе цели ниже.
     const rush = this.mode === 'annihilation' && this.matchTime < 45
@@ -526,7 +542,7 @@ export class BattleSim {
         const blindToHuman =
           target.human && this.t >= ai.graceSec && !(this._spotted[target.team] && this._spotted[target.team].has(b.id))
         // фланг шире у нежмущих (охотник заходит во фланг/тыл), уже у напористых (штурмовик прямее)
-        const flankW = bestD > idR ? 0.3 + 0.4 * (1 - arche.push) : 0.14
+        const flankW = (bestD > idR ? 0.3 + 0.4 * (1 - arche.push) : 0.14) * (b.persona ? b.persona.flank : 1)
         // КОММИТ В ВЫСТРЕЛ: ствол готов (или вот-вот) + цель в радиусе огня → НАВОДИМСЯ на неё,
         // не флангуем и не ныряем в куст. Иначе бот вечно кружит/прячется и почти не стреляет
         // (особенно на низких скоростях новой сетки) → союзники не добивают, бой не решается.
