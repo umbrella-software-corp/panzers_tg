@@ -568,9 +568,18 @@ export function unlockReason(tank) {
 // явный следующий шаг, который тянет «ещё бой». Приоритет: забрать задачи дня → открыть
 // готовый к исследованию танк → копить опыт на след. танк → вложить свободный опыт.
 // Возвращает {kind, ...} или null; текст собирает nextGoalText (локализованно).
+// СЛЕДУЮЩИЙ танк линии для исследования = первый НЕкупленный ПОСЛЕ самого продвинутого
+// купленного (фронтир прогресса). Иначе после ПРОДАЖИ лоу-тира (напр. БТ-7) указатель
+// тыкал НАЗАД в проданный танк, хотя игрок уже на ИС-2 (баг «продал, а пишет — можно открыть»).
+export function nextResearchTank(nation) {
+  const line = tanksOfNation(nation)
+  let frontier = -1
+  for (let i = 0; i < line.length; i++) if (isOwned(line[i].id)) frontier = i
+  return line.find((tk, i) => i > frontier && !isOwned(tk.id)) || null
+}
 export function nextGoal() {
   if (tasksClaimable() > 0) return { kind: 'tasks', n: tasksClaimable() }
-  const next = tanksOfNation(nationOf(profile.selectedTank)).find((tk) => !isOwned(tk.id))
+  const next = nextResearchTank(nationOf(profile.selectedTank))
   if (next) {
     if (canUnlock(next)) return { kind: 'unlock', name: next.name }
     return { kind: 'research', name: next.name, left: Math.max(0, researchXpNeed(next) - Math.floor(branchXpOf(next))) }
@@ -591,7 +600,7 @@ export function nextGoalText(g) {
 // (фидбек #29: «начисление не работает» = на деле опыт идёт, но не видно, что до танка
 // рукой подать). null, если в этой нации всё открыто. ready=true — опыта уже хватает.
 export function researchProgress() {
-  const next = tanksOfNation(nationOf(profile.selectedTank)).find((tk) => !isOwned(tk.id))
+  const next = nextResearchTank(nationOf(profile.selectedTank))
   if (!next) return null
   const need = researchXpNeed(next)
   const have = Math.max(0, Math.floor(branchXpOf(next)))
