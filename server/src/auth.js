@@ -2,7 +2,7 @@
 // секрет = HMAC("WebAppData", BOT_TOKEN)). Без BOT_TOKEN (локальная разработка)
 // принимаем гостевой id из заголовка x-guest-id → uid "g_<id>".
 import crypto from 'crypto'
-import { pickLang, pickLangForTelegramUser, t } from './i18n.js'
+import { pickLang, t } from './i18n.js'
 
 const BOT_TOKEN = process.env.BOT_TOKEN || ''
 
@@ -47,7 +47,7 @@ export function verifyInitDataVerbose(initData) {
   }
   if (!user.id) return { ok: false, reason: 'no-user', authAge }
   // язык интерфейса/сообщений — из language_code пользователя Telegram
-  const lang = pickLangForTelegramUser(user)
+  const lang = pickLang(user.language_code)
   // start_param из ПОДПИСАННОГО initData (метка источника трафика ?startapp=…) —
   // подделать нельзя, подпись проверена выше
   return { ok: true, reason: 'ok', authAge, user, lang, startParam: params.get('start_param') || null }

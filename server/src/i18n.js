@@ -5,12 +5,9 @@
 // — это исходная аудитория, чтобы не слать им внезапный английский.
 // API: t('ns.key', lang, params). Значение может быть строкой с {плейсхолдерами}
 // или функцией (params) => string.
-import { pickLang as pickSharedLang, pickLangForTelegramUser } from 'panzer-tg-shared/lang.js'
-
-export { pickLangForTelegramUser }
 
 export function pickLang(code) {
-  return pickSharedLang(code)
+  return String(code || '').toLowerCase().startsWith('ru') ? 'ru' : 'en'
 }
 // язык для исходящих юзеру: профиль → 'ru' дефолтом (легаси-база русскоязычная)
 export const langOf = (profile) => (profile && profile.lang === 'en' ? 'en' : profile && profile.lang === 'ru' ? 'ru' : 'ru')

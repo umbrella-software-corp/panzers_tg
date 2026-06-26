@@ -18,7 +18,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { t, pickLangForTelegramUser } from './i18n.js'
+import { t, pickLang } from './i18n.js'
 import { markWroteSupport } from './feedback.js'
 
 // Хранилище: номера тикетов (один на игрока, как в МиниПолии) + назначенная
@@ -123,7 +123,7 @@ async function handle(u) {
   const chat = msg.chat
   const text = typeof msg.text === 'string' ? msg.text : ''
   const group = effectiveGroup()
-  const lang = pickLangForTelegramUser(msg.from || {}) // язык пишущего — на нём и отвечаем
+  const lang = pickLang(msg.from.language_code) // язык пишущего — на нём и отвечаем
 
   // /chatid — id любого чата (для справки)
   if (text.startsWith('/chatid')) {

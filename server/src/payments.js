@@ -5,7 +5,7 @@ import { botToken, hasBot } from './auth.js'
 import { loadProfile, saveProfile, withProfileLock, paymentSeen, markPayment, listPayments, markRefunded } from './db.js'
 import { setPushEnabled } from './notifications.js'
 import { logEvent } from './eventlog.js'
-import { t, pickLang, pickLangForTelegramUser } from './i18n.js'
+import { t, pickLang } from './i18n.js'
 
 // каталог: что начисляем за звёзды
 export const PRODUCTS = {
@@ -219,7 +219,7 @@ export function startPaymentsLoop() {
             const text = u.message.text.trim()
             const chatId = u.message.chat.id
             const uid = `tg_${chatId}`
-            const lang = pickLangForTelegramUser(u.message.from || {})
+            const lang = pickLang(u.message.from && u.message.from.language_code)
             if (text.startsWith('/start')) {
               await setPushEnabled(uid, true) // /start = вовлечение → (пере)подписываем на уведомления
               await storeLang(uid, lang) // запомнить язык для пушей/счетов
