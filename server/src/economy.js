@@ -105,7 +105,7 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, efficiency
     const freeShare = Math.round(branchShare * E.FREE_XP_SHARE)
     // экипаж: доля опыта ветки (бонус, качается параллельно); на максе излишек → кредиты.
     const crewShare = Math.round(branchShare * E.CREW_XP_SHARE)
-    const crewRoom = Math.max(0, (E.CREW_MAX_LEVEL - 1) * E.CREW_LEVEL_XP - ((p.crew && p.crew.xp) || 0))
+    const crewRoom = Math.max(0, E.CREW_XP_TO_MAX - ((p.crew && p.crew.xp) || 0)) // опыт до макс-уровня экипажа (сверх → свободный)
     const crewOverflow = Math.max(0, crewShare - crewRoom)
     credits += Math.round(crewOverflow * 1.25) // экипаж на максе → кредиты вместо «в никуда»
     if (freeShare > 0) p.freeXp = (typeof p.freeXp === 'number' ? p.freeXp : 0) + freeShare

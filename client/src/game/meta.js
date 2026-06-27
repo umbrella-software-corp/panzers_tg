@@ -242,8 +242,8 @@ export const CREW_MEMBERS = ['cmd', 'gnr', 'lod', 'drv', 'rad'].map((id) =>
     effect: (o) => `game.crew.${o.id}.effect`,
   }),
 )
-export const CREW_PERK_MAX = 3
-export const CREW_PERK_COSTS = [800, 2000, 4500] // кредиты за ранг I/II/III
+export const CREW_PERK_MAX = 10 // рангов на перк (было 3) — длинная прокачка до 100 ур. ЗЕРКАЛО shared/economy.js
+export const CREW_PERK_COSTS = [400, 700, 1100, 1700, 2400, 3300, 4500, 6000, 8000, 10500] // кредиты за ранг 1..10
 export const crewPerkCost = (curLevel) => CREW_PERK_COSTS[curLevel] ?? Infinity
 
 // ---------- рефералы (взвод/друзья — через реальные Telegram deep-link'и, без фейка) ----------
