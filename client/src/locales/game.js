@@ -90,11 +90,11 @@ export default {
       rad: { label: 'Radio', levels: ['Standard', 'Long-range', 'Commander'], stats: ['base equipment', 'view +12%', 'view +24%'] },
     },
     crew: {
-      cmd: { role: 'Commander', name: 'Cpt. Orlov', perk: 'Brothers in Arms', effect: '+1% to rate of fire, view, speed and traverse per rank' },
-      gnr: { role: 'Gunner', name: 'Sgt. Zaytsev', perk: 'Sniper', effect: '+3% damage per rank' },
-      lod: { role: 'Loader', name: 'Cpl. Kotov', perk: 'Rammer', effect: '−3% reload per rank' },
-      drv: { role: 'Driver', name: 'Sgt. Gromov', perk: 'Virtuoso', effect: '+3% speed and traverse per rank' },
-      rad: { role: 'Radioman', name: 'Jr.Sgt. Sokolov', perk: 'Eagle Eye', effect: '+4% view per rank' },
+      cmd: { role: 'Commander', name: 'Cpt. Orlov', perk: 'Brothers in Arms', effect: 'up to +3% to rate, view, speed and traverse' },
+      gnr: { role: 'Gunner', name: 'Sgt. Zaytsev', perk: 'Sniper', effect: 'up to +9% damage' },
+      lod: { role: 'Loader', name: 'Cpl. Kotov', perk: 'Rammer', effect: 'up to −9% reload' },
+      drv: { role: 'Driver', name: 'Sgt. Gromov', perk: 'Virtuoso', effect: 'up to +9% speed and traverse' },
+      rad: { role: 'Radioman', name: 'Jr.Sgt. Sokolov', perk: 'Eagle Eye', effect: 'up to +12% view' },
     },
     medals: {
       warrior: { name: 'Warrior', desc: '3+ kills in a battle' },
@@ -237,11 +237,11 @@ export default {
       rad: { label: 'Рация', levels: ['Штатная', 'Дальняя', 'Командирская'], stats: ['базовое оснащение', 'обзор +12%', 'обзор +24%'] },
     },
     crew: {
-      cmd: { role: 'Командир', name: 'к-н Орлов', perk: 'Боевое братство', effect: '+1% к темпу, обзору, ходу и манёвру за ранг' },
-      gnr: { role: 'Наводчик', name: 'ст. с-т Зайцев', perk: 'Снайпер', effect: '+3% к урону за ранг' },
-      lod: { role: 'Заряжающий', name: 'ефр. Котов', perk: 'Досылатель', effect: '−3% к перезарядке за ранг' },
-      drv: { role: 'Мехвод', name: 'с-т Громов', perk: 'Виртуоз', effect: '+3% к ходу и манёвру за ранг' },
-      rad: { role: 'Радист', name: 'мл. с-т Соколов', perk: 'Орлиный глаз', effect: '+4% к обзору за ранг' },
+      cmd: { role: 'Командир', name: 'к-н Орлов', perk: 'Боевое братство', effect: 'до +3% к темпу, обзору, ходу и манёвру' },
+      gnr: { role: 'Наводчик', name: 'ст. с-т Зайцев', perk: 'Снайпер', effect: 'до +9% к урону' },
+      lod: { role: 'Заряжающий', name: 'ефр. Котов', perk: 'Досылатель', effect: 'до −9% к перезарядке' },
+      drv: { role: 'Мехвод', name: 'с-т Громов', perk: 'Виртуоз', effect: 'до +9% к ходу и манёвру' },
+      rad: { role: 'Радист', name: 'мл. с-т Соколов', perk: 'Орлиный глаз', effect: 'до +12% к обзору' },
     },
     medals: {
       warrior: { name: 'Воин', desc: '3+ фрага за бой' },

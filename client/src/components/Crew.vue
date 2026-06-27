@@ -10,7 +10,8 @@ import {
   crewPointsFree,
   crewPointsSpent,
   upgradeCrewPerk,
-  CREW_LEVEL_XP,
+  crewXpInto,
+  crewXpNeed,
   CREW_MAX_LEVEL,
 } from '../store.js'
 import { CREW_MEMBERS, CREW_PERK_MAX, crewPerkCost } from '../game/meta.js'
@@ -24,19 +25,22 @@ const fmt = (n) => fmtNum(n || 0)
 
 const lvl = computed(() => crewLevel())
 const maxed = computed(() => lvl.value >= CREW_MAX_LEVEL)
-const xpInto = computed(() => (maxed.value ? CREW_LEVEL_XP : profile.crew.xp % CREW_LEVEL_XP))
+const xpInto = computed(() => (maxed.value ? crewXpNeed() : crewXpInto()))
+const xpNeed = computed(() => crewXpNeed())
 // уровень экипажа, на котором откроется следующее очко навыка
 const nextPointAt = computed(() => crewPointsSpent() + 2)
 
 // итоговый бафф (приближённо-аддитивно — для витрины достаточно)
+// итоговый бафф для чипов (зеркало loadoutStats, аддитивная аппроксимация): пассив
+// +0.15%/ур + перки (cmd +0.3, gnr/lod/drv +0.9, rad +1.2 за ранг). Округляем.
 const totals = computed(() => {
   const sk = profile.crew.skills || {}
-  const base = lvl.value - 1 + (sk.cmd || 0)
+  const passive = (lvl.value - 1) * 0.15 + (sk.cmd || 0) * 0.3
   return {
-    dmg: (sk.gnr || 0) * 3,
-    reload: base + (sk.lod || 0) * 3,
-    run: base + (sk.drv || 0) * 3,
-    vision: base + (sk.rad || 0) * 4,
+    dmg: Math.round((sk.gnr || 0) * 0.9),
+    reload: Math.round(passive + (sk.lod || 0) * 0.9),
+    run: Math.round(passive + (sk.drv || 0) * 0.9),
+    vision: Math.round(passive + (sk.rad || 0) * 1.2),
   }
 })
 
@@ -75,7 +79,7 @@ async function buy(m) {
         <div style="flex: 1; min-width: 0">
           <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px">
             <span class="pz-display" style="font-size: 15px">{{ t('crew.level', { lvl }) }}<span v-if="maxed" style="color: var(--amber)">{{ t('crew.max') }}</span></span>
-            <span style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500">{{ maxed ? t('crew.trainingCap') : t('crew.xpLine', { into: fmt(xpInto), need: fmt(CREW_LEVEL_XP) }) }}</span>
+            <span style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500">{{ maxed ? t('crew.trainingCap') : t('crew.xpLine', { into: fmt(xpInto), need: fmt(xpNeed) }) }}</span>
           </div>
           <div class="xp-track"><b :style="{ width: crewProgress() * 100 + '%' }"></b></div>
           <div style="font-size: 10.5px; color: var(--ink-dim); font-weight: 500; margin-top: 4px">
@@ -115,13 +119,9 @@ async function buy(m) {
             <span style="font-size: 10.5px; color: var(--ink-faint); font-weight: 500">{{ m.name }}</span>
           </div>
           <div style="font-size: 11px; color: var(--ink-dim); font-weight: 500; margin-top: 2px">{{ t('crew.perkLine', { perk: m.perk, effect: m.effect }) }}</div>
-          <div style="display: flex; gap: 3px; margin-top: 5px">
-            <span
-              v-for="r in CREW_PERK_MAX"
-              :key="r"
-              class="pip"
-              :style="{ background: r <= crewPerkLevel(m.id) ? 'var(--amber)' : 'rgba(255,255,255,.14)' }"
-            ></span>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px">
+            <div class="rank-track"><b :style="{ width: (crewPerkLevel(m.id) / CREW_PERK_MAX) * 100 + '%' }"></b></div>
+            <span class="pz-display" style="font-size: 11px; color: var(--amber); flex-shrink: 0">{{ crewPerkLevel(m.id) }}/{{ CREW_PERK_MAX }}</span>
           </div>
         </div>
 
@@ -200,6 +200,21 @@ async function buy(m) {
   width: 14px;
   height: 5px;
   border-radius: 2px;
+}
+/* полоса рангов перка (10 рангов — число + бар вместо точек) */
+.rank-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.rank-track b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--amber-deep), var(--amber) 70%, var(--amber-hi));
+  transition: width 0.3s ease;
 }
 .toast {
   position: absolute;

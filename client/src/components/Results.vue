@@ -3,7 +3,7 @@
 // как в макете — «Сводка» и «По целям» (по-целевой лог урона из движка).
 // Опыт расписан: половина в ветку нации танка, половина экипажу.
 import { computed, ref, onMounted } from 'vue'
-import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText, researchProgress, CREW_MAX_LEVEL, CREW_LEVEL_XP } from '../store.js'
+import { profile, battleEarnedMedals, grantFirstBattleReward, nextGoal, nextGoalText, researchProgress, CREW_XP_TO_MAX } from '../store.js'
 import { TANK_BY_ID, NATIONS, nationOf, ratingBand, MEDAL_BY_ID, FREE_XP_SHARE, CREW_XP_SHARE } from '../game/meta.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -32,7 +32,7 @@ const tankOf = (id) => (TANK_BY_ID[id] || {}).name || ''
 // сплит опыта: ТОЧНО как в bankBattleXp (10% свободный, остаток CREW_XP_SHARE экипажу,
 // прочее в ветку). Доля экипажа вынесена в CREW_XP_SHARE — иначе донесение показывало бы
 // один сплит, а начислялся другой (фидбек «опыт ветки начисляется нечётко», #23).
-const crewRoom = computed(() => Math.max(0, (CREW_MAX_LEVEL - 1) * CREW_LEVEL_XP - ((profile.crew && profile.crew.xp) || 0)))
+const crewRoom = computed(() => Math.max(0, CREW_XP_TO_MAX - ((profile.crew && profile.crew.xp) || 0)))
 const freeXp = computed(() => Math.round((props.reward.xp || 0) * FREE_XP_SHARE))
 const crewXpRaw = computed(() => Math.round(((props.reward.xp || 0) - freeXp.value) * CREW_XP_SHARE))
 const crewXp = computed(() => Math.min(crewXpRaw.value, crewRoom.value)) // что реально ушло в экипаж

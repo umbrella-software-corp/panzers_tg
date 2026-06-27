@@ -243,20 +243,27 @@ export const REF_MILESTONES = [
 export const SKIN_COST = { std: 0, winter: 15, desert: 15, forest: 15, night: 25, digital: 35, urban: 35, tiger: 45, gold: 60 }
 export const CAMO_COST = { '': 0, woodland: 25, desert: 25, winter: 25, tiger: 40, predator: 40, magma: 40 }
 export const GOLD_AMMO_PACKS = { g1: { amount: 10, costTokens: 12 }, g2: { amount: 30, costTokens: 30 } }
-export const CREW_PERK_COSTS = [800, 2000, 4500] // кредиты за ранг I/II/III
+export const CREW_PERK_MAX = 10 // рангов на перк (было 3) — длинная прокачка экипажа до 100 ур
+// растущая стоимость ранга в кредитах (дешёвые ранние, дорогие поздние), 10 рангов
+export const CREW_PERK_COSTS = [400, 700, 1100, 1700, 2400, 3300, 4500, 6000, 8000, 10500]
 export const crewPerkCost = (curLevel) => CREW_PERK_COSTS[curLevel] ?? Infinity
-export const CREW_PERK_MAX = 3
 export const CREW_MEMBER_IDS = ['cmd', 'gnr', 'lod', 'drv', 'rad']
-export const CREW_LEVEL_XP = 600
-// макс 16 → 15 очков навыка (level−1) = полная прокачка 5 спецов × 3 ранга. ЗЕРКАЛО
-// client/src/store.js CREW_MAX_LEVEL — менять синхронно. Сверх макса крю-опыт → свободный.
-export const CREW_MAX_LEVEL = 16
-export const crewLevel = (xp) => Math.min(CREW_MAX_LEVEL, 1 + Math.floor((xp || 0) / CREW_LEVEL_XP))
-// очки навыка: +1 за каждый уровень экипажа после первого, минус уже потраченные
+export const CREW_MAX_LEVEL = 100
+// РАСТУЩАЯ кривая опыта экипажа: до уровня n нужно ~CREW_XP_C·(n−1)^CREW_XP_P опыта
+// (ранние уровни быстрые, поздние долгие; total(100)≈86k → грайнд тянется к топам тира 10).
+// crewLevel = инверсия. Старые игроки (капались 9000=lvl16) по новой кривой → ~lvl25, копят
+// дальше; перки 0-3 валидны в 0-10 (миграция не нужна — формулы пересчитывают сами).
+// ЗЕРКАЛО client/src/store.js — менять синхронно.
+export const CREW_XP_C = 55
+export const CREW_XP_P = 1.6
+export const crewXpForLevel = (n) => Math.round(CREW_XP_C * Math.pow(Math.max(0, n - 1), CREW_XP_P))
+export const CREW_XP_TO_MAX = crewXpForLevel(CREW_MAX_LEVEL)
+export const crewLevel = (xp) => Math.min(CREW_MAX_LEVEL, 1 + Math.floor(Math.pow(Math.max(0, xp || 0) / CREW_XP_C, 1 / CREW_XP_P)))
+// очко навыка: 1 за 2 уровня → ~50 к 100-му = ровно на 5 спецов × 10 рангов
 export function crewPointsFree(crew) {
   const skills = (crew && crew.skills) || {}
   const spent = CREW_MEMBER_IDS.reduce((s, id) => s + (skills[id] || 0), 0)
-  return Math.max(0, crewLevel((crew && crew.xp) || 0) - 1 - spent)
+  return Math.max(0, Math.round((crewLevel((crew && crew.xp) || 0) - 1) / 2) - spent)
 }
 
 // ---------- стартовые значения профиля ----------

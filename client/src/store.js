@@ -731,37 +731,49 @@ export function loadoutStats(tankId) {
   base.accel *= eng
   base.turnRate *= MODULE_COMBAT.trk[tankModLevel(tank.id, 'trk') - 1]
   base.vision *= MODULE_COMBAT.rad[tankModLevel(tank.id, 'rad') - 1]
-  // экипаж: +1% к темпу/обзору/ходу/манёвру за уровень после первого
-  const ck = 1 + (crewLevel() - 1) * 0.01
+  // экипаж: пассив +0.15% к темпу/обзору/ходу/манёвру за уровень → +~15% к 100-му (как раньше
+  // +15% к 16-му, но растянуто на 100 уровней). Итог с перками ≈ +29-32% = как сейчас.
+  const ck = 1 + (crewLevel() - 1) * 0.0015
   base.vision *= ck
   base.maxSpeed *= ck
   base.turnRate *= ck
-  // перки специалистов: командир добавляет всего понемногу, остальные — своё
+  // перки спецов: шаг за ранг = прежний-макс/10 (на 10 рангах = как раньше на 3). Командир
+  // понемногу во всё, остальные — своё. CREW_PERK_MAX=10.
   const sk = profile.crew.skills || {}
-  const cmd = 1 + (sk.cmd || 0) * 0.01
-  base.damage *= 1 + (sk.gnr || 0) * 0.03
-  base.reload = +(base.reload / (ck * cmd * (1 + (sk.lod || 0) * 0.03))).toFixed(2)
-  const run = cmd * (1 + (sk.drv || 0) * 0.03)
+  const cmd = 1 + (sk.cmd || 0) * 0.003 // +3% на 10 рангах (было +1%/ранг × 3)
+  base.damage *= 1 + (sk.gnr || 0) * 0.009 // +9% на 10 (было +3%/ранг × 3)
+  base.reload = +(base.reload / (ck * cmd * (1 + (sk.lod || 0) * 0.009))).toFixed(2) // −9% на 10
+  const run = cmd * (1 + (sk.drv || 0) * 0.009) // +9% на 10
   base.maxSpeed *= run
   base.accel *= run
   base.turnRate *= run
-  base.vision *= cmd * (1 + (sk.rad || 0) * 0.04)
+  base.vision *= cmd * (1 + (sk.rad || 0) * 0.012) // +12% на 10 (было +4%/ранг × 3)
   return base
 }
 
 // ---------- экипаж: один на все танки, опыт из боёв, бафф к статам ----------
-export const CREW_LEVEL_XP = 600 // опыта на уровень
-// макс уровень = 16 → даёт 15 очков навыка (level−1), ровно на 5 спецов × 3 ранга (полная
-// прокачка экипажа). Сверх макса крю-доля опыта боя льётся в свободный (см. bankBattleXp).
-// ЗЕРКАЛО shared/economy.js CREW_MAX_LEVEL — менять В ОБОИХ местах.
-export const CREW_MAX_LEVEL = 16
+// ЭКИПАЖ 1→100, РАСТУЩАЯ кривая опыта (ЗЕРКАЛО shared/economy.js — менять В ОБОИХ местах).
+// Ранние уровни быстрые, поздние долгие; total(100)≈86k → грайнд тянется к топам. Старые
+// игроки (капались 9000=lvl16) по новой кривой → ~lvl25, копят дальше; перки 0-3 валидны в 0-10.
+export const CREW_MAX_LEVEL = 100
+const CREW_XP_C = 55
+const CREW_XP_P = 1.6
+export const crewXpForLevel = (n) => Math.round(CREW_XP_C * Math.pow(Math.max(0, n - 1), CREW_XP_P))
+export const CREW_XP_TO_MAX = crewXpForLevel(CREW_MAX_LEVEL)
 
 export const crewLevel = () =>
-  Math.min(CREW_MAX_LEVEL, 1 + Math.floor(profile.crew.xp / CREW_LEVEL_XP))
+  Math.min(CREW_MAX_LEVEL, 1 + Math.floor(Math.pow(Math.max(0, profile.crew.xp || 0) / CREW_XP_C, 1 / CREW_XP_P)))
 
 // прогресс к следующему уровню 0..1 (на максимуме всегда 1)
-export const crewProgress = () =>
-  crewLevel() >= CREW_MAX_LEVEL ? 1 : (profile.crew.xp % CREW_LEVEL_XP) / CREW_LEVEL_XP
+export const crewProgress = () => {
+  const lvl = crewLevel()
+  if (lvl >= CREW_MAX_LEVEL) return 1
+  const cur = crewXpForLevel(lvl), next = crewXpForLevel(lvl + 1)
+  return next > cur ? Math.min(1, Math.max(0, ((profile.crew.xp || 0) - cur) / (next - cur))) : 1
+}
+// опыт «в этом уровне» / нужно на уровень — для строки X / Y в UI
+export const crewXpInto = () => Math.max(0, Math.round((profile.crew.xp || 0) - crewXpForLevel(crewLevel())))
+export const crewXpNeed = () => Math.max(1, crewXpForLevel(Math.min(CREW_MAX_LEVEL, crewLevel() + 1)) - crewXpForLevel(crewLevel()))
 
 export function addCrewXp(xp) {
   profile.crew.xp += Math.max(0, Math.round(xp || 0))
@@ -771,7 +783,8 @@ export function addCrewXp(xp) {
 // Очки навыка даёт уровень экипажа: +1 за каждый уровень после первого.
 export const crewPerkLevel = (id) => (profile.crew.skills || {})[id] || 0
 export const crewPointsSpent = () => CREW_MEMBERS.reduce((s, m) => s + crewPerkLevel(m.id), 0)
-export const crewPointsFree = () => Math.max(0, crewLevel() - 1 - crewPointsSpent())
+// очко навыка: 1 за 2 уровня → 50 к 100-му = ровно на 5 спецов × 10 рангов
+export const crewPointsFree = () => Math.max(0, Math.round((crewLevel() - 1) / 2) - crewPointsSpent())
 
 export async function upgradeCrewPerk(id) {
   if (econOn()) {
@@ -813,7 +826,7 @@ export function bankBattleXp(xp) {
   const rest = Math.max(0, total - free)
   let crew = Math.round(rest * CREW_XP_SHARE) // было /2 (0.5) — экипаж качался слишком быстро (#26)
   const branch = Math.max(0, rest - crew)
-  const crewRoom = Math.max(0, (CREW_MAX_LEVEL - 1) * CREW_LEVEL_XP - (profile.crew.xp || 0))
+  const crewRoom = Math.max(0, CREW_XP_TO_MAX - (profile.crew.xp || 0))
   let crewCredits = 0
   if (crew > crewRoom) { crewCredits = Math.round((crew - crewRoom) * 1.25); crew = crewRoom } // максовый экипаж → кредиты
   addCrewXp(crew)
