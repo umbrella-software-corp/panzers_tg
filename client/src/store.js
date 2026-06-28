@@ -53,6 +53,11 @@ export function setBattleMode(mode) {
 export function setReverseSteer(mode) {
   profile.reverseSteer = mode === 'direct' ? 'direct' : 'follow'
 }
+// джойстик: фиксированный (всегда слева внизу) vs плавающий (появляется под пальцем).
+// Фикс — по тикету #27: плавающий путает («тыкаешь в разное место → едешь назад/не туда»).
+export function setJoystickFixed(on) {
+  profile.joystickFixed = !!on
+}
 // VERSION-GATE (#23 «у меня старая экономика/версия»): сервер на НОВОМ билде, а у нас
 // вкомпилен СТАРЫЙ __BUILD_ID__ (залип бандл в кэше Telegram/браузера) → разово
 // перезагружаемся за свежим. Зовётся на бутстрапе (loadConfig в App.vue) — не в бою,
