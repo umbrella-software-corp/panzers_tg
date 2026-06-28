@@ -381,13 +381,15 @@ async function refresh() {
     [t.playedToday, 'играли сегодня'],
     [(t.returnedReal||0).toLocaleString('ru-RU') + ' · ' + retPct + '%', 'вернулись (игроки, не мусор)'],
     [(t.pushReachable||0).toLocaleString('ru-RU') + ' · ' + reachPct + '%', 'доступны для пуша'],
+    [(t.pushBlockedReal||0).toLocaleString('ru-RU'), '🔴 реально заблок. бота'],
+    [(t.pushNoAccess||0).toLocaleString('ru-RU'), '🟡 не дали доступ (не запускали)'],
     [t.dau, 'актив за 24ч (DAU)'],
     [t.used3D, 'перешли в 3D'],
   ].map(([v, l]) => '<div class="card"><div class="v">' + (typeof v === 'number' ? v.toLocaleString('ru-RU') : v) + '</div><div class="l">' + l + '</div></div>').join('')
 
   const pct = (n, d) => (d ? Math.round((n / d) * 100) + '%' : '—')
   $('sources').innerHTML = table(
-    ['Источник', 'Игроков', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Заблок. бота', 'Новых 7д'],
+    ['Источник', 'Игроков', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', '🔴заблок · 🟡нет доступа', 'Новых 7д'],
     t.bySource.map((x) => [
       '<a class="lnk" onclick="showSource(\\'' + esc(x.src === '—' ? '' : x.src) + '\\')">' + (x.src === '—' ? '— без метки (прямой заход)' : esc(x.src)) + '</a>',
       x.users,
@@ -395,7 +397,7 @@ async function refresh() {
       (x.ghosts || 0) + ' · ' + pct(x.ghosts || 0, x.users),
       (x.lingered || 0) + ' · ' + pct(x.lingered || 0, x.users),
       (x.returned || 0) + ' · ' + pct(x.returned || 0, x.users),
-      (x.blocked || 0) + ' · ' + pct(x.blocked || 0, x.users),
+      '🔴' + (x.blockedReal || 0) + ' · 🟡' + (x.noAccess || 0),
       x.new7d,
     ]),
   )
@@ -403,7 +405,7 @@ async function refresh() {
   const refs = s.referrers || []
   $('referrers').innerHTML = refs.length
     ? table(
-        ['Реферер (tg-id)', 'Привёл', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', 'Заблок. бота', 'Новых 7д'],
+        ['Реферер (tg-id)', 'Привёл', 'Дошли до боя', 'Зашёл-и-исчез (<1мин)', 'Завис без боя', 'Вернулись (2-й день+)', '🔴заблок · 🟡нет доступа', 'Новых 7д'],
         refs.map((x) => [
           '<a class="lnk" onclick="showRef(\\'' + esc(x.ref) + '\\')">' + esc(String(x.ref).replace(/^tg_/, '')) + '</a>',
           x.came,
@@ -411,7 +413,7 @@ async function refresh() {
           x.ghosts + ' · ' + pct(x.ghosts, x.came),
           x.lingered + ' · ' + pct(x.lingered, x.came),
           x.returned + ' · ' + pct(x.returned, x.came),
-          (x.blocked || 0) + ' · ' + pct(x.blocked || 0, x.came),
+          '🔴' + (x.blockedReal || 0) + ' · 🟡' + (x.noAccess || 0),
           x.new7d,
         ]),
       )

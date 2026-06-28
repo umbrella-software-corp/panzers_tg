@@ -469,6 +469,8 @@ function trafficMetrics(profiles, now) {
   let reachedTotal = 0 // всего дошли до боя (реальные игроки, не мусорный трафик)
   let returnedReal = 0 // из них вернулись на 2-й день+ — чистая ретенция без гостов/ботов
   let pushBlocked = 0 // бот недоступен (заблокировал ИЛИ не дал write-access) — пуш не доходит
+  let pushBlockedReal = 0 // был успешный пуш (lastPushAt>0), теперь недоступен → РЕАЛЬНО заблокировал
+  let pushNoAccess = 0 // ни одного успешного пуша → просто НЕ ДАЛ доступ (не запускал бота)
   let pushReachable = 0 // дошли до боя И боту можно писать — реальная аудитория пушей/дайджеста
   let used3D = 0 // включали 3D-режим хоть раз (эксперимент)
   for (const p of profiles) {
@@ -487,10 +489,14 @@ function trafficMetrics(profiles, now) {
       if (returnedDay2(p)) returnedReal++
       if (!p.pushBlocked && !p.pushOff) pushReachable++ // боту можно писать → дойдёт пуш
     }
-    if (p.pushBlocked) pushBlocked++
+    if (p.pushBlocked) {
+      pushBlocked++
+      if (p.lastPushAt > 0) pushBlockedReal++ // был успешный пуш → реально заблокировал
+      else pushNoAccess++ // ни одного пуша → просто не дал доступ (не запускал бота)
+    }
     if (p.used3D) used3D++
     const key = p.src || '—'
-    const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, blocked: 0, new7d: 0 }
+    const e = bySrc.get(key) || { src: key, users: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, blocked: 0, blockedReal: 0, noAccess: 0, new7d: 0 }
     e.users++
     // та же воронка, что у рефереров: бой / зашёл-и-исчез(<1мин) / завис-без-боя / вернулись(2-й день+)
     const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
@@ -498,7 +504,7 @@ function trafficMetrics(profiles, now) {
     else if (dwell < 60000) e.ghosts++
     else e.lingered++
     if (returnedDay2(p)) e.returned++ // заходил на БОЛЕЕ поздний календарный день (МСК)
-    if (p.pushBlocked) e.blocked++ // бот недоступен (заблок./не дал write-access)
+    if (p.pushBlocked) { e.blocked++; if (p.lastPushAt > 0) e.blockedReal++; else e.noAccess++ } // реально заблок vs не дал доступ
     if (p.firstSeen && now - p.firstSeen < 7 * DAY) e.new7d++
     bySrc.set(key, e)
   }
@@ -512,6 +518,8 @@ function trafficMetrics(profiles, now) {
     reachedTotal,
     returnedReal,
     pushBlocked,
+    pushBlockedReal,
+    pushNoAccess,
     pushReachable,
     used3D,
     bySource: [...bySrc.values()].sort((a, b) => b.users - a.users),
@@ -527,9 +535,9 @@ function referrerMetrics(profiles, now) {
   const by = new Map()
   for (const p of profiles) {
     if (!p.referredBy) continue
-    const e = by.get(p.referredBy) || { ref: p.referredBy, came: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, blocked: 0, new7d: 0 }
+    const e = by.get(p.referredBy) || { ref: p.referredBy, came: 0, played: 0, ghosts: 0, lingered: 0, returned: 0, blocked: 0, blockedReal: 0, noAccess: 0, new7d: 0 }
     e.came++
-    if (p.pushBlocked) e.blocked++ // бот недоступен (заблок./не дал write-access)
+    if (p.pushBlocked) { e.blocked++; if (p.lastPushAt > 0) e.blockedReal++; else e.noAccess++ } // реально заблок vs не дал доступ
     const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
     // непересекающийся разбор: бой / открыл-и-исчез / полазил-без-боя = came
     if (p.battles > 0 || p.reachedBattle) e.played++
