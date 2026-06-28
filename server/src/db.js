@@ -88,6 +88,21 @@ export async function leaderboard(limit = 20) {
     .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > now }))
 }
 
+// МЕСТО игрока в рейтинге (для события «Борьба за рейтинг» — множитель кредитов за бой).
+// Полная сортировка по всем профилям дорого на каждый бой → кэшируем карту uid→место на 60с.
+let _rankMap = null, _rankAt = 0
+export async function ratingRankOf(uid) {
+  const now = Date.now()
+  if (!_rankMap || now - _rankAt > 60000) {
+    const sorted = (await listProfiles())
+      .filter((p) => p.name && (p.battles || 0) >= RATING_MIN_BATTLES) // тот же фильтр, что у leaderboard — места совпадают
+      .sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
+    _rankMap = new Map(sorted.map((p, i) => [p.uid, i + 1]))
+    _rankAt = now
+  }
+  return _rankMap.get(uid) || Infinity // нет в таблице (мало боёв) → без бонуса
+}
+
 // публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):
 // стата + любимая техника (самая частая в истории боёв)
 export async function playerByRank(rank) {

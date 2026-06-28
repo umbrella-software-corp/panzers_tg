@@ -5,7 +5,7 @@
 // стабильные между заходами, чтобы таблица не скакала.
 import { computed, ref, onMounted, watch } from 'vue'
 import { profile, setCustomName, syncProfile, serverConfig, medalsEarnedCount, medalsTotal, isPremium, premiumDaysLeft, playerRank } from '../store.js'
-import { ratingRivals, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS, RATING_MIN_BATTLES } from '../game/meta.js'
+import { ratingRivals, RENAME_COST_STARS, MEDALS, ratingBand, CLAN_EMBLEMS, RATING_MIN_BATTLES, ratingCreditMult, RATING_CRYSTALS_PER_DAY } from '../game/meta.js'
 import { apiRename, apiLeaderboard, apiPlayer, apiClans, apiCreateClan, apiJoinClan, apiLeaveClan, apiTournaments, apiJoinTournament, apiLeaveTournament } from '../api.js'
 import { haptic, tgUserId } from '../tg.js'
 import { t as tr, fmtDate } from '../i18n.js'
@@ -152,6 +152,8 @@ function openMe() {
 // витрина медалей: весь каталог, полученные — ярко со счётчиком, остальные тусклые
 const medalShelf = computed(() => MEDALS.map((d) => ({ def: d, count: profile.medals[d.id] || 0 })))
 const myPlace = computed(() => board.value.findIndex((r) => r.you) + 1)
+// бонус кредитов за бой по месту (событие «Борьба за рейтинг»); myPlace 0 = вне топ-20
+const myBonusPct = computed(() => (myPlace.value > 0 ? Math.round((ratingCreditMult(myPlace.value) - 1) * 100) : 0))
 // турнир активен (вкладка ТУРНИРЫ + включён в админке)
 const tournamentLive = computed(() => tab.value === 3 && serverConfig.tournaments)
 
@@ -499,6 +501,16 @@ const fmtTime = (t) => {
 
       <!-- таблица -->
       <section v-if="tab === 1">
+        <!-- СОБЫТИЕ «Борьба за рейтинг» (#29 «никто ради рейтинга не играет»): топ зарабатывает больше -->
+        <div class="rating-event">
+          <div class="re-title pz-display">⚔️ {{ tr('rating.eventTitle') }}</div>
+          <div class="re-line">
+            <span>💰 {{ tr('rating.eventCredits') }}</span>
+            <b v-if="myBonusPct > 0" class="re-you">{{ tr('rating.eventYou', { place: myPlace, pct: myBonusPct }) }}</b>
+          </div>
+          <div class="re-line"><span>💎 {{ tr('rating.eventCrystals', { n: RATING_CRYSTALS_PER_DAY }) }}</span></div>
+          <div class="re-tiers">{{ tr('rating.eventTiers') }}</div>
+        </div>
         <div class="pz-stencil-h">{{ tr('rating.leaderboard') }}</div>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px">
           <div v-for="(r, i) in board" :key="r.name + '-' + i" class="row" :class="{ you: r.you, tappable: r.live }" @click="openPlayer(r)">
@@ -657,6 +669,43 @@ const fmtTime = (t) => {
   color: var(--ink-dim);
   font-weight: 600;
   letter-spacing: 0.06em;
+}
+/* событие «Борьба за рейтинг» — карточка над таблицей лидеров */
+.rating-event {
+  border: 1px solid rgba(220, 170, 90, 0.32);
+  background: linear-gradient(180deg, rgba(242, 165, 12, 0.08), rgba(0, 0, 0, 0.22));
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 0 14px;
+}
+.re-title {
+  font-size: 13px;
+  color: var(--amber-hi);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.re-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-weight: 500;
+  margin: 3px 0;
+}
+.re-you {
+  color: var(--amber-hi);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.re-tiers {
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
 }
 .row {
   display: flex;
