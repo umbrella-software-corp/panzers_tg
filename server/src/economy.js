@@ -5,7 +5,7 @@
 // принимает авторитетный результат. Это закрывает чит «правлю localStorage → миллионы
 // кредитов / все танки» (см. [[panzer-tg-server-authority]]).
 // Цифры берём из shared/economy.js (зеркало client/src/game/meta.js).
-import { loadProfile, saveProfile, withProfileLock, getSetting, listProfiles } from './db.js'
+import { loadProfile, saveProfile, withProfileLock, getSetting, listProfiles, ratingRankOf } from './db.js'
 import { logEvent } from './eventlog.js'
 import * as E from 'panzer-tg-shared/economy.js'
 
@@ -60,6 +60,7 @@ export function econPreserve(prev, bodyProfile) {
     medalsAwarded: Array.isArray(prev.medalsAwarded) ? prev.medalsAwarded : [],
     econTasks: prev.econTasks && typeof prev.econTasks === 'object' ? prev.econTasks : { date: '', claimed: [] },
     claimedRef: Array.isArray(prev.claimedRef) ? prev.claimedRef : [],
+    eventCrystals: prev.eventCrystals && typeof prev.eventCrystals === 'object' ? prev.eventCrystals : { d: '', n: 0 }, // событие «Борьба за рейтинг» — дневной счётчик кристаллов (серверный)
   }
 }
 
@@ -99,7 +100,9 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, efficiency
     const premTank = E.isPremiumTank(h.tankId)
     const crMult = 1 + (isPrem ? E.PREMIUM_BONUS : 0) + (premTank ? E.PREM_TANK.creditMult : 0)
     const xpMult = 1 + (isPrem ? E.PREMIUM_BONUS : 0) + (premTank ? E.PREM_TANK.xpMult : 0)
-    credits += Math.round(r.credits * crMult)
+    // СОБЫТИЕ «Борьба за рейтинг»: множитель кредитов за бой по МЕСТУ в таблице лидеров (топ — больше)
+    const ratingMult = E.ratingCreditMult(await ratingRankOf(h.uid))
+    credits += Math.round(r.credits * crMult * ratingMult)
     // ОПЫТ ВЕТКИ = база×эффективность×премиум + медали. СВОБОДНЫЙ = 5% от полученного опыта ветки.
     const branchShare = Math.round((r.xp + medalXp) * xpMult)
     const freeShare = Math.round(branchShare * E.FREE_XP_SHARE)
@@ -119,6 +122,10 @@ export async function grantBattle(h, { result, kills = 0, damage = 0, efficiency
       p.premTankBattles = (p.premTankBattles | 0) + 1
       if (p.premTankBattles % E.PREM_TANK.gemEvery === 0) tokens += E.PREM_TANK.gems
     }
+    // СОБЫТИЕ «Борьба за рейтинг»: +1 кристалл (жетон) за бой, до RATING_CRYSTALS_PER_DAY/день
+    const evDay = dayStr()
+    if (!p.eventCrystals || p.eventCrystals.d !== evDay) p.eventCrystals = { d: evDay, n: 0 }
+    if (p.eventCrystals.n < E.RATING_CRYSTALS_PER_DAY) { tokens += 1; p.eventCrystals.n++ }
     // бонус за ПЕРВЫЙ завершённый бой (один раз)
     if (!p.firstBattleRewardedSrv) { p.firstBattleRewardedSrv = true; credits += E.FIRST_BATTLE_BONUS }
     // звания — по серверному числу боёв (srvBattles уже +1 на входе в бой)

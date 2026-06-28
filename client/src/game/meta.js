@@ -270,6 +270,17 @@ export const moduleCost = (tier, level) => Math.round(tier * tier * (level === 2
 export const TIER_XP = { 1: 0, 2: 450, 3: 2200, 4: 6000, 5: 14000, 6: 30000, 7: 55000, 8: 95000, 9: 150000, 10: 240000 }
 export const tankResearchXp = (tier) => TIER_XP[tier] || 0
 
+// СОБЫТИЕ «Борьба за рейтинг» (ЗЕРКАЛО shared/economy.js): множитель кредитов за бой по месту
+// в таблице лидеров + кристаллы за активность (+1/бой, до 10/день). UI — карточка в Рейтинге.
+export const RATING_CRYSTALS_PER_DAY = 10
+export function ratingCreditMult(rank) {
+  if (!rank || rank < 1) return 1
+  if (rank === 1) return 1.5
+  if (rank <= 3) return 1.3
+  if (rank <= 10) return 1.15
+  if (rank <= 50) return 1.05
+  return 1
+}
 // СВОБОДНЫЙ ОПЫТ: 12% от опыта ветки (фидбек #26 «свободного ппц мало, 3-4 за бой» — был 5% → ~×2.5). ЗЕРКАЛО shared/economy.js.
 export const FREE_XP_SHARE = 0.12
 // доля опыта ветки в ЭКИПАЖ (бонус, качается параллельно). ЗЕРКАЛО shared/economy.js.

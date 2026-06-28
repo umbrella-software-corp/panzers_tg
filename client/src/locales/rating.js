@@ -84,6 +84,11 @@ export default {
     premiumTitle: 'Premium',
     scoring: 'win +24 · draw +2 · defeat −16',
     needBattles: '{n} more battles',
+    eventTitle: 'RATING WAR',
+    eventCredits: 'Top ranks earn more credits per battle',
+    eventYou: ({ place, pct }) => `You: #${place} → +${pct}% per battle`,
+    eventCrystals: ({ n }) => `+1 crystal per battle · up to ${n}/day`,
+    eventTiers: 'Top-1 +50% · Top-3 +30% · Top-10 +15% · Top-50 +5%',
   },
   ru: {
     title: 'РЕЙТИНГ',
@@ -159,5 +164,10 @@ export default {
     premiumTitle: 'Премиум',
     scoring: 'победа +24 · ничья +2 · поражение −16',
     needBattles: 'ещё {n} боёв',
+    eventTitle: 'БОРЬБА ЗА РЕЙТИНГ',
+    eventCredits: 'Топ зарабатывает больше кредитов за бой',
+    eventYou: ({ place, pct }) => `Ты: #${place} → +${pct}% за бой`,
+    eventCrystals: ({ n }) => `+1 кристалл за бой · до ${n}/день`,
+    eventTiers: 'Топ-1 +50% · Топ-3 +30% · Топ-10 +15% · Топ-50 +5%',
   },
 }
