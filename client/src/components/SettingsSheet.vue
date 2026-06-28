@@ -6,7 +6,7 @@
 //  • строку «Поддержка» — открывает саппорт-бот (раньше была иконкой в шапке ангара).
 // Teleport в body — чтобы модалка не срывалась на мобиле (как у FeedbackSheet).
 import { computed, ref } from 'vue'
-import { profile, setReverseSteer } from '../store.js'
+import { profile, setReverseSteer, setJoystickFixed } from '../store.js'
 import { haptic, openSupport, isTester3D } from '../tg.js'
 import { track } from '../analytics.js'
 import { t } from '../i18n.js'
@@ -32,6 +32,14 @@ function toggleReverse() {
   setReverseSteer(mode)
   haptic('select')
   track('settings_reverse_changed', { mode })
+}
+
+// фиксированный джойстик (#27): отмечен = база всегда слева внизу; снят (дефолт) = плавающий
+const joyFixedOn = computed(() => !!profile.joystickFixed)
+function toggleJoyFixed() {
+  setJoystickFixed(!joyFixedOn.value)
+  haptic('select')
+  track('settings_joystick_changed', { fixed: !joyFixedOn.value })
 }
 
 function support() {
@@ -67,6 +75,17 @@ function support() {
           </span>
           <span class="set-box" :class="{ on: reverseOn }" aria-hidden="true">
             <svg v-if="reverseOn" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          </span>
+        </button>
+
+        <!-- фиксированный джойстик: чекбокс (#27) -->
+        <button class="set-check" :class="{ on: joyFixedOn }" @click="toggleJoyFixed">
+          <span class="set-check-txt">
+            <span class="set-check-label">{{ t('settings.joyFixedLabel') }}</span>
+            <span class="set-check-hint">{{ t('settings.joyFixedHint') }}</span>
+          </span>
+          <span class="set-box" :class="{ on: joyFixedOn }" aria-hidden="true">
+            <svg v-if="joyFixedOn" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
           </span>
         </button>
         <div class="set-apply">{{ t('settings.applyNote') }}</div>

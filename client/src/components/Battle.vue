@@ -558,36 +558,49 @@ game.onShot = (r) => {
 const joyVisible = ref(false)
 const joyOrigin = ref({ x: 0, y: 0 })
 const knob = ref({ x: 0, y: 0 })
-let joyActive = false
+const joyActive = ref(false) // реактивно: фикс-режим красит ручку «live» при касании
 let joyPointer = null
 const JOY_R = 52
 
-function joyStart(e) {
-  markFirstInput('joystick')
-  joyActive = true
-  joyPointer = e.pointerId
-  joyOrigin.value = { x: e.clientX, y: e.clientY }
-  knob.value = { x: 0, y: 0 }
-  joyVisible.value = true
-  e.currentTarget.setPointerCapture(e.pointerId)
-  game.setJoystick(0, 0, true)
-}
-function joyMove(e) {
-  if (!joyActive || e.pointerId !== joyPointer) return
-  let dx = e.clientX - joyOrigin.value.x
-  let dy = e.clientY - joyOrigin.value.y
-  const mag = Math.hypot(dx, dy)
-  if (mag > JOY_R) {
-    dx = (dx / mag) * JOY_R
-    dy = (dy / mag) * JOY_R
+const joyFixedEl = ref(null)
+// центр базы джойстика: фикс-режим — реальный центр элемента слева внизу (берём из DOM,
+// чтобы не считать safe-area вручную); плавающий — точка касания.
+function joyBaseCenter(e) {
+  if (profile.joystickFixed && joyFixedEl.value) {
+    const r = joyFixedEl.value.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
   }
+  return { x: e.clientX, y: e.clientY }
+}
+// перевод касания в позицию ручки + отправку в движок (относительно joyOrigin)
+function joyApply(cx, cy) {
+  let dx = cx - joyOrigin.value.x
+  let dy = cy - joyOrigin.value.y
+  const mag = Math.hypot(dx, dy)
+  if (mag > JOY_R) { dx = (dx / mag) * JOY_R; dy = (dy / mag) * JOY_R }
   knob.value = { x: dx, y: dy }
   game.setJoystick(dx / JOY_R, dy / JOY_R, true)
 }
+function joyStart(e) {
+  markFirstInput('joystick')
+  joyActive.value = true
+  joyPointer = e.pointerId
+  joyOrigin.value = joyBaseCenter(e)
+  joyVisible.value = true
+  e.currentTarget.setPointerCapture(e.pointerId)
+  // фикс: база на месте → сразу считаем направление от неё к пальцу; плавающий: центр под пальцем
+  if (profile.joystickFixed) joyApply(e.clientX, e.clientY)
+  else { knob.value = { x: 0, y: 0 }; game.setJoystick(0, 0, true) }
+}
+function joyMove(e) {
+  if (!joyActive.value || e.pointerId !== joyPointer) return
+  joyApply(e.clientX, e.clientY)
+}
 function joyEnd(e) {
   if (e && joyPointer !== null && e.pointerId !== joyPointer) return
-  joyActive = false
+  joyActive.value = false
   joyPointer = null
+  knob.value = { x: 0, y: 0 } // ручка возвращается в центр (база фикс-режима остаётся видимой)
   joyVisible.value = false
   game.setJoystick(0, 0, false)
 }
@@ -885,15 +898,22 @@ onBeforeUnmount(() => {
       @pointercancel="joyEnd"
       @touchmove.prevent
     >
-      <!-- статичная подсказка джойстика, пока палец не на экране -->
-      <div v-if="!joyVisible" class="joy-hint">
+      <!-- ФИКС-режим (#27): база ВСЕГДА слева внизу, ручка двигается от неё — предсказуемо -->
+      <div v-if="profile.joystickFixed" ref="joyFixedEl" class="joy-hint joy-fixed">
         <div class="joy-dash"></div>
-        <div class="joy-knob"></div>
+        <div class="joy-knob" :class="{ live: joyActive }" :style="{ transform: `translate(${knob.x}px, ${knob.y}px)` }"></div>
       </div>
-      <div v-if="joyVisible" class="joy-float" :style="{ left: joyOrigin.x + 'px', top: joyOrigin.y + 'px' }">
-        <div class="joy-dash"></div>
-        <div class="joy-knob live" :style="{ transform: `translate(${knob.x}px, ${knob.y}px)` }"></div>
-      </div>
+      <!-- ПЛАВАЮЩИЙ режим: статичная подсказка пока палец не на экране + джойстик под пальцем -->
+      <template v-else>
+        <div v-if="!joyVisible" class="joy-hint">
+          <div class="joy-dash"></div>
+          <div class="joy-knob"></div>
+        </div>
+        <div v-if="joyVisible" class="joy-float" :style="{ left: joyOrigin.x + 'px', top: joyOrigin.y + 'px' }">
+          <div class="joy-dash"></div>
+          <div class="joy-knob live" :style="{ transform: `translate(${knob.x}px, ${knob.y}px)` }"></div>
+        </div>
+      </template>
     </div>
 
     <!-- выбор снаряда (в онлайне снаряд решает сервер — голды пока нет) -->
@@ -1746,6 +1766,12 @@ onBeforeUnmount(() => {
   justify-content: center;
   opacity: 0.75;
   pointer-events: none;
+}
+/* фикс-джойстик (#27): та же позиция, что подсказка, но это активный контрол — ярче */
+.joy-fixed {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(0, 0, 0, 0.42);
 }
 .joy-float {
   position: fixed;
