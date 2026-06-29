@@ -161,6 +161,59 @@ export async function runDailyDigest(now = Date.now(), { dry = false } = {}) {
   return { eligible: targets.length, sent, cooldown, blocked, total: profs.length }
 }
 
+// ---------- РАЗОВЫЙ анонс события (broadcast «Борьба за рейтинг») ----------
+// Один раз пушим всем РЕАЛЬНЫМ игрокам (играл + есть tg-id), кто ещё не получал этот
+// анонс (newsPushV < NEWS_BROADCAST_VERSION). В отличие от дейли-дайджеста — БЕЗ фильтра
+// «активен сегодня» и в обход кулдауна 1/сутки (force): событие должно дойти до всех,
+// включая тех, кто играет прямо сейчас. pushOff/pushBlocked всё равно уважаем (sendPush).
+// Идемпотентно: повторный запуск дошлёт только тех, кому не дошло (newsPushV не выставлен).
+const NEWS_BROADCAST_VERSION = 1
+const eventBroadcastText = (lang) =>
+  lang === 'en'
+    ? '⚔️ New event — RATING WAR!\n\nThe higher you climb the rating, the more credits you earn every battle — Top-1 gets +50%. Plus crystals for staying active: +1 per battle, up to 10 a day.\n\nClimb the leaderboard 👇'
+    : '⚔️ Новое событие — БОРЬБА ЗА РЕЙТИНГ!\n\nЧем выше ты в рейтинге, тем больше кредитов за каждый бой — у топ-1 целых +50%. Плюс кристаллы за активность: +1 за бой, до 10 в день.\n\nПоднимайся в таблице лидеров 👇'
+
+let eventProgress = { running: false, sent: 0, blocked: 0, eligible: 0, total: 0, at: 0 }
+export const getEventProgress = () => eventProgress
+
+export async function runEventBroadcast(now = Date.now(), { dry = false } = {}) {
+  if (!dry) eventProgress = { running: true, sent: 0, blocked: 0, eligible: 0, total: 0, at: now } // ЛОК синхронно (до await)
+  const profs = await listProfiles()
+  const targets = profs.filter((r) => {
+    if (!r || !tgIdOf(r.uid)) return false
+    const played = (r.battles | 0) > 0 || r.reachedBattle || (r.srvBattles | 0) > 0 // не дёргаем фейков Traffy
+    if (!played) return false
+    if ((r.newsPushV | 0) >= NEWS_BROADCAST_VERSION) return false // уже получал этот анонс
+    return true
+  })
+  if (!dry) {
+    eventProgress.eligible = targets.length
+    eventProgress.total = profs.length
+  }
+  let sent = 0
+  let blocked = 0
+  if (!dry) {
+    for (const row of targets) {
+      const r = await sendPush(row.uid, (lang) => eventBroadcastText(lang), { now, force: true, button: playButton })
+      if (r.sent) {
+        // помечаем «получил анонс» под локом (свежее перечитывание) — идемпотентность повторов
+        await withProfileLock(row.uid, async () => {
+          const p = await loadProfile(row.uid)
+          if (p) { p.newsPushV = NEWS_BROADCAST_VERSION; await saveProfile(row.uid, p) }
+        })
+        sent++
+        eventProgress.sent = sent
+        await sleep(70) // ~14 msg/с — с запасом под лимит Telegram
+      } else if (r.reason === 'blocked' || r.reason === 'off') {
+        eventProgress.blocked = ++blocked
+      }
+    }
+    eventProgress = { running: false, sent, blocked, eligible: targets.length, total: profs.length, at: Date.now() }
+  }
+  console.log(`[push] анонс события${dry ? ' (dry)' : ''}: ${dry ? 'подходит ' + targets.length : `отправлено ${sent}, блок/отписка ${blocked} из ${targets.length}`}, профилей ${profs.length}`)
+  return { eligible: targets.length, sent, blocked, total: profs.length }
+}
+
 // тест-пуш из админки: шлём дайджест конкретному uid ПРИНУДИТЕЛЬНО (в обход кулдауна
 // 1/сутки и фильтра «активен сегодня») — проверить доставку и текст. pushOff/pushBlocked
 // всё равно уважаем (отписался/заблокировал бота → не дойдёт). daysAway берём из профиля.

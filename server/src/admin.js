@@ -134,6 +134,11 @@ export const adminPage = () => `<!doctype html>
       <button style="width:auto; padding:9px 16px; background:var(--red); color:#fff" onclick="digestSend()">⚠ Разослать дайджест ВСЕМ сейчас</button>
       <span id="digestOut" class="muted" style="font-size:12px"></span>
     </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid var(--line)">
+      <button style="width:auto; padding:9px 16px" onclick="eventDry()">Прикинуть охват анонса</button>
+      <button style="width:auto; padding:9px 16px; background:var(--amber, #f2a50c); color:#1a1a1a; font-weight:700" onclick="eventSend()">⚔ Анонс «Борьба за рейтинг» ВСЕМ</button>
+      <span id="eventOut" class="muted" style="font-size:12px"></span>
+    </div>
   </div>
 
   <div class="tabpane" id="tab-battles">
@@ -311,6 +316,45 @@ async function pollDigest() {
   } catch (e) { $('digestOut').innerHTML = '<span class="err">статус: ' + esc(e.message) + '</span>' }
 }
 window.pollDigest = pollDigest
+
+// ---- разовый анонс события «Борьба за рейтинг» (broadcast) ----
+async function eventDry() {
+  $('eventOut').textContent = '…'
+  try {
+    const r = await fetch('/api/admin/event-announce', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ dry: true }) })
+    const d = await r.json()
+    $('eventOut').innerHTML = '<span class="muted">подходит под анонс: <b style="color:var(--ink)">' + d.eligible + '</b> из ' + d.total + ' (реальные игроки, кто ещё не получал анонс). Минус заблокировавшие бота/отписки.</span>'
+  } catch (e) { $('eventOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
+}
+window.eventDry = eventDry
+
+async function eventSend() {
+  if (!confirm('Разослать анонс «Борьба за рейтинг» ВСЕМ игрокам ПРЯМО СЕЙЧАС?\\n\\nЭто разовое реальное сообщение в Telegram (в обход кулдауна). Повторный запуск дошлёт только тех, кому не дошло.')) return
+  $('eventOut').textContent = 'запускаю анонс…'
+  try {
+    const r = await fetch('/api/admin/event-announce', { method: 'POST', headers: { 'x-admin-key': KEY(), 'content-type': 'application/json' }, body: JSON.stringify({ dry: false }) })
+    const d = await r.json()
+    if (d.already) { $('eventOut').innerHTML = '<span class="muted">анонс уже идёт — повтор не запускаю</span>'; pollEvent(); return }
+    if (!d.started) { $('eventOut').innerHTML = '<span class="err">не запустилось</span>'; return }
+    pollEvent()
+  } catch (e) { $('eventOut').innerHTML = '<span class="err">сеть: ' + esc(e.message) + '</span>' }
+}
+window.eventSend = eventSend
+
+async function pollEvent() {
+  try {
+    const r = await fetch('/api/admin/event-status', { headers: { 'x-admin-key': KEY() } })
+    const p = await r.json()
+    if (p.running) {
+      $('eventOut').innerHTML = '<span class="muted">анонс идёт: <b style="color:var(--ink)">' + p.sent + '</b> / ' + p.eligible + ' …</span>'
+      setTimeout(pollEvent, 1500)
+    } else {
+      const note = p.blocked ? ' <span class="muted">(' + p.blocked + ' отписка/бот заблокирован)</span>' : ''
+      $('eventOut').innerHTML = '<span class="ok">✓ анонс отправлен: <b>' + p.sent + '</b> из ' + p.eligible + '</span>' + note
+    }
+  } catch (e) { $('eventOut').innerHTML = '<span class="err">статус: ' + esc(e.message) + '</span>' }
+}
+window.pollEvent = pollEvent
 
 async function refresh() {
   const s = await api('/api/admin/stats')

@@ -9,7 +9,7 @@ import { t as tr } from './i18n.js'
 import { loadProfile, saveProfile, withProfileLock, listProfiles, listPayments, leaderboard, playerByRank, getSetting, setSetting, srcTag, markReachedBattle, recordBattleEntry } from './db.js'
 import { PRODUCTS, createInvoice, grantProduct, refundPayment, startPaymentsLoop } from './payments.js'
 import { startSupportBot } from './support.js'
-import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, setPushEnabled, sendAdminMessage, mskDay, claimPushBonus, PUSH_BONUS_TOKENS } from './notifications.js'
+import { startNotifications, notifyFriendsInBattle, sendTestDigest, runDailyDigest, getDigestProgress, runEventBroadcast, getEventProgress, setPushEnabled, sendAdminMessage, mskDay, claimPushBonus, PUSH_BONUS_TOKENS } from './notifications.js'
 import { logEvent, readEvents } from './eventlog.js'
 import { createClan, joinClan, leaveClan, getClan, myClan, listClansView } from './clans.js'
 import { listTournaments, joinTournament, leaveTournament } from './tournaments.js'
@@ -298,6 +298,16 @@ async function handleAdmin(req, res) {
   }
   if (req.url === '/api/admin/digest-status' && req.method === 'GET') {
     return json(res, 200, getDigestProgress()) // прогресс рассылки для живого индикатора в админке
+  }
+  if (req.url === '/api/admin/event-announce' && req.method === 'POST') {
+    const { dry } = await readBody(req)
+    if (dry) return json(res, 200, await runEventBroadcast(Date.now(), { dry: true })) // прикидка охвата, без отправки
+    if (getEventProgress().running) return json(res, 200, { already: true }) // уже идёт — второй запуск НЕ плодим
+    runEventBroadcast(Date.now()).catch((e) => console.error('[push] анонс события:', e.message)) // в фоне, отвечаем сразу
+    return json(res, 200, { started: true })
+  }
+  if (req.url === '/api/admin/event-status' && req.method === 'GET') {
+    return json(res, 200, getEventProgress()) // прогресс анонса для живого индикатора
   }
   if (req.url === '/api/admin/auth-failures' && req.method === 'GET') {
     // последние отказы авторизации (почему клиент не залогинился) — кольцевой буфер в памяти
