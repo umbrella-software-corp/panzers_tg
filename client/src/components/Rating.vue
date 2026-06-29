@@ -18,7 +18,8 @@ import PzIcon from './ui/PzIcon.vue'
 import ClanEmblem from './ui/ClanEmblem.vue'
 
 const emit = defineEmits(['go'])
-const tab = ref(0)
+const props = defineProps({ initialTab: { type: Number, default: 0 } }) // открыть сразу на вкладке (напр. таблица из анонса события)
+const tab = ref(props.initialTab || 0)
 const selMedal = ref(null) // открытая модалка медали (витрина)
 const TABS = computed(() => [tr('rating.tabProfile'), tr('rating.tabRating'), tr('rating.tabClans'), tr('rating.tabTournaments')])
 // кланы и турниры пока «Скоро» — не палим недоделанное на трафике. Весь функционал
