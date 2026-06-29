@@ -19,7 +19,9 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 echo "==> apt update + base packages"
 apt-get update -y
-apt-get install -y rsync ufw ca-certificates curl
+# cron — для бэкап-задачи (минимальный Ubuntu 26.04 его не ставит по умолчанию).
+apt-get install -y rsync ufw ca-certificates curl cron
+systemctl enable --now cron 2>/dev/null || true
 
 # Provider images often ship a default apache2/nginx bound to :80 (and apache on
 # :8080). Caddy needs :80 + :443 — stop and disable them so the container can bind.
