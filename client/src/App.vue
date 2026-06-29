@@ -13,8 +13,9 @@ import DailyReward from './components/DailyReward.vue'
 import ChannelSheet from './components/ChannelSheet.vue'
 import Onboarding from './components/Onboarding.vue'
 import SecondTankChoice from './components/SecondTankChoice.vue'
+import EventNews from './components/EventNews.vue'
 import Diag from './components/Diag.vue'
-import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus, serverSynced, authRejected } from './store.js'
+import { profile, party, addRewards, bankBattleXp, bankTaskProgress, bankMedals, loadoutStats, dailyAvailable, bootSync, applyTgName, isPremium, PREMIUM_BONUS, loadConfig, setPartyToken, setBattleMode, grantFreeTank, grantReveal, econOn, applyPendingGrants, serverConfig, claimPushBonus, serverSynced, authRejected, NEWS_VERSION } from './store.js'
 import { randomMap } from './game/maps.js'
 import { TANK_BY_ID, PREM_TANK } from './game/meta.js'
 import { preloadCritical, preloadRest } from './game/preload.js'
@@ -24,6 +25,7 @@ import { t } from './i18n.js'
 
 // экраны: hangar | tree | crew | shop | rating | matchmaking | battle
 const screen = ref('hangar')
+const ratingTab = ref(0) // на какой вкладке открыть экран «Рейтинг» (0 — профиль, 1 — таблица)
 const battleKey = ref(0) // смена пересоздаёт Battle (реванш)
 const loadout = computed(() => loadoutStats(profile.selectedTank))
 // жребий боя: карта и сторона (0 — юг/синие, 1 — север/красные); реванш — там же
@@ -222,8 +224,9 @@ async function handleStartParam() {
   }
 }
 
-function go(to) {
+function go(to, tab) {
   cameFromBattle.value = false // ушёл листать ангар/другие экраны — фидбек-баннер прячем
+  if (to === 'rating' && typeof tab === 'number') ratingTab.value = tab // открыть конкретную вкладку (напр. таблицу из анонса)
   screen.value = to
 }
 
@@ -245,6 +248,29 @@ const showOnboarding = computed(
 function finishOnboarding(launch) {
   profile.onboarded = true // персистится сам (deep watch в store)
   if (launch) play()
+}
+
+// разовый анонс события (см. NEWS_VERSION). Показываем в ангаре уже играющему игроку
+// (battles>=1) ОДИН раз, когда не висит других оверлеев (онбординг/выбор танка/дейлик/
+// подарок/канал) — чтобы не стопкой. Закрытие ставит newsSeen=NEWS_VERSION (персист сам).
+const showEventNews = computed(
+  () =>
+    !booting.value &&
+    screen.value === 'hangar' &&
+    (profile.stats?.battles || 0) >= 1 &&
+    (profile.newsSeen || 0) < NEWS_VERSION &&
+    !showTankChoice.value &&
+    !showOnboarding.value &&
+    !daily.value &&
+    !channelPopup.value &&
+    !grantReveal.value,
+)
+function seenEventNews() {
+  profile.newsSeen = NEWS_VERSION // персистится сам (deep watch в store)
+}
+function eventNewsToTable() {
+  seenEventNews()
+  go('rating', 1) // открыть вкладку «Рейтинг» (таблица + карточка события)
 }
 
 // самый первый запуск: уводим новичка прямо в тренировочный бой (мимо ангара).
@@ -478,7 +504,7 @@ function rematch(reward) {
   <Tree v-else-if="screen === 'tree'" @go="go" />
   <Crew v-else-if="screen === 'crew'" @go="go" />
   <Shop v-else-if="screen === 'shop'" @go="go" />
-  <Rating v-else-if="screen === 'rating'" @go="go" />
+  <Rating v-else-if="screen === 'rating'" :initial-tab="ratingTab" @go="go" />
   <Matchmaking v-else-if="screen === 'matchmaking'" :map-id="draw.mapId" :side="draw.side" :training="training" @battle="deploy" @cancel="cancelMatchmaking" />
   <Battle v-else-if="screen === 'battle'" :key="battleKey" :loadout="loadout" :map-id="draw.mapId" :side="draw.side" :mode="profile.battleMode" :net="netMatch" :training="!!netMatch && !!netMatch.training" @exit="exitBattle" @rematch="rematch" @ended="onBattleEnded" />
 
@@ -514,6 +540,9 @@ function rematch(reward) {
 
   <!-- тур по ангару = «добро пожаловать»: после первого боя и выбора второго танка -->
   <Onboarding v-if="showOnboarding" @play="finishOnboarding(true)" @skip="finishOnboarding(false)" />
+
+  <!-- разовый анонс события «Борьба за рейтинг» (один раз, см. showEventNews) -->
+  <EventNews v-if="showEventNews" @close="seenEventNews" @table="eventNewsToTable" />
 
   <!-- стартовый сплэш-лоадер с пометкой БЕТА (пока тянем профиль) -->
   <transition name="boot-fade">

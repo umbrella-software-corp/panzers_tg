@@ -13,6 +13,10 @@ export const serverConfig = reactive({ tournaments: false, channel: { on: false,
 // покупки идут через эндпоинты, награды за бой приходят в pendingGrants, локальные
 // начисления (addRewards) — no-op. Флаг приходит из /api/config (admin-тоггл).
 export const econOn = () => serverConfig.econAuthority
+// версия «новостей/событий»: модалка-анонс показывается ОДИН раз, пока profile.newsSeen
+// отстаёт от NEWS_VERSION. Новое событие → бампнуть число + переписать тексты locales/news.js.
+// v1 = «Борьба за рейтинг» (множитель кредитов за бой + кристаллы за активность).
+export const NEWS_VERSION = 1
 // принять авторитетный кошелёк/инвентарь из ответа сервера (после покупки/клейма)
 function adoptWallet(r) {
   if (!r) return
@@ -253,6 +257,8 @@ if (typeof profile.firstBattleRewarded !== 'boolean') profile.firstBattleRewarde
 if (typeof profile.pushAsked !== 'boolean') profile.pushAsked = false
 if (typeof profile.pushBonusClaimed !== 'boolean') profile.pushBonusClaimed = false // бонус за включение уведомлений (разовый, серверный)
 if (typeof profile.used3D !== 'boolean') profile.used3D = false // включал 3D-режим хоть раз (метрика эксперимента)
+// разовая модалка-анонс события (см. NEWS_VERSION). 0 = ещё не видел → покажем один раз.
+if (typeof profile.newsSeen !== 'number') profile.newsSeen = 0
 
 // имя по умолчанию — ник из Telegram; платное (за звёзды) имя не трогаем
 applyTgName()
@@ -291,7 +297,7 @@ const rememberSrvAt = (at) => { if (at) lcSet(SRVAT_KEY, String(at)) }
 const ECON_FIELDS = ['credits', 'tokens', 'goldAmmo', 'owned', 'modules', 'crew', 'branchXp', 'freeXp', 'stats', 'tankStats', 'medals', 'camos', 'camoOwned', 'skins', 'skin', 'premTankBattles', 'rankClaimed', 'claimedRef',
   // одноразовые клиентские флаги прохождения: тоже защищаем от клоббера на гонке синка
   // (иначе тур/тренировка/выбор 2-го танка «переоткрываются» — #26 «плашка не убирается»)
-  'onboarded', 'trainingDone', 'secondTankChosen']
+  'onboarded', 'trainingDone', 'secondTankChosen', 'newsSeen']
 
 // АДОПТ серверных econ-полей из ответа POST /api/profile (под econAuthority сервер их ведёт:
 // XP/кредиты копятся на сервере за бой, раньше клиент их не получал при синке → «опыта не
