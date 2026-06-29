@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>PANZER TG — танковый PvP в Telegram</title>
+<meta name="description" content="Онлайн PvP 7×7 прямо в Telegram. 56 танков, 3 нации, кланы, прокачка экипажа. Главная фишка — наведение через движущуюся линию сведения." />
+
+<!-- OpenGraph (для красивого превью ссылки в Telegram/соцсетях) -->
+<meta property="og:title" content="PANZER TG — танковый PvP в Telegram" />
+<meta property="og:description" content="56 танков · 3 нации · бои 7×7 · кланы. Заходи и в бой — играется прямо в Telegram." />
+<meta property="og:image" content="https://panzertg.online/landing/assets/tanks/tgr2.png" />
+<meta property="og:url" content="https://panzertg.online/landing/" />
+<meta property="og:type" content="website" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Oswald:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+:root{
+  --bg:#090b08;
+  --bg2:#0d1109;
+  --panel:#11160c;
+  --olive:#3a4528;
+  --olive-l:#586b39;
+  --amber:#f2a50c;
+  --amber-d:#c47e00;
+  --cream:#e8e6da;
+  --muted:#8d917f;
+  --steel:#2a2f24;
+  --rust:#b5521e;
+  --line:rgba(232,230,218,.10);
+  --max:1180px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--cream);
+  font-family:'Oswald',system-ui,sans-serif;
+  font-weight:300;
+  line-height:1.55;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.head{font-family:'Russo One',sans-serif;font-weight:400;letter-spacing:.02em;line-height:1.05}
+a{color:inherit;text-decoration:none}
+img{display:block;max-width:100%}
+
+/* ---------- ambient background ---------- */
+#embers{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.55}
+.grid-bg{
+  position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.30;
+  background:
+    linear-gradient(transparent 0 95%, rgba(88,107,57,.16) 95% 100%) 0 0/100% 46px,
+    linear-gradient(90deg, transparent 0 95%, rgba(88,107,57,.16) 95% 100%) 0 0/46px 100%;
+  -webkit-mask-image:radial-gradient(120% 80% at 50% 8%, #000 0%, transparent 75%);
+          mask-image:radial-gradient(120% 80% at 50% 8%, #000 0%, transparent 75%);
+}
+.vignette{position:fixed;inset:0;z-index:1;pointer-events:none;
+  box-shadow:inset 0 0 240px 40px rgba(0,0,0,.9);
+  background:radial-gradient(120% 90% at 50% 0%, transparent 55%, rgba(0,0,0,.55) 100%);}
+.scan{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.04;
+  background:repeating-linear-gradient(0deg, #000 0 1px, transparent 1px 3px);}
+
+.wrap{position:relative;z-index:2;max-width:var(--max);margin:0 auto;padding:0 22px}
+
+/* ---------- top bar ---------- */
+header.top{position:fixed;top:0;left:0;right:0;z-index:50;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 22px;backdrop-filter:blur(6px);
+  background:linear-gradient(180deg, rgba(9,11,8,.82), rgba(9,11,8,0));
+  transition:background .3s, padding .3s, border-color .3s;border-bottom:1px solid transparent}
+header.top.solid{background:rgba(9,11,8,.92);border-bottom-color:var(--line);padding:10px 22px}
+.brand{font-family:'Russo One';font-size:20px;letter-spacing:.06em;display:flex;align-items:center;gap:10px}
+.brand b{color:var(--amber)}
+.brand .chip{font-family:'Oswald';font-weight:600;font-size:10px;letter-spacing:.18em;
+  color:var(--amber);border:1px solid var(--amber-d);border-radius:3px;padding:2px 6px;opacity:.85}
+.top nav{display:flex;gap:26px;align-items:center}
+.top nav a{font-weight:500;font-size:14px;letter-spacing:.04em;color:var(--muted);transition:color .2s}
+.top nav a:hover{color:var(--cream)}
+.top .play-sm{font-family:'Russo One';font-size:13px;letter-spacing:.04em;color:#1a1405;
+  background:var(--amber);padding:9px 16px;border-radius:5px;box-shadow:0 4px 18px rgba(242,165,12,.3)}
+@media(max-width:760px){.top nav a:not(.play-sm){display:none}.brand .chip{display:none}}
+
+/* ---------- buttons ---------- */
+.btn{font-family:'Russo One';display:inline-flex;align-items:center;gap:12px;cursor:pointer;
+  letter-spacing:.04em;border:none;position:relative;transition:transform .15s, box-shadow .25s}
+.btn.primary{font-size:18px;color:#1a1405;background:linear-gradient(180deg,#ffc23f,var(--amber));
+  padding:18px 34px;border-radius:7px;
+  box-shadow:0 10px 36px rgba(242,165,12,.36), inset 0 1px 0 rgba(255,255,255,.5);
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
+.btn.primary:hover{transform:translateY(-3px);box-shadow:0 16px 48px rgba(242,165,12,.5), inset 0 1px 0 rgba(255,255,255,.6)}
+.btn.primary:active{transform:translateY(-1px)}
+.btn.ghost{font-size:15px;color:var(--cream);background:transparent;padding:17px 26px;border:1px solid var(--line);border-radius:7px}
+.btn.ghost:hover{border-color:var(--amber-d);color:#fff}
+.btn .tg{width:22px;height:22px;fill:currentColor}
+.btn.primary .pulse{position:absolute;inset:0;border-radius:7px;
+  clip-path:inherit;box-shadow:0 0 0 0 rgba(242,165,12,.5);animation:pulse 2.4s ease-out infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(242,165,12,.45)}100%{box-shadow:0 0 0 26px rgba(242,165,12,0)}}
+
+/* ---------- hero ---------- */
+.hero{position:relative;min-height:100svh;display:flex;align-items:center;padding:120px 0 60px;overflow:hidden}
+.hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:30px;align-items:center;width:100%}
+.eyebrow{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:13px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--amber);margin-bottom:22px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px var(--amber);animation:blink 1.6s infinite}
+@keyframes blink{50%{opacity:.25}}
+.hero h1{font-size:clamp(40px,7vw,78px);text-transform:uppercase}
+.hero h1 .o{color:var(--amber);text-shadow:0 0 38px rgba(242,165,12,.45)}
+.hero h1 small{display:block;font-family:'Oswald';font-weight:300;font-size:clamp(15px,2.4vw,22px);
+  letter-spacing:.04em;color:var(--cream);text-transform:none;margin-top:18px;max-width:30ch;opacity:.92}
+.hero .cta-row{display:flex;gap:16px;flex-wrap:wrap;margin-top:34px}
+.hero .reassure{margin-top:18px;font-size:13px;color:var(--muted);letter-spacing:.03em}
+.hero .reassure b{color:var(--cream);font-weight:500}
+
+/* stat ticker */
+.stats{display:flex;gap:30px;margin-top:42px;flex-wrap:wrap}
+.stat .n{font-family:'Russo One';font-size:clamp(26px,4vw,38px);color:var(--cream);line-height:1}
+.stat .n i{color:var(--amber);font-style:normal}
+.stat .l{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+
+/* hero tank + reticle */
+.hero-tank{position:relative;display:flex;align-items:center;justify-content:center;min-height:440px}
+.reticle{position:absolute;width:min(440px,86vw);aspect-ratio:1;left:50%;top:50%;transform:translate(-50%,-50%)}
+.reticle svg{width:100%;height:100%;overflow:visible}
+.ring{fill:none;stroke:rgba(242,165,12,.5);stroke-width:1.4}
+.ring.dim{stroke:rgba(232,230,218,.12)}
+.tick{stroke:rgba(242,165,12,.7);stroke-width:2}
+.spin-slow{transform-origin:center;animation:spin 26s linear infinite}
+.spin-rev{transform-origin:center;animation:spin 40s linear infinite reverse}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sector{fill:rgba(242,165,12,.07);stroke:rgba(242,165,12,.35);stroke-width:1}
+.sweep{stroke:var(--amber);stroke-width:2.5;filter:drop-shadow(0 0 6px var(--amber));
+  transform-origin:250px 250px;animation:sweep 1.9s cubic-bezier(.45,0,.55,1) infinite alternate}
+@keyframes sweep{from{transform:rotate(-26deg)}to{transform:rotate(26deg)}}
+.htank{position:relative;z-index:3;width:min(320px,64vw);
+  filter:drop-shadow(0 30px 40px rgba(0,0,0,.7)) drop-shadow(0 0 1px rgba(0,0,0,.6));
+  animation:float 6s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-14px)}}
+.lock{position:absolute;z-index:4;font-family:'Russo One';font-size:11px;letter-spacing:.18em;
+  color:var(--amber);top:8%;left:50%;transform:translateX(-50%);
+  border:1px solid var(--amber-d);padding:3px 10px;border-radius:3px;background:rgba(9,11,8,.6);
+  animation:lockblink 1.9s steps(1) infinite}
+@keyframes lockblink{50%{opacity:.2}}
+
+@media(max-width:880px){
+  .hero-grid{grid-template-columns:1fr;text-align:center}
+  .hero{padding-top:104px}
+  .eyebrow,.hero .cta-row,.stats{justify-content:center}
+  .hero h1 small{margin-left:auto;margin-right:auto}
+  .hero-tank{order:-1;min-height:330px;margin-bottom:6px}
+}
+
+/* ---------- section frame ---------- */
+section.block{position:relative;padding:96px 0}
+.kicker{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:12px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--amber);margin-bottom:16px}
+.kicker::before{content:"";width:26px;height:1px;background:var(--amber-d)}
+.h2{font-size:clamp(28px,4.6vw,46px);text-transform:uppercase;margin-bottom:16px}
+.lead{font-size:clamp(16px,2vw,19px);color:#c8c9bd;max-width:60ch;font-weight:300}
+.center{text-align:center}.center .kicker{justify-content:center}
+.center .lead{margin:0 auto}
+
+/* reveal — content is visible by default; only hidden once JS confirms it can reveal it */
+.js .rev{opacity:0;transform:translateY(28px);transition:opacity .7s, transform .7s}
+.js .rev.in{opacity:1;transform:none}
+
+/* ---------- mechanic showcase ---------- */
+.mech{display:grid;grid-template-columns:1fr 1fr;gap:46px;align-items:center;margin-top:42px}
+.mech-demo{position:relative;background:
+  radial-gradient(120% 120% at 50% 0%, rgba(58,69,40,.5), transparent 70%),
+  linear-gradient(180deg,#10160a,#0a0d07);
+  border:1px solid var(--line);border-radius:14px;padding:28px;aspect-ratio:1;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.mech-demo::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.18) 3px 4px);opacity:.4}
+.mech-demo svg{width:100%;height:100%;position:relative;z-index:2}
+.enemy{fill:var(--rust);stroke:#000;stroke-width:1}
+.demo-sweep{stroke:var(--amber);stroke-width:3;filter:drop-shadow(0 0 7px var(--amber));
+  transform-origin:200px 360px;animation:dsweep 2.3s cubic-bezier(.5,0,.5,1) infinite alternate}
+@keyframes dsweep{from{transform:rotate(-30deg)}to{transform:rotate(30deg)}}
+.hit-flash{opacity:0}
+.mech ul{list-style:none;margin-top:24px;display:flex;flex-direction:column;gap:14px}
+.mech li{display:flex;gap:14px;font-size:15.5px;color:#cdcfc2}
+.mech li .num{flex:none;width:30px;height:30px;border-radius:6px;display:grid;place-items:center;
+  font-family:'Russo One';font-size:13px;color:var(--amber);background:rgba(242,165,12,.1);border:1px solid var(--amber-d)}
+@media(max-width:880px){.mech{grid-template-columns:1fr;gap:30px}}
+
+/* ---------- features ---------- */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
+.feat{position:relative;background:linear-gradient(180deg,rgba(17,22,12,.9),rgba(10,13,7,.9));
+  border:1px solid var(--line);border-radius:12px;padding:26px 24px;overflow:hidden;
+  transition:transform .25s, border-color .25s, box-shadow .25s}
+.feat::before{content:"";position:absolute;left:0;top:0;width:100%;height:2px;
+  background:linear-gradient(90deg,var(--amber),transparent);transform:scaleX(0);transform-origin:left;transition:transform .35s}
+.feat:hover{transform:translateY(-6px);border-color:rgba(242,165,12,.35);box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.feat:hover::before{transform:scaleX(1)}
+.feat .ic{width:46px;height:46px;margin-bottom:16px;display:grid;place-items:center;border-radius:10px;
+  background:rgba(242,165,12,.08);border:1px solid rgba(242,165,12,.25)}
+.feat .ic svg{width:24px;height:24px;stroke:var(--amber);fill:none;stroke-width:1.7}
+.feat h3{font-size:17px;text-transform:uppercase;margin-bottom:8px;color:var(--cream)}
+.feat p{font-size:14.5px;color:var(--muted);font-weight:300}
+@media(max-width:880px){.feat-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.feat-grid{grid-template-columns:1fr}}
+
+/* ---------- roster ---------- */
+.roster-strip{display:flex;gap:18px;overflow-x:auto;padding:38px 22px 12px;
+  scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;margin:0 -22px}
+.roster-strip::-webkit-scrollbar{height:6px}
+.roster-strip::-webkit-scrollbar-thumb{background:var(--olive);border-radius:3px}
+.tcard{flex:none;width:208px;scroll-snap-align:center;
+  background:radial-gradient(120% 80% at 50% 18%, rgba(58,69,40,.42), transparent 72%);
+  border:1px solid var(--line);border-radius:14px;padding:20px 16px 18px;text-align:center;
+  transition:transform .25s, border-color .25s;position:relative}
+.tcard:hover{transform:translateY(-8px) scale(1.02);border-color:rgba(242,165,12,.4)}
+.tcard img{height:170px;margin:0 auto 12px;width:auto;
+  filter:drop-shadow(0 16px 20px rgba(0,0,0,.6));transition:transform .3s}
+.tcard:hover img{transform:scale(1.06)}
+.tcard .nm{font-family:'Russo One';font-size:14px;letter-spacing:.04em;color:var(--cream)}
+.tcard .flag{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.tcard .tier{position:absolute;top:12px;left:12px;display:inline-flex;align-items:baseline;gap:3px;
+  font-family:'Russo One';font-size:13px;color:var(--amber);
+  border:1px solid var(--amber-d);border-radius:4px;padding:3px 8px;background:rgba(9,11,8,.72)}
+.tcard .tier::before{content:"ТИР";font-size:7px;letter-spacing:.12em;color:var(--muted);align-self:center}
+
+/* ---------- medals ---------- */
+.medals-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:40px}
+.medal{width:108px;text-align:center;transition:transform .3s}
+.medal:hover{transform:translateY(-8px) rotate(-3deg)}
+.medal img{width:78px;height:78px;margin:0 auto 8px;object-fit:contain;
+  filter:drop-shadow(0 8px 14px rgba(0,0,0,.55))}
+.medal span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+
+/* ---------- final CTA ---------- */
+.final{position:relative;text-align:center;padding:110px 0;overflow:hidden}
+.final::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(70% 120% at 50% 50%, rgba(242,165,12,.14), transparent 70%);}
+.final h2{font-size:clamp(30px,5.5vw,58px);text-transform:uppercase;position:relative}
+.final h2 .o{color:var(--amber)}
+.final p{color:#c8c9bd;margin:18px auto 34px;max-width:48ch;font-size:18px;position:relative}
+.final .cta-row{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;position:relative}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line);padding:34px 0;color:var(--muted);font-size:13px}
+.foot-grid{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+.foot-grid .brand{font-size:16px}
+.foot-links{display:flex;gap:22px}
+.foot-links a:hover{color:var(--cream)}
+
+/* divider */
+.div-bolt{display:flex;align-items:center;gap:14px;justify-content:center;color:var(--olive-l);margin:8px 0}
+.div-bolt::before,.div-bolt::after{content:"";height:1px;width:80px;background:linear-gradient(90deg,transparent,var(--olive))}
+
+/* ---------- battle arena ---------- */
+.arena{position:relative;width:100%;aspect-ratio:16/10;border-radius:16px;overflow:hidden;
+  border:1px solid var(--line);margin-top:42px;
+  background:#0c0f08;
+  box-shadow:0 30px 80px rgba(0,0,0,.6), inset 0 0 120px rgba(0,0,0,.7);}
+.arena .terrain{position:absolute;inset:0;
+  background-image:var(--terrain);background-size:150px;background-repeat:repeat;
+  filter:brightness(.62) saturate(.85);}
+.arena .terrain::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(120% 90% at 50% 50%, transparent 30%, rgba(6,8,5,.85) 100%);}
+.arena .agrid{position:absolute;inset:0;opacity:.16;pointer-events:none;
+  background:linear-gradient(transparent 0 95%,rgba(140,160,110,.5) 95%) 0 0/100% 8.5%,
+             linear-gradient(90deg,transparent 0 95%,rgba(140,160,110,.5) 95%) 0 0/8.5% 100%;
+  -webkit-mask-image:radial-gradient(100% 80% at 50% 50%,#000,transparent 85%);
+          mask-image:radial-gradient(100% 80% at 50% 50%,#000,transparent 85%);}
+.fog{position:absolute;width:60%;height:60%;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,rgba(10,13,8,.9),transparent 70%);filter:blur(20px);
+  animation:drift 18s ease-in-out infinite}
+.fog.f2{animation-duration:24s;animation-direction:reverse}
+@keyframes drift{0%,100%{transform:translate(-10%,-6%)}50%{transform:translate(12%,8%)}}
+.unit{position:absolute;width:7.2%;transform:translate(-50%,-50%);z-index:3;
+  filter:drop-shadow(0 6px 8px rgba(0,0,0,.7))}
+.unit.enemy{filter:drop-shadow(0 6px 8px rgba(0,0,0,.7)) saturate(.55) brightness(.92)}
+.unit img{width:100%}
+.unit.ally img{transform:rotate(180deg)}
+.unit::after{content:"";position:absolute;left:50%;top:-9px;width:8px;height:8px;border-radius:50%;
+  transform:translateX(-50%);box-shadow:0 0 8px currentColor;background:currentColor}
+.unit.ally{color:#7dd44a}.unit.enemy{color:#e7402f}
+.cap{position:absolute;left:50%;top:46%;width:13%;aspect-ratio:1;transform:translate(-50%,-50%);z-index:2}
+.cap svg{width:100%;height:100%;animation:spin 14s linear infinite}
+.cap-c{fill:rgba(242,165,12,.07);stroke:var(--amber);stroke-width:2;stroke-dasharray:6 8}
+.cap-t{position:absolute;inset:0;display:grid;place-items:center;font-family:'Russo One';
+  font-size:clamp(14px,2.4vw,22px);color:var(--amber);animation:capblink 2s ease-in-out infinite}
+@keyframes capblink{50%{opacity:.4}}
+.tracers{position:absolute;inset:0;z-index:4;pointer-events:none}
+.tr{stroke:#ffd05a;stroke-width:.7;stroke-linecap:round;filter:drop-shadow(0 0 1.5px #ffb020);
+  opacity:0;animation:tracer 3.4s linear infinite}
+.tr.e{stroke:#ff7a5d;filter:drop-shadow(0 0 1.5px #ff3b1e)}
+@keyframes tracer{0%,3%{opacity:0}5%{opacity:1}13%{opacity:.9}18%{opacity:0}100%{opacity:0}}
+.flash{fill:#ffe08a;opacity:0;animation:mflash 3.4s linear infinite}
+@keyframes mflash{0%,3%{opacity:0;r:.4}5%{opacity:1;r:2.2}11%{opacity:0;r:.8}100%{opacity:0}}
+.arena .hud{position:absolute;font-family:'Russo One';font-size:11px;letter-spacing:.12em;
+  color:rgba(232,230,218,.55);z-index:5}
+.arena .hud.tl{top:14px;left:16px;color:#7dd44a}
+.arena .hud.tr{top:14px;right:16px;color:#e7402f}
+.arena .hud.bl{bottom:14px;left:16px;display:flex;align-items:center;gap:7px;color:rgba(232,230,218,.5)}
+.arena .hud .pip{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);animation:blink 1.4s infinite}
+.arena .scanline{position:absolute;left:0;right:0;height:2px;z-index:6;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(242,165,12,.35),transparent);
+  animation:radar 5s linear infinite}
+@keyframes radar{0%{top:-2%}100%{top:102%}}
+
+/* ---------- nations ---------- */
+.nat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
+.nat{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(17,22,12,.95),rgba(9,11,8,.95));padding:30px 26px 26px;
+  transition:transform .25s,border-color .25s}
+.nat:hover{transform:translateY(-6px);border-color:rgba(242,165,12,.35)}
+.nat .band{position:absolute;top:0;left:0;right:0;height:4px}
+.nat.de .band{background:linear-gradient(90deg,#111,#c00,#ffce00)}
+.nat.su .band{background:linear-gradient(90deg,#c00,#ff3b1e,#c00)}
+.nat.us .band{background:linear-gradient(90deg,#3c3b6e,#fff,#b22234)}
+.nat .flag{font-size:30px;line-height:1}
+.nat h3{font-size:20px;text-transform:uppercase;margin:12px 0 4px}
+.nat .role{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);margin-bottom:14px}
+.nat .nimg{height:128px;display:flex;align-items:center;justify-content:center;margin:6px 0 12px}
+.nat .nimg img{height:128px;width:auto;filter:drop-shadow(0 14px 18px rgba(0,0,0,.6))}
+.nat p{font-size:14px;color:var(--muted)}
+@media(max-width:780px){.nat-grid{grid-template-columns:1fr}}
+
+/* ---------- how to play ---------- */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px;counter-reset:s}
+.step{position:relative;padding:30px 24px;border:1px solid var(--line);border-radius:14px;
+  background:linear-gradient(180deg,rgba(17,22,12,.7),rgba(9,11,8,.7))}
+.step .big{font-family:'Russo One';font-size:54px;color:transparent;-webkit-text-stroke:1.5px var(--amber-d);
+  line-height:.9;opacity:.5}
+.step h3{font-size:18px;text-transform:uppercase;margin:8px 0 8px}
+.step p{font-size:14.5px;color:var(--muted)}
+.step .arr{position:absolute;right:-22px;top:50%;transform:translateY(-50%);color:var(--olive-l);z-index:2}
+.step:last-child .arr{display:none}
+@media(max-width:780px){.steps{grid-template-columns:1fr}.step .arr{display:none}}
+
+/* ---------- faq ---------- */
+.faq{max-width:760px;margin:42px auto 0}
+.qa{border-bottom:1px solid var(--line)}
+.qa summary{list-style:none;cursor:pointer;padding:20px 4px;display:flex;justify-content:space-between;
+  align-items:center;gap:16px;font-family:'Russo One';font-size:16px;color:var(--cream);transition:color .2s}
+.qa summary::-webkit-details-marker{display:none}
+.qa summary:hover{color:var(--amber)}
+.qa summary .pm{flex:none;width:24px;height:24px;border:1px solid var(--amber-d);border-radius:6px;
+  display:grid;place-items:center;color:var(--amber);transition:transform .25s;font-size:18px;line-height:1}
+.qa[open] summary .pm{transform:rotate(45deg)}
+.qa .a{padding:0 4px 22px;color:var(--muted);font-size:15px;max-width:64ch}
+
+/* ---------- mobile sticky CTA ---------- */
+.mcta{position:fixed;left:0;right:0;bottom:0;z-index:55;display:none;
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  background:linear-gradient(0deg,rgba(9,11,8,.98),rgba(9,11,8,.82));
+  border-top:1px solid var(--line);backdrop-filter:blur(8px);
+  transform:translateY(120%);transition:transform .35s}
+.mcta.show{transform:none}
+.mcta a{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+  font-family:'Russo One';font-size:16px;color:#1a1405;padding:15px;border-radius:8px;
+  background:linear-gradient(180deg,#ffc23f,var(--amber));box-shadow:0 6px 20px rgba(242,165,12,.4)}
+.mcta a svg{width:20px;height:20px;fill:currentColor}
+@media(max-width:760px){.mcta{display:block}}
+</style>
+</head>
+<body>
+
+<canvas id="embers"></canvas>
+<div class="grid-bg"></div>
+<div class="vignette"></div>
+<div class="scan"></div>
+
+<!-- ============ TOP BAR ============ -->
+<header class="top" id="top">
+  <div class="brand">PANZER&nbsp;<b>TG</b><span class="chip">ONLINE</span></div>
+  <nav>
+    <a href="#mech">Механика</a>
+    <a href="#battle">Поле боя</a>
+    <a href="#nations">Нации</a>
+    <a href="#roster">Танки</a>
+    <a href="#faq">FAQ</a>
+    <a class="play-sm" href="https://t.me/panzers_bot" target="_blank" rel="noopener">В БОЙ ▸</a>
+  </nav>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <span class="eyebrow"><span class="dot"></span>PvP 7×7 · прямо в Telegram</span>
+        <h1>
+          Командуй<br><span class="o">бронёй</span>
+          <small>Никаких загрузок. Открыл бота — и ты в бою. 56 машин, три нации и фирменная механика наведения, которой нет больше нигде.</small>
+        </h1>
+        <div class="cta-row">
+          <a class="btn primary" href="https://t.me/panzers_bot" target="_blank" rel="noopener">
+            <span class="pulse"></span>
+            <svg class="tg" viewBox="0 0 24 24"><path d="M21.9 4.3 18.7 19c-.2 1-.9 1.3-1.8.8l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.3-5 9.1-8.2c.4-.3-.1-.5-.6-.2L6.4 13 1.6 11.5c-1-.3-1-1 .2-1.5l18.7-7.2c.9-.3 1.6.2 1.4 1.5Z"/></svg>
+            ИГРАТЬ БЕСПЛАТНО
+          </a>
+          <a class="btn ghost" href="#mech">Что за механика?</a>
+        </div>
+        <div class="reassure">Free-to-play · 2D или 3D на выбор · бой длится <b>~3 минуты</b></div>
+
+        <div class="stats">
+          <div class="stat"><div class="n" data-count="56">0</div><div class="l">машин в ангаре</div></div>
+          <div class="stat"><div class="n"><i>3</i></div><div class="l">нации</div></div>
+          <div class="stat"><div class="n"><i>7×7</i></div><div class="l">формат боя</div></div>
+          <div class="stat"><div class="n" data-count="100">0</div><div class="l">уровней экипажа</div></div>
+        </div>
+      </div>
+
+      <div class="hero-tank">
+        <div class="reticle">
+          <svg viewBox="0 0 500 500">
+            <g class="spin-slow">
+              <circle class="ring dim" cx="250" cy="250" r="240"/>
+              <g class="tick">
+                <line x1="250" y1="10" x2="250" y2="34"/><line x1="250" y1="466" x2="250" y2="490"/>
+                <line x1="10" y1="250" x2="34" y2="250"/><line x1="466" y1="250" x2="490" y2="250"/>
+              </g>
+            </g>
+            <g class="spin-rev"><circle class="ring" cx="250" cy="250" r="196" stroke-dasharray="3 12"/></g>
+            <circle class="ring" cx="250" cy="250" r="150" stroke-dasharray="1 8" opacity=".5"/>
+            <!-- firing sector -->
+            <path class="sector" d="M250 250 L122 70 A222 222 0 0 1 378 70 Z"/>
+            <!-- moving convergence line -->
+            <line class="sweep" x1="250" y1="250" x2="250" y2="40"/>
+          </svg>
+        </div>
+        <div class="lock">● LOCKED</div>
+        <img class="htank" src="assets/tanks/tgr2.png" alt="Танк" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MECHANIC ============ -->
+<section class="block" id="mech">
+  <div class="wrap">
+    <div class="rev">
+      <span class="kicker">Главная фишка</span>
+      <h2 class="h2">Целишься <span style="color:var(--amber)">манёвром</span>, а не пальцем</h2>
+      <p class="lead">Прицела нет. Держи врага в секторе стрельбы — а внутри сектора бегает <b style="color:var(--cream);font-weight:500">линия сведения</b>. Жми ОГОНЬ ровно в тот момент, когда линия проходит через цель. Просто понять — сложно освоить.</p>
+    </div>
+
+    <div class="mech">
+      <div class="mech-demo rev">
+        <svg viewBox="0 0 400 400">
+          <!-- sector -->
+          <path d="M200 360 L70 150 A250 250 0 0 1 330 150 Z" fill="rgba(242,165,12,.06)" stroke="rgba(242,165,12,.3)"/>
+          <!-- enemy -->
+          <g id="enemyG">
+            <rect class="enemy" x="178" y="120" width="44" height="54" rx="4"/>
+            <rect class="enemy" x="194" y="96" width="12" height="34"/>
+          </g>
+          <!-- player tank -->
+          <rect x="182" y="340" width="36" height="46" rx="4" fill="#586b39" stroke="#000"/>
+          <rect x="196" y="306" width="8" height="40" fill="#586b39"/>
+          <!-- sweep line -->
+          <line class="demo-sweep" x1="200" y1="360" x2="200" y2="110"/>
+          <!-- hit flash -->
+          <circle id="hitFlash" class="hit-flash" cx="200" cy="146" r="40" fill="rgba(242,165,12,.4)"/>
+          <text id="hitTxt" class="hit-flash" x="200" y="80" text-anchor="middle"
+            font-family="Russo One" font-size="26" fill="#ffc23f">HIT!</text>
+        </svg>
+      </div>
+
+      <div class="rev">
+        <ul>
+          <li><span class="num">1</span><span>Веди корпусом — сектор стрельбы привязан к стволу, мир вращается вокруг танка.</span></li>
+          <li><span class="num">2</span><span>Лёгкий, средний, тяжёлый — у каждого класса своя ширина сектора, скорость линии и точность.</span></li>
+          <li><span class="num">3</span><span>Поймал момент — пробил. Промахнулся — ждёшь перезарядку и заходишь снова.</span></li>
+        </ul>
+        <div class="cta-row" style="margin-top:30px">
+          <a class="btn primary" href="https://t.me/panzers_bot" target="_blank" rel="noopener">
+            <span class="pulse"></span>Попробовать в бою</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BATTLE ARENA ============ -->
+<section class="block" id="battle" style="padding-bottom:70px">
+  <div class="wrap center rev">
+    <span class="kicker">Поле боя</span>
+    <h2 class="h2">7 на 7 · до последней брони</h2>
+    <p class="lead">Туман войны, точка захвата, засветы и трассеры. Командная тактика в реальном времени — а матч укладывается в пару минут.</p>
+  </div>
+  <div class="wrap">
+    <div class="arena rev" style="--terrain:url('assets/tex/forest.png')">
+      <div class="terrain"></div>
+      <div class="agrid"></div>
+      <div class="fog" style="left:-6%;top:8%"></div>
+      <div class="fog f2" style="right:-8%;bottom:4%;left:auto"></div>
+
+      <!-- capture point -->
+      <div class="cap">
+        <svg viewBox="0 0 100 100"><circle class="cap-c" cx="50" cy="50" r="46"/></svg>
+        <div class="cap-t">A</div>
+      </div>
+
+      <!-- tracers + muzzle flashes (coords in 0..100 viewBox) -->
+      <svg class="tracers" viewBox="0 0 100 62">
+        <line class="tr"   x1="22" y1="50" x2="40" y2="14" style="animation-delay:.0s"/>
+        <line class="tr e" x1="74" y1="12" x2="58" y2="48" style="animation-delay:.7s"/>
+        <line class="tr"   x1="50" y1="52" x2="70" y2="16" style="animation-delay:1.4s"/>
+        <line class="tr e" x1="30" y1="14" x2="20" y2="46" style="animation-delay:2.1s"/>
+        <line class="tr"   x1="80" y1="48" x2="64" y2="14" style="animation-delay:2.7s"/>
+        <circle class="flash" cx="22" cy="50" r="2" style="animation-delay:.0s"/>
+        <circle class="flash" cx="50" cy="52" r="2" style="animation-delay:1.4s"/>
+        <circle class="flash" cx="80" cy="48" r="2" style="animation-delay:2.7s"/>
+      </svg>
+
+      <!-- allied units (bottom, barrels up) -->
+      <div class="unit ally" style="left:20%;top:80%"><img src="assets/tanks/is2.png" alt=""></div>
+      <div class="unit ally" style="left:42%;top:86%"><img src="assets/tanks/t3485.png" alt=""></div>
+      <div class="unit ally" style="left:64%;top:82%"><img src="assets/tanks/leo1.png" alt=""></div>
+      <div class="unit ally" style="left:82%;top:74%"><img src="assets/tanks/m1a2.png" alt=""></div>
+
+      <!-- enemy units (top, barrels down) -->
+      <div class="unit enemy" style="left:30%;top:16%"><img src="assets/tanks/maus.png" alt=""></div>
+      <div class="unit enemy" style="left:54%;top:12%"><img src="assets/tanks/jagdpanther.png" alt=""></div>
+      <div class="unit enemy" style="left:74%;top:18%"><img src="assets/tanks/tgr2.png" alt=""></div>
+      <div class="unit enemy" style="left:14%;top:24%"><img src="assets/tanks/kv2.png" alt=""></div>
+
+      <div class="scanline"></div>
+      <div class="hud tl">● СОЮЗНИКИ 7</div>
+      <div class="hud tr">ПРОТИВНИК 7 ●</div>
+      <div class="hud bl"><span class="pip"></span>ПОЛИГОН · ЗАХВАТ ТОЧКИ&nbsp;A · 02:48</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section class="block" id="feat">
+  <div class="wrap">
+    <div class="center rev">
+      <span class="kicker">Полноценная мета-игра</span>
+      <h2 class="h2">Не прототип — целая война</h2>
+      <p class="lead">Бой — только начало. Дальше прокачка, нации, кланы и охота за редкими машинами.</p>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5Z"/><path d="M12 22V12M3 7l9 5 9-5"/></svg></div>
+        <h3>3D-режим</h3><p>Бои, ангар и карты в объёме: модели танков, рельеф, свет и туман. Включается тумблером — не любишь 3D, играй в классическом 2D.</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><path d="M2 15h2l1.6-3h8.8l2 3H18v3H2z"/><path d="M12 12V9h5"/><circle cx="7" cy="16.6" r="1"/><circle cx="11" cy="16.6" r="1"/><circle cx="15" cy="16.6" r="1"/></svg></div>
+        <h3>От ВОВ до наших дней</h3><p>Не только Вторая мировая: современные ОБТ — Т-14 «Армата», M1A2 Abrams, Leopard 2A7 и KF51 «Пантера».</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2v20M2 7l10 5 10-5M2 17l10 5 10-5"/></svg></div>
+        <h3>Бои 7×7 онлайн</h3><p>Живые игроки и умные боты, неотличимые от людей. Матч за пару минут, реалтайм на сервере.</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="8" rx="1"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h3>56 танков · 3 нации</h3><p>Германия, СССР, США — от лёгких разведчиков и средних до тяжёлых утюгов, ПТ-САУ и современных ОБТ. Своя ветка прокачки.</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg></div>
+        <h3>Кланы и взводы</h3><p>Привяжи клан к своей Telegram-группе, собирай взвод и катай составом ±1 тир.</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2 4 7v6c0 5 3.4 8.5 8 9 4.6-.5 8-4 8-9V7l-8-5Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h3>Экипаж 1 → 100</h3><p>Длинная прогрессия, перки спецов и пассивные бонусы. Качай командира, наводчика, механика.</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1"/><path d="M3 8l3-5h12l3 5M12 8v13M8 13h2M14 13h2"/></svg></div>
+        <h3>Крейты и гача</h3><p>Крутка трёх наций: камуфляжи, кристаллы, свободный опыт и шанс на топовую машину. Pity-система внутри.</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="6"/><path d="M9 14.5 7 22l5-3 5 3-2-7.5"/></svg></div>
+        <h3>Медали и рейтинг</h3><p>«Ас», «Гвардеец», «Палач», «Легенда» — награды за подвиги и личный рейтинг за каждый бой.</p></div>
+
+      <div class="feat rev"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".6"/></svg></div>
+        <h3>Плавный старт</h3><p>Первый бой — тренировочный: игра показывает управление и сведение на «замороженных» ботах. Влиться легко.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ NATIONS ============ -->
+<section class="block" id="nations" style="padding-top:40px">
+  <div class="wrap center rev">
+    <span class="kicker">Три школы танкостроения</span>
+    <h2 class="h2">Выбери свою сторону</h2>
+    <p class="lead">У каждой нации — свой почерк боя. От пробивной мощи до манёвра и универсальности.</p>
+  </div>
+  <div class="wrap">
+    <div class="nat-grid">
+      <div class="nat de rev"><div class="band"></div>
+        <div class="flag">🇩🇪</div>
+        <h3>Германия</h3><div class="role">Точность · пробитие</div>
+        <div class="nimg"><img src="assets/tanks/tgr2.png" alt=""></div>
+        <p>Снайперские орудия и крепкая лобовая броня. Наказывает за каждую ошибку противника — от Tiger II до Leopard 2.</p>
+      </div>
+      <div class="nat su rev"><div class="band"></div>
+        <div class="flag">🟥</div>
+        <h3>СССР</h3><div class="role">Броня · альфа-урон</div>
+        <div class="nimg"><img src="assets/tanks/is2.png" alt=""></div>
+        <p>Толстые утюги и фугасные гаубицы. Продавливает направление массой — ИС-2, КВ-2, Т-90.</p>
+      </div>
+      <div class="nat us rev"><div class="band"></div>
+        <div class="flag">🇺🇸</div>
+        <h3>США</h3><div class="role">Универсальность · УВН</div>
+        <div class="nimg"><img src="assets/tanks/m1a2.png" alt=""></div>
+        <p>Гибкие машины с отличными углами вертикальной наводки — играют от рельефа. Sherman, Abrams и компания.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ROSTER ============ -->
+<section class="block" id="roster" style="padding-bottom:60px">
+  <div class="wrap center rev">
+    <span class="kicker">Ангар</span>
+    <h2 class="h2">Выбирай свою машину</h2>
+    <p class="lead">От манёвренных «светляков» Второй мировой до современных ОБТ — «Армата», Abrams, Leopard 2, KF51. Камуфляж, апгрейды, свой стиль.</p>
+  </div>
+  <div class="wrap">
+    <div class="roster-strip rev">
+      <div class="tcard"><span class="tier">X</span><img src="assets/tanks/t14.png" alt="T-14"><div class="nm">Т-14 АРМАТА</div><div class="flag">СССР · тяж</div></div>
+      <div class="tcard"><span class="tier">IX</span><img src="assets/tanks/m1a2.png" alt="M1A2"><div class="nm">M1A2 ABRAMS</div><div class="flag">США · тяж</div></div>
+      <div class="tcard"><span class="tier">IX</span><img src="assets/tanks/leo2a7.png" alt="Leopard 2A7"><div class="nm">LEOPARD 2A7</div><div class="flag">Германия · ср</div></div>
+      <div class="tcard"><span class="tier">VIII</span><img src="assets/tanks/maus.png" alt="Maus"><div class="nm">MAUS</div><div class="flag">Германия · према</div></div>
+      <div class="tcard"><span class="tier">VIII</span><img src="assets/tanks/t90.png" alt="T-90"><div class="nm">Т-90</div><div class="flag">СССР · ср</div></div>
+      <div class="tcard"><span class="tier">VII</span><img src="assets/tanks/isu152.png" alt="ISU-152"><div class="nm">ИСУ-152</div><div class="flag">СССР · ПТ</div></div>
+      <div class="tcard"><span class="tier">VII</span><img src="assets/tanks/jagdpanther.png" alt="Jagdpanther"><div class="nm">JAGDPANTHER</div><div class="flag">Германия · ПТ</div></div>
+      <div class="tcard"><span class="tier">VII</span><img src="assets/tanks/leo1.png" alt="Leopard 1"><div class="nm">LEOPARD 1</div><div class="flag">Германия · ср</div></div>
+      <div class="tcard"><span class="tier">VI</span><img src="assets/tanks/is2.png" alt="IS-2"><div class="nm">ИС-2</div><div class="flag">СССР · тяж</div></div>
+      <div class="tcard"><span class="tier">VI</span><img src="assets/tanks/tgr2.png" alt="Tiger II"><div class="nm">TIGER II</div><div class="flag">Германия · тяж</div></div>
+      <div class="tcard"><span class="tier">VI</span><img src="assets/tanks/kv2.png" alt="KV-2"><div class="nm">КВ-2</div><div class="flag">СССР · тяж</div></div>
+      <div class="tcard"><span class="tier">IV</span><img src="assets/tanks/t3485.png" alt="T-34-85"><div class="nm">Т-34-85</div><div class="flag">СССР · ср</div></div>
+    </div>
+    <p class="center" style="color:var(--muted);font-size:13px;letter-spacing:.04em;margin-top:14px">↔ листай · и ещё 44 машины ждут в ангаре</p>
+  </div>
+</section>
+
+<!-- ============ HOW TO PLAY ============ -->
+<section class="block" id="how" style="padding-bottom:50px">
+  <div class="wrap center rev">
+    <span class="kicker">За 30 секунд</span>
+    <h2 class="h2">Как зайти в бой</h2>
+    <p class="lead">Никаких установок, аккаунтов и лончеров. Всё живёт внутри Telegram.</p>
+  </div>
+  <div class="wrap">
+    <div class="steps">
+      <div class="step rev"><div class="big">01</div>
+        <h3>Открой бота</h3><p>Жми кнопку, Telegram запустит мини-приложение прямо в чате. Вход через твой аккаунт — мгновенно.</p>
+        <svg class="arr" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </div>
+      <div class="step rev"><div class="big">02</div>
+        <h3>Выбери танк</h3><p>Стартовая машина уже в ангаре. Прими тренировочный бой — игра покажет управление и сведение.</p>
+        <svg class="arr" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </div>
+      <div class="step rev"><div class="big">03</div>
+        <h3>В бой 7×7</h3><p>Веди корпусом, лови линию сведения, пробивай. Победа — опыт, кредиты, медали и новые танки.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MEDALS ============ -->
+<section class="block" style="padding-top:30px">
+  <div class="wrap center rev">
+    <div class="div-bolt"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg></div>
+    <span class="kicker">За доблесть</span>
+    <h2 class="h2">Заслужи металл</h2>
+    <div class="medals-row">
+      <div class="medal"><img src="assets/medals/ace.png" alt=""><span>Ас</span></div>
+      <div class="medal"><img src="assets/medals/guards.png" alt=""><span>Гвардеец</span></div>
+      <div class="medal"><img src="assets/medals/kingslayer.png" alt=""><span>Цареубийца</span></div>
+      <div class="medal"><img src="assets/medals/firestorm.png" alt=""><span>Огненный шторм</span></div>
+      <div class="medal"><img src="assets/medals/grandmaster.png" alt=""><span>Гроссмейстер</span></div>
+      <div class="medal"><img src="assets/medals/legend.png" alt=""><span>Легенда</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="block" id="faq" style="padding-top:50px">
+  <div class="wrap center rev">
+    <span class="kicker">Коротко о главном</span>
+    <h2 class="h2">Частые вопросы</h2>
+  </div>
+  <div class="wrap">
+    <div class="faq rev">
+      <details class="qa" open><summary>Это бесплатно?<span class="pm">+</span></summary>
+        <div class="a">Да, играть можно бесплатно. Внутри есть донат — крейты, премиум-валюта и ускорение прокачки, — но он не обязателен, чтобы воевать и побеждать.</div></details>
+      <details class="qa"><summary>Нужно что-то скачивать?<span class="pm">+</span></summary>
+        <div class="a">Нет. Игра запускается прямо в Telegram как мини-приложение — ни App Store, ни установок. Открыл бота и сразу в ангаре.</div></details>
+      <details class="qa"><summary>На каком устройстве идёт?<span class="pm">+</span></summary>
+        <div class="a">На любом, где есть Telegram: iPhone, Android, а также десктоп. Управление заточено под вертикальный экран телефона.</div></details>
+      <details class="qa"><summary>Это PvP против реальных игроков?<span class="pm">+</span></summary>
+        <div class="a">Да, бои 7×7 сводят живых игроков в реальном времени. Если живых не хватает — состав добирается умными ботами, неотличимыми от людей.</div></details>
+      <details class="qa"><summary>Сколько длится бой?<span class="pm">+</span></summary>
+        <div class="a">Около 2–3 минут. Формат рассчитан на короткую сессию — заскочил между делами, отвоевал, вышел.</div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FINAL CTA ============ -->
+<section class="final">
+  <div class="wrap rev">
+    <h2>Башня на цель.<br><span class="o">ОГОНЬ.</span></h2>
+    <p>Открой бота в Telegram и заходи в первый бой. Бесплатно, без скачивания, прямо сейчас.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://t.me/panzers_bot" target="_blank" rel="noopener">
+        <span class="pulse"></span>
+        <svg class="tg" viewBox="0 0 24 24"><path d="M21.9 4.3 18.7 19c-.2 1-.9 1.3-1.8.8l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.3-5 9.1-8.2c.4-.3-.1-.5-.6-.2L6.4 13 1.6 11.5c-1-.3-1-1 .2-1.5l18.7-7.2c.9-.3 1.6.2 1.4 1.5Z"/></svg>
+        ЗАПУСТИТЬ В TELEGRAM
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div class="brand">PANZER&nbsp;<b style="color:var(--amber)">TG</b></div>
+    <div class="foot-links">
+      <a href="https://t.me/panzers_bot" target="_blank" rel="noopener">Бот</a>
+      <a href="#mech">Механика</a>
+      <a href="#roster">Танки</a>
+    </div>
+    <div>© 2026 PANZER TG · играется в Telegram</div>
+  </div>
+</footer>
+
+<!-- mobile sticky CTA -->
+<div class="mcta" id="mcta">
+  <a href="https://t.me/panzers_bot" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24"><path d="M21.9 4.3 18.7 19c-.2 1-.9 1.3-1.8.8l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.3-5 9.1-8.2c.4-.3-.1-.5-.6-.2L6.4 13 1.6 11.5c-1-.3-1-1 .2-1.5l18.7-7.2c.9-.3 1.6.2 1.4 1.5Z"/></svg>
+    ИГРАТЬ В TELEGRAM
+  </a>
+</div>
+
+<script>
+/* enable reveal animations only now that JS is alive (content shows even if JS fails) */
+document.documentElement.classList.add('js');
+
+/* ---- sticky header ---- */
+const hdr=document.getElementById('top');
+addEventListener('scroll',()=>hdr.classList.toggle('solid',scrollY>30),{passive:true});
+
+/* ---- scroll reveal (with safety net: reveal everything if IO never fires) ---- */
+const revEls=[...document.querySelectorAll('.rev')];
+try{
+  const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.14});
+  revEls.forEach(el=>io.observe(el));
+  // any .rev still hidden after 2.5s (e.g. IO quirk) gets shown unconditionally
+  setTimeout(()=>revEls.forEach(el=>el.classList.add('in')),2500);
+}catch(e){ revEls.forEach(el=>el.classList.add('in')); }
+
+/* ---- hero parallax (desktop, pointer) ---- */
+(function(){
+  const tank=document.querySelector('.htank'), ret=document.querySelector('.reticle');
+  if(!tank||matchMedia('(pointer:coarse)').matches) return;
+  let tx=0,ty=0,cx=0,cy=0;
+  addEventListener('mousemove',e=>{
+    if(scrollY>innerHeight) return;
+    tx=(e.clientX/innerWidth-.5);ty=(e.clientY/innerHeight-.5);
+  },{passive:true});
+  (function raf(){
+    cx+=(tx-cx)*.06;cy+=(ty-cy)*.06;
+    tank.style.transform=`translate(${cx*26}px,${cy*18}px) rotate(${cx*2}deg)`;
+    if(ret)ret.style.transform=`translate(-50%,-50%) translate(${cx*-14}px,${cy*-10}px)`;
+    requestAnimationFrame(raf);
+  })();
+})();
+
+/* ---- mobile sticky CTA: show after hero ---- */
+(function(){
+  const m=document.getElementById('mcta');if(!m)return;
+  addEventListener('scroll',()=>m.classList.toggle('show',scrollY>innerHeight*.7),{passive:true});
+})();
+
+/* ---- count up ---- */
+function countUp(el){
+  const target=+el.dataset.count, dur=1400, t0=performance.now();
+  (function step(t){
+    const p=Math.min((t-t0)/dur,1), e=1-Math.pow(1-p,3);
+    el.textContent=Math.round(target*e);
+    if(p<1)requestAnimationFrame(step);
+  })(t0);
+}
+const cio=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){countUp(e.target);cio.unobserve(e.target)}}),{threshold:.5});
+document.querySelectorAll('[data-count]').forEach(el=>cio.observe(el));
+
+/* ---- mechanic demo: flash HIT when sweep crosses the enemy ---- */
+(function(){
+  const flash=document.getElementById('hitFlash'), txt=document.getElementById('hitTxt');
+  if(!flash) return;
+  function fire(){
+    flash.style.transition='none';txt.style.transition='none';
+    flash.style.opacity=.9;txt.style.opacity=1;txt.setAttribute('transform','translate(0,0)');
+    requestAnimationFrame(()=>{
+      flash.style.transition='opacity .55s';txt.style.transition='opacity .6s, transform .6s';
+      flash.style.opacity=0;txt.style.opacity=0;txt.setAttribute('transform','translate(0,-22)');
+    });
+  }
+  // sweep is symmetric ~2.3s/half; it crosses center (enemy) near each mid-point
+  setInterval(fire,2300);
+  setTimeout(fire,600);
+})();
+
+/* ---- ambient embers canvas ---- */
+(function(){
+  const c=document.getElementById('embers'),x=c.getContext('2d');let w,h,P=[];
+  function rs(){w=c.width=innerWidth;h=c.height=innerHeight;}
+  rs();addEventListener('resize',rs);
+  const N=Math.min(70,Math.floor(innerWidth/22));
+  for(let i=0;i<N;i++)P.push({x:Math.random()*w,y:Math.random()*h,r:Math.random()*1.8+.4,
+    s:Math.random()*.5+.15,d:Math.random()*.6-.3,o:Math.random()*.5+.2,t:Math.random()*6});
+  (function loop(){
+    x.clearRect(0,0,w,h);
+    for(const p of P){
+      p.y-=p.s;p.x+=Math.sin(p.t+=0.01)*0.3+p.d*0.2;
+      if(p.y<-6){p.y=h+6;p.x=Math.random()*w;}
+      const fl=0.6+Math.sin(p.t*3)*0.4;
+      x.beginPath();x.arc(p.x,p.y,p.r,0,7);
+      x.fillStyle=`rgba(242,${140+Math.floor(40*fl)},20,${p.o*fl})`;
+      x.shadowColor='rgba(242,165,12,.8)';x.shadowBlur=8;x.fill();
+    }
+    requestAnimationFrame(loop);
+  })();
+})();
+</script>
+</body>
+</html>
