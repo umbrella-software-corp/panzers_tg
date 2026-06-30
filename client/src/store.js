@@ -791,7 +791,7 @@ export function addCrewXp(xp) {
 }
 
 // перки специалистов: ранг стоит 1 очко навыка + кредиты.
-// Очки навыка даёт уровень экипажа: +1 за каждый уровень после первого.
+// Очки навыка даёт уровень экипажа: 1 очко за 2 уровня (k-е очко на уровне 2k).
 export const crewPerkLevel = (id) => (profile.crew.skills || {})[id] || 0
 export const crewPointsSpent = () => CREW_MEMBERS.reduce((s, m) => s + crewPerkLevel(m.id), 0)
 // очко навыка: 1 за 2 уровня → 50 к 100-му = ровно на 5 спецов × 10 рангов
