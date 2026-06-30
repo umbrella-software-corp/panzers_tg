@@ -38,6 +38,12 @@ echo "== 4/6 зависимости и сборка клиента =="
 # Дублируем тут, чтобы прод-сборка получила его даже без rsync'нутого client/.env.local.
 $SSH "cd $DIR && pnpm install --silent && cd client && VITE_API_URL=https://panzertg.online VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 VITE_AMPLITUDE_PROXY=https://panzertg.online/amp/2/httpapi pnpm build"
 
+echo "== 4.5/6 БД (Postgres+Redis, провижн при первом разе) =="
+# Хранилище — PG+Redis; без DATABASE_URL сервер крэш-лупит. На свежей машине db-setup.sh
+# поднимет PG/Redis и пропишет .env (идемпотентно). На существующем проде — no-op (URL уже
+# в .env после ручного cutover с backfill'ом данных).
+$SSH "cd $DIR && (grep -q '^DATABASE_URL=' server/.env 2>/dev/null || bash deploy/db-setup.sh)"
+
 echo "== 5/6 systemd + nginx =="
 $SSH "cp $DIR/deploy/panzers.service /etc/systemd/system/panzers.service
 systemctl daemon-reload && systemctl enable panzers >/dev/null 2>&1 || true

@@ -59,6 +59,17 @@ pnpm install --silent
 # VITE_AMPLITUDE_API_KEY — ПУБЛИЧНЫЙ ключ Amplitude (попадает в клиент-бандл, не секрет).
 (cd client && VITE_API_URL="https://$DOMAIN" VITE_AMPLITUDE_API_KEY=c25c3ca61f4fa6d58a4b95a8293425e0 VITE_AMPLITUDE_PROXY="https://$DOMAIN/amp/2/httpapi" pnpm build)
 
+echo "== 4.5/6 БД: Postgres + Redis =="
+# Хранилище — Postgres+Redis; без DATABASE_URL сервер не стартует (крэш-луп). На СВЕЖЕЙ
+# машине провижиним автоматически (db-setup.sh идемпотентен, данных для миграции ещё нет).
+# На СУЩЕСТВУЮЩЕМ проде с данными — db-setup.sh уже прогнан вручную и сделан финальный
+# backfill (см. README/деплой-доку); здесь он просто no-op (DATABASE_URL уже в .env).
+if ! grep -q '^DATABASE_URL=' server/.env 2>/dev/null; then
+  bash deploy/db-setup.sh
+else
+  echo "  DATABASE_URL уже в .env — пропускаю провижининг"
+fi
+
 echo "== 5/6 systemd + nginx =="
 cp deploy/panzers.service /etc/systemd/system/panzers.service
 systemctl daemon-reload

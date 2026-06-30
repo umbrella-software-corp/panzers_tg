@@ -1,117 +1,243 @@
-// Файловое хранилище профилей: data/profiles/<uid>.json (атомарная запись).
-// Без внешних зависимостей; на рост — заменить на SQLite/Postgres за тем же API.
-import fs from 'fs/promises'
+// Хранилище состояния игры на Postgres (JSONB) + Redis (кэш/распр. лок).
+// Раньше это были JSON-файлы (data/profiles/<uid>.json и т.д.); см. историю git и
+// server/migrations/001_init.sql. Экспортируемый API НЕ менялся — остальные файлы
+// сервера зовут те же функции с теми же сигнатурами и возвратами.
+//
+// Документо-ориентированно: профиль/клан кладутся как JSONB-блоб 1-в-1 с прежней формой.
+// Горячие выборки (лидерборд/рейтинг) идут по generated-колонкам + индексу, а не сканом.
+import { readFile } from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
-
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data')
-const PROFILES = path.join(ROOT, 'profiles')
+import { query, queryOne } from './pg.js'
+import { cacheGetJSON, cacheSetJSON, cacheDel, withRedisLock } from './redis.js'
 
 // минимум боёв для попадания в рейтинг/лидерборд (фидбек: «чел с 3 боёв и 100% винрейта
-// выше всех» — WN8 по эффективности раздувается на малой выборке). ЗЕРКАЛО client meta.js.
+// выше всех» — WN8 на малой выборке раздувается). ЗЕРКАЛО client meta.js И SQL-индекса
+// profiles_rank_idx (battles >= 5) в migrations/001_init.sql.
 const RATING_MIN_BATTLES = 5
-const CLANS = path.join(ROOT, 'clans')
-const PAYMENTS = path.join(ROOT, 'payments.json')
-const SETTINGS = path.join(ROOT, 'settings.json')
 
-await fs.mkdir(PROFILES, { recursive: true })
-await fs.mkdir(CLANS, { recursive: true })
+// ── авто-применение схемы на старте (идемпотентно, IF NOT EXISTS) ──────────────
+// Раньше db.js делал top-level `await fs.mkdir(...)`; здесь аналогично гарантируем,
+// что таблицы есть. На проде это no-op (схему уже накатил db-setup.sh/backfill),
+// в деве — «просто работает» без отдельного шага миграции.
+const __dir = path.dirname(fileURLToPath(import.meta.url))
+async function ensureSchema() {
+  const sql = await readFile(path.join(__dir, '..', 'migrations', '001_init.sql'), 'utf8')
+  await query(sql)
+}
+await ensureSchema()
 
-// настройки сервера (флаги админки: турниры вкл/выкл и т.п.)
-let settings = null
-async function loadSettings() {
-  if (settings) return settings
-  try {
-    settings = JSON.parse(await fs.readFile(SETTINGS, 'utf8'))
-  } catch {
-    settings = {}
+// ════════════════════════ ПРОФИЛИ ════════════════════════
+
+export async function loadProfile(uid) {
+  const row = await queryOne('SELECT data FROM profiles WHERE uid = $1', [String(uid)])
+  return row ? row.data : null
+}
+
+// возвращает версию записи (серверные часы, ms) — клиент сверяет её на реоткрытии.
+// _updatedAt кладём в сам JSON (как прежде) для обратной совместимости с клиентом,
+// и дублируем в колонку updated_at для сортировок/индексов.
+export async function saveProfile(uid, profile) {
+  const stamp = Date.now()
+  const data = { ...profile, _updatedAt: stamp }
+  await query(
+    `INSERT INTO profiles (uid, data, updated_at) VALUES ($1, $2, $3)
+       ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
+    [String(uid), data, stamp]
+  )
+  return stamp
+}
+
+// КРИТИЧЕСКАЯ СЕКЦИЯ НА ОДИН uid: сериализует ВЕСЬ цикл load→mutate→save. Без неё два
+// писателя одного профиля делают lost-update (так пропадали награды и админ-выдачи).
+// Два слоя: (1) in-process promise-цепочка по uid — порядок и сериализация ВНУТРИ процесса
+// (как было в файловой версии); (2) Redis-лок plock:<uid> — сериализация МЕЖДУ процессами
+// (на будущее, под 2+ инстанса). Redis недоступен → слой (2) деградирует, корректность на
+// одиночном инстансе держит слой (1).
+// ВАЖНО: внутри fn НЕЛЬЗЯ брать лок на ДРУГОЙ uid (дедлок) — для двух профилей берём локи
+// последовательно, не вложенно (см. registerReferral).
+const profileLocks = new Map()
+export function withProfileLock(uid, fn) {
+  const key = String(uid)
+  const prev = profileLocks.get(key) || Promise.resolve()
+  const guarded = () => withRedisLock('plock:' + key, fn)
+  const run = prev.then(guarded, guarded) // продолжаем цепочку и после ошибки предыдущего
+  const tail = run.then(() => {}, () => {})
+  profileLocks.set(key, tail)
+  tail.then(() => { if (profileLocks.get(key) === tail) profileLocks.delete(key) }) // не копим Map
+  return run
+}
+
+// удаление профиля. Живой сервер сам профили НЕ удаляет — это для обслуживающих скриптов
+// (deploy/purge-ghosts.mjs — чистка реф-фермы, deploy/wipe-player.mjs — сброс игрока).
+// Инвалидируем кэш сводки и карту рейтинга, чтобы админка/лидерборд обновились сразу.
+export async function deleteProfile(uid) {
+  const res = await query('DELETE FROM profiles WHERE uid = $1', [String(uid)])
+  await cacheDel(PROFILES_LIST_KEY, 'rank:map')
+  return res.rowCount > 0
+}
+
+// серверно-авторитетный «дошёл до боя»: помечаем профиль вошедшего в бой. reachedMem гасит
+// повторные записи в рамках процесса. Нет профиля ещё — НЕ кэшируем (пометим в след. бой).
+const reachedMem = new Set()
+export async function markReachedBattle(uid) {
+  if (!uid || reachedMem.has(uid)) return
+  return withProfileLock(uid, async () => {
+    try {
+      const p = await loadProfile(uid)
+      if (!p) return
+      reachedMem.add(uid)
+      if (p.reachedBattle) return
+      p.reachedBattle = true
+      if (!p.firstBattleAt) p.firstBattleAt = Date.now()
+      await saveProfile(uid, p)
+      await cacheDel(PROFILES_LIST_KEY) // сводка админки обновится сразу, не через 5с
+    } catch {
+      /* профиль битый/гонка — не критично, пометим в следующий бой */
+    }
+  })
+}
+
+// серверный СЧЁТЧИК боёв: +1 при КАЖДОМ входе в бой (без reachedMem — считаем каждый матч).
+export async function recordBattleEntry(uid) {
+  if (!uid) return
+  return withProfileLock(uid, async () => {
+    try {
+      const p = await loadProfile(uid)
+      if (!p) return
+      p.reachedBattle = true
+      const nowTs = Date.now()
+      if (!p.firstBattleAt) p.firstBattleAt = nowTs
+      p.lastBattleAt = nowTs // для «сыграли бой сегодня» (МСК)
+      p.srvBattles = (p.srvBattles | 0) + 1
+      await saveProfile(uid, p)
+      await cacheDel(PROFILES_LIST_KEY)
+    } catch {
+      /* гонка/битый профиль — не критично */
+    }
+  })
+}
+
+// проекция профиля для админ-сводки (тот же набор полей, что отдавала файловая версия).
+function profileSummary(uid, p) {
+  return {
+    uid,
+    name: p.name || '',
+    credits: p.credits || 0,
+    tokens: p.tokens || 0,
+    goldAmmo: p.goldAmmo || 0,
+    battles: (p.stats && p.stats.battles) || 0,
+    wins: (p.stats && p.stats.wins) || 0,
+    rating: (p.stats && p.stats.rating) || 0,
+    wn8: (p.stats && p.stats.wn8) || 0, // боевой рейтинг по эффективности
+    crewXp: (p.crew && p.crew.xp) || 0,
+    tanks: Array.isArray(p.owned) ? p.owned.length : 0,
+    premiumUntil: p.premiumUntil || 0,
+    updatedAt: p._updatedAt || 0,
+    src: p.src || null,
+    referredBy: p.referredBy || null,
+    reachedBattle: !!p.reachedBattle,
+    srvBattles: p.srvBattles | 0,
+    pushBlocked: !!p.pushBlocked,
+    pushOff: !!p.pushOff,
+    used3D: !!p.used3D,
+    firstSeen: p.firstSeen || p._updatedAt || 0,
+    lastSeen: p.lastSeen || p._updatedAt || 0,
+    lastBattleAt: p.lastBattleAt || 0,
+    firstBattleAt: p.firstBattleAt || 0,
   }
-  return settings
-}
-export async function getSetting(key, def = null) {
-  const s = await loadSettings()
-  return key in s ? s[key] : def
-}
-export async function setSetting(key, value) {
-  const s = await loadSettings()
-  s[key] = value
-  const tmp = `${SETTINGS}.${process.pid}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(s))
-  await fs.rename(tmp, SETTINGS)
-  return s
 }
 
-// заявки на турниры: data/tournaments.json = { [tournamentId]: [uid, ...] }.
-// Каталог форматов статичен (в коде), здесь храним только КТО нажал «участвую».
-const TOURNAMENTS = path.join(ROOT, 'tournaments.json')
-let tourn = null
-export async function getTournRegs() {
-  if (tourn) return tourn
-  try {
-    tourn = JSON.parse(await fs.readFile(TOURNAMENTS, 'utf8'))
-  } catch {
-    tourn = {}
-  }
-  return tourn
-}
-export async function saveTournRegs(map) {
-  tourn = map
-  const tmp = `${TOURNAMENTS}.${process.pid}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(map))
-  await fs.rename(tmp, TOURNAMENTS)
-  return map
+// сводка всех профилей для админки; кэш 5с (Redis, общий для инстансов; промах при отсутствии
+// Redis = прямой запрос к PG). Свежие сверху — как сортировка по _updatedAt в файловой версии.
+const PROFILES_LIST_KEY = 'profiles:list'
+export async function listProfiles() {
+  const cached = await cacheGetJSON(PROFILES_LIST_KEY)
+  if (cached) return cached
+  const { rows } = await query('SELECT uid, data FROM profiles ORDER BY updated_at DESC')
+  const out = rows.map((r) => profileSummary(r.uid, r.data))
+  await cacheSetJSON(PROFILES_LIST_KEY, out, 5)
+  return out
 }
 
-// набор uid с РЕАЛЬНО оплаченным премиумом (платёж prem, не возвращён). Корона ♛
-// выдаётся только при наличии платежа: premiumUntil клиент мог проставить себе
-// сам сейвом профиля (дыра закрыта в index.js), а старые фейки гасим этой сверкой.
-async function paidPremiumUids() {
-  const set = new Set()
-  for (const pay of await listPayments()) if (pay.productId === 'prem' && !pay.refunded) set.add(pay.uid)
-  return set
-}
+// ════════════════════════ ЛИДЕРБОРД / РЕЙТИНГ ════════════════════════
 
-// топ игроков по боевому рейтингу (по эффективности — wn8) для живой таблицы лидеров.
-// Поле rating в ответе = wn8 (клиент показывает его как «боевой рейтинг»).
+// топ игроков по боевому рейтингу (wn8) — индексированная выборка (profiles_rank_idx).
+// КОРОНА ♛: активный премиум (premium_until > now); premiumUntil server-authoritative
+// (защищён в merge index.js, клиент не проставит сам) → доверяем напрямую.
 export async function leaderboard(limit = 20) {
-  const all = await listProfiles()
   const now = Date.now()
-  // КОРОНА ♛: активный премиум (premiumUntil > now). premiumUntil ЗАЩИЩЁН в merge (index.js:
-  // клиент НЕ может проставить себе сейвом профиля — `premiumUntil: prev.premiumUntil`), ставят
-  // ТОЛЬКО легит-источники: платёж Stars, АДМИН-грант, pendingGrants. Раньше тут была доп.сверка
-  // с платежами (paidPremiumUids), но она глушила АДМИН-выданный прем (тестеры без покупки —
-  // фидбек «у Katrin прем есть, а короны нет»). Дыра localStorage закрыта в merge → доверяем напрямую.
-  return all
-    .filter((p) => p.name && (p.battles || 0) >= RATING_MIN_BATTLES) // в рейтинг только от 5 боёв
-    .sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
-    .slice(0, limit)
-    .map((p, i) => ({ place: i + 1, name: p.name, rating: p.wn8 || 0, battles: p.battles, wins: p.wins, premium: (p.premiumUntil || 0) > now }))
+  const { rows } = await query(
+    `SELECT name, wn8, battles,
+            COALESCE(NULLIF(data->'stats'->>'wins','')::int, 0) AS wins,
+            premium_until
+       FROM profiles
+      WHERE name IS NOT NULL AND name <> '' AND battles >= $1
+      ORDER BY wn8 DESC
+      LIMIT $2`,
+    [RATING_MIN_BATTLES, limit]
+  )
+  return rows.map((r, i) => ({
+    place: i + 1,
+    name: r.name,
+    rating: r.wn8 || 0,
+    battles: r.battles,
+    wins: r.wins,
+    premium: (r.premium_until || 0) > now,
+  }))
 }
 
-// МЕСТО игрока в рейтинге (для события «Борьба за рейтинг» — множитель кредитов за бой).
-// Полная сортировка по всем профилям дорого на каждый бой → кэшируем карту uid→место на 60с.
-let _rankMap = null, _rankAt = 0
-export async function ratingRankOf(uid) {
+// МЕСТО игрока в рейтинге (множитель кредитов за бой). Полная сортировка дорога на каждый
+// бой → кэшируем карту uid→место на 60с (Redis, общий + per-process быстрый путь).
+let _rankMap = null
+let _rankAt = 0
+async function rankMap() {
   const now = Date.now()
-  if (!_rankMap || now - _rankAt > 60000) {
-    const sorted = (await listProfiles())
-      .filter((p) => p.name && (p.battles || 0) >= RATING_MIN_BATTLES) // тот же фильтр, что у leaderboard — места совпадают
-      .sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0))
-    _rankMap = new Map(sorted.map((p, i) => [p.uid, i + 1]))
+  if (_rankMap && now - _rankAt < 60000) return _rankMap // быстрый путь в процессе
+  const cached = await cacheGetJSON('rank:map')
+  if (cached) {
+    _rankMap = new Map(Object.entries(cached))
     _rankAt = now
+    return _rankMap
   }
-  return _rankMap.get(uid) || Infinity // нет в таблице (мало боёв) → без бонуса
+  const { rows } = await query(
+    `SELECT uid FROM profiles
+      WHERE name IS NOT NULL AND name <> '' AND battles >= $1
+      ORDER BY wn8 DESC`,
+    [RATING_MIN_BATTLES]
+  )
+  const obj = {}
+  rows.forEach((r, i) => { obj[r.uid] = i + 1 })
+  _rankMap = new Map(Object.entries(obj))
+  _rankAt = now
+  await cacheSetJSON('rank:map', obj, 60)
+  return _rankMap
+}
+export async function ratingRankOf(uid) {
+  const m = await rankMap()
+  return m.get(String(uid)) || Infinity // нет в таблице (мало боёв) → без бонуса
 }
 
-// публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id наружу):
-// стата + любимая техника (самая частая в истории боёв)
+// набор uid с РЕАЛЬНО оплаченным премиумом (платёж prem, не возвращён) — для короны в карточке
+async function paidPremiumUids() {
+  const { rows } = await query(
+    `SELECT uid FROM payments WHERE product_id = 'prem' AND refunded = false AND uid IS NOT NULL`
+  )
+  return new Set(rows.map((r) => r.uid))
+}
+
+// публичный профиль игрока по МЕСТУ в таблице (без утечки tg-id): стата + любимая техника
 export async function playerByRank(rank) {
-  const sorted = (await listProfiles()).filter((p) => p.name && (p.battles || 0) >= RATING_MIN_BATTLES).sort((a, b) => (b.wn8 || 0) - (a.wn8 || 0)) // тот же фильтр ≥5 боёв, что и leaderboard (места совпадают)
-  const row = sorted[rank - 1]
+  const row = await queryOne(
+    `SELECT uid, data FROM profiles
+      WHERE name IS NOT NULL AND name <> '' AND battles >= $1
+      ORDER BY wn8 DESC OFFSET $2 LIMIT 1`,
+    [RATING_MIN_BATTLES, Math.max(0, rank - 1)]
+  )
   if (!row) return null
-  const paid = await paidPremiumUids()
-  const p = (await loadProfile(row.uid)) || {}
+  const p = row.data || {}
   const s = p.stats || {}
+  const paid = await paidPremiumUids()
   let favoriteTank = null
   if (Array.isArray(p.history) && p.history.length) {
     const c = {}
@@ -120,22 +246,19 @@ export async function playerByRank(rank) {
   }
   return {
     place: rank,
-    name: p.name || row.name || 'Боец',
-    rating: s.wn8 ?? row.wn8 ?? 0, // боевой рейтинг по эффективности
-
-    battles: s.battles ?? row.battles ?? 0,
-    wins: s.wins ?? row.wins ?? 0,
+    name: p.name || 'Боец',
+    rating: s.wn8 ?? 0, // боевой рейтинг по эффективности
+    battles: s.battles ?? 0,
+    wins: s.wins ?? 0,
     kills: s.kills || 0,
-    tank: p.selectedTank || null, // id текущей машины (для спрайта)
-    favoriteTank, // имя самой частой машины в истории
-    medals: p.medals || {}, // медали игрока (карточка показывает их в гриде)
+    tank: p.selectedTank || null,
+    favoriteTank,
+    medals: p.medals || {},
     premium: (p.premiumUntil || 0) > Date.now() && paid.has(row.uid),
   }
 }
 
-const safe = (uid) => String(uid).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
-
-// метка источника трафика из start_param (?startapp=…): ref_/sq_ — это НЕ трафик
+// метка источника трафика из start_param (?startapp=…): ref_/sq_ — НЕ трафик
 // (игрок-реферал/взвод), всё прочее — источник; срезаем префикс src_/s_, чистим
 export function srcTag(sp) {
   if (!sp || typeof sp !== 'string') return null
@@ -148,257 +271,104 @@ export function srcTag(sp) {
   return tag || null
 }
 
-export async function loadProfile(uid) {
-  try {
-    return JSON.parse(await fs.readFile(path.join(PROFILES, safe(uid) + '.json'), 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-// записи одного uid сериализуем цепочкой, tmp-файл уникален — конкурентные
-// сейвы не делят файл и не портят друг друга
-const saveChain = new Map()
-let tmpSeq = 0
-export async function saveProfile(uid, profile) {
-  const key = safe(uid)
-  const prev = saveChain.get(key) || Promise.resolve()
-  const job = prev.then(async () => {
-    const file = path.join(PROFILES, key + '.json')
-    const tmp = `${file}.${process.pid}.${++tmpSeq}.tmp`
-    const stamp = Date.now()
-    const data = JSON.stringify({ ...profile, _updatedAt: stamp })
-    await fs.writeFile(tmp, data)
-    await fs.rename(tmp, file) // атомарно — не побьём профиль при падении
-    return stamp // версия записи (серверные часы) — клиент сверяет её на реоткрытии
-  })
-  saveChain.set(key, job.catch(() => {}))
-  if (saveChain.size > 5000) {
-    // не копим завершённые цепочки вечно
-    for (const [k, p] of saveChain) {
-      if (p !== job) saveChain.delete(k)
-      if (saveChain.size <= 2500) break
-    }
-  }
-  return job
-}
-
-// КРИТИЧЕСКАЯ СЕКЦИЯ НА ОДИН uid: сериализует ВЕСЬ цикл load→mutate→save (а не только
-// саму запись, как saveChain). Без неё два писателя одного профиля делают lost-update —
-// оба грузят файл, меняют разные поля, второй save затирает первого. Так пропадали
-// купленные/выданные награды и админ-выдачи из pendingGrants (один writer воскрешал уже
-// применённую очередь или ронял свежедобавленную). ВСЕ, кто грузит-меняет-сохраняет
-// профиль, обязаны оборачивать секцию в withProfileLock(uid, fn).
-// ВАЖНО: внутри fn НЕЛЬЗЯ брать лок на ДРУГОЙ uid (дедлок) — для двух профилей берём
-// локи последовательно, не вложенно (см. registerReferral).
-const profileLocks = new Map()
-export function withProfileLock(uid, fn) {
-  const key = safe(uid)
-  const prev = profileLocks.get(key) || Promise.resolve()
-  const run = prev.then(() => fn(), () => fn()) // продолжаем цепочку и после ошибки предыдущего
-  const tail = run.then(() => {}, () => {})
-  profileLocks.set(key, tail)
-  tail.then(() => { if (profileLocks.get(key) === tail) profileLocks.delete(key) }) // не копим Map
-  return run
-}
-
-// серверно-авторитетный «дошёл до боя»: помечаем профиль вошедшего в бой (по uid),
-// чтобы воронка не зависела от того, до-сохранил ли клиент stats.battles (а он часто
-// не доезжает → реально игравшие падали в «завис без боя»). reachedMem гасит повторные
-// записи. Нет профиля ещё — НЕ кэшируем в reachedMem, пометим при следующем бое.
-const reachedMem = new Set()
-export async function markReachedBattle(uid) {
-  if (!uid || reachedMem.has(uid)) return
-  return withProfileLock(uid, async () => {
-    try {
-      const p = await loadProfile(uid)
-      if (!p) return
-      reachedMem.add(uid)
-      if (p.reachedBattle) return
-      p.reachedBattle = true
-      if (!p.firstBattleAt) p.firstBattleAt = Date.now()
-      profilesCache = null // сводка для админки обновится сразу, не через 5с
-      await saveProfile(uid, p)
-    } catch {
-      /* профиль битый/гонка — не критично, пометим в следующий бой */
-    }
-  })
-}
-
-// серверный СЧЁТЧИК боёв: +1 при КАЖДОМ входе человека в бой (startRoom). В отличие
-// от markReachedBattle (булев флаг, один раз) — считает каждый матч, поэтому БЕЗ
-// reachedMem. Нужен, т.к. клиентский stats.battles часто не доезжает (видим «дошёл · 0
-// боёв»). Тоже ставит reachedBattle. Админка показывает max(клиентский, серверный).
-export async function recordBattleEntry(uid) {
-  if (!uid) return
-  return withProfileLock(uid, async () => {
-    try {
-      const p = await loadProfile(uid)
-      if (!p) return
-      p.reachedBattle = true
-      const nowTs = Date.now()
-      if (!p.firstBattleAt) p.firstBattleAt = nowTs
-      p.lastBattleAt = nowTs // время последнего входа в бой — для «сыграли бой сегодня» (МСК)
-      p.srvBattles = (p.srvBattles | 0) + 1
-      profilesCache = null
-      await saveProfile(uid, p)
-    } catch {
-      /* гонка/битый профиль — не критично */
-    }
-  })
-}
-
-// журнал платежей: и идемпотентность по charge id, и записи для админки.
-// Совместимость: старый формат — массив строк charge id, новый — объекты
-// { charge, uid, productId, stars, ts }.
-let paid = null
-async function loadPaid() {
-  if (paid) return paid
-  try {
-    const raw = JSON.parse(await fs.readFile(PAYMENTS, 'utf8'))
-    paid = raw.map((p) => (typeof p === 'string' ? { charge: p } : p))
-  } catch {
-    paid = []
-  }
-  return paid
-}
+// ════════════════════════ ПЛАТЕЖИ ════════════════════════
+// журнал платежей: идемпотентность по charge id + записи для админки.
 
 export async function paymentSeen(chargeId) {
-  return (await loadPaid()).some((p) => p.charge === chargeId)
+  const row = await queryOne('SELECT 1 FROM payments WHERE charge = $1', [chargeId])
+  return !!row
 }
 
 export async function markPayment(chargeId, info = {}) {
-  const list = await loadPaid()
-  list.push({ charge: chargeId, ts: Date.now(), ...info })
-  // атомарно: журнал оплат терять при падении нельзя
-  const tmp = `${PAYMENTS}.${process.pid}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(list))
-  await fs.rename(tmp, PAYMENTS)
+  const ts = Date.now()
+  const rec = { charge: chargeId, ts, ...info } // полная запись в info (как прежний объект)
+  await query(
+    `INSERT INTO payments (charge, uid, product_id, stars, ts, info)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (charge) DO NOTHING`,
+    [chargeId, info.uid ?? null, info.productId ?? null, info.stars ?? null, ts, rec]
+  )
 }
 
+// свежие сверху; форма записи = прежняя ({charge, uid, productId, stars, ts, refunded?, refundedAt?})
 export async function listPayments() {
-  return [...(await loadPaid())].reverse() // свежие сверху
+  const { rows } = await query('SELECT info, refunded, refunded_at FROM payments ORDER BY ts DESC')
+  return rows.map((r) => ({ ...r.info, refunded: r.refunded, refundedAt: r.refunded_at || undefined }))
 }
 
 // пометить платёж возвращённым (admin-рефанд) — чтобы не вернуть дважды
 export async function markRefunded(chargeId) {
-  const list = await loadPaid()
-  const rec = list.find((p) => p.charge === chargeId)
-  if (!rec) return false
-  rec.refunded = true
-  rec.refundedAt = Date.now()
-  const tmp = `${PAYMENTS}.${process.pid}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(list))
-  await fs.rename(tmp, PAYMENTS)
-  return true
+  const res = await query(
+    'UPDATE payments SET refunded = true, refunded_at = $2 WHERE charge = $1',
+    [chargeId, Date.now()]
+  )
+  return res.rowCount > 0
 }
 
-// сводка профилей для админки; чтение всех файлов кэшируем на 5с —
-// поллинг админки не должен молотить диск на каждый запрос
-let profilesCache = null
-let profilesCacheAt = 0
-export async function listProfiles() {
-  if (profilesCache && Date.now() - profilesCacheAt < 5000) return profilesCache
-  const out = await listProfilesUncached()
-  profilesCache = out
-  profilesCacheAt = Date.now()
-  return out
+// ════════════════════════ НАСТРОЙКИ (kv: setting:*) ════════════════════════
+
+export async function getSetting(key, def = null) {
+  const row = await queryOne('SELECT v FROM kv WHERE k = $1', ['setting:' + key])
+  return row ? row.v : def
 }
 
-// ===== кланы: data/clans/<id>.json (атомарная запись, как у профилей) =====
-let clansCache = null
-let clansCacheAt = 0
+// возвращает полную карту настроек (как файловая версия возвращала весь settings-объект)
+async function allSettings() {
+  const { rows } = await query("SELECT k, v FROM kv WHERE k LIKE 'setting:%'")
+  const s = {}
+  for (const r of rows) s[r.k.slice('setting:'.length)] = r.v
+  return s
+}
+export async function setSetting(key, value) {
+  await query(
+    `INSERT INTO kv (k, v) VALUES ($1, $2)
+       ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v`,
+    ['setting:' + key, JSON.stringify(value)]
+  )
+  return allSettings()
+}
+
+// ════════════════════════ ТУРНИРЫ (kv: tournRegs) ════════════════════════
+// каталог форматов статичен (в коде); тут только КТО нажал «участвую»: { [tournId]: [uid, ...] }
+
+export async function getTournRegs() {
+  const row = await queryOne('SELECT v FROM kv WHERE k = $1', ['tournRegs'])
+  return row ? row.v : {}
+}
+export async function saveTournRegs(map) {
+  await query(
+    `INSERT INTO kv (k, v) VALUES ('tournRegs', $1)
+       ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v`,
+    [JSON.stringify(map)]
+  )
+  return map
+}
+
+// ════════════════════════ КЛАНЫ ════════════════════════
+
 export async function loadClan(id) {
-  try {
-    return JSON.parse(await fs.readFile(path.join(CLANS, safe(id) + '.json'), 'utf8'))
-  } catch {
-    return null
-  }
+  const row = await queryOne('SELECT data FROM clans WHERE id = $1', [String(id)])
+  return row ? row.data : null
 }
-const clanChain = new Map()
 export async function saveClan(id, clan) {
-  clansCache = null // инвалидируем кэш списка
-  const key = safe(id)
-  const prev = clanChain.get(key) || Promise.resolve()
-  const job = prev.then(async () => {
-    const file = path.join(CLANS, key + '.json')
-    const tmp = `${file}.${process.pid}.${++tmpSeq}.tmp`
-    await fs.writeFile(tmp, JSON.stringify(clan))
-    await fs.rename(tmp, file)
-  })
-  clanChain.set(key, job.catch(() => {}))
-  return job
+  await query(
+    `INSERT INTO clans (id, data, updated_at) VALUES ($1, $2, $3)
+       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
+    [String(id), clan, Date.now()]
+  )
+  await cacheDel(CLANS_LIST_KEY) // инвалидируем кэш списка
 }
 export async function deleteClan(id) {
-  clansCache = null
-  try {
-    await fs.unlink(path.join(CLANS, safe(id) + '.json'))
-  } catch {
-    /* нет файла — ок */
-  }
+  await query('DELETE FROM clans WHERE id = $1', [String(id)])
+  await cacheDel(CLANS_LIST_KEY)
 }
 // все кланы (кэш 5с) — для списка/таблицы кланов
+const CLANS_LIST_KEY = 'clans:list'
 export async function listClans() {
-  if (clansCache && Date.now() - clansCacheAt < 5000) return clansCache
-  let files = []
-  try {
-    files = (await fs.readdir(CLANS)).filter((f) => f.endsWith('.json'))
-  } catch {
-    return []
-  }
-  const out = []
-  for (const f of files) {
-    try {
-      out.push(JSON.parse(await fs.readFile(path.join(CLANS, f), 'utf8')))
-    } catch {
-      /* битый файл — пропускаем */
-    }
-  }
-  clansCache = out
-  clansCacheAt = Date.now()
+  const cached = await cacheGetJSON(CLANS_LIST_KEY)
+  if (cached) return cached
+  const { rows } = await query('SELECT data FROM clans')
+  const out = rows.map((r) => r.data)
+  await cacheSetJSON(CLANS_LIST_KEY, out, 5)
   return out
-}
-
-async function listProfilesUncached() {
-  let files = []
-  try {
-    files = (await fs.readdir(PROFILES)).filter((f) => f.endsWith('.json'))
-  } catch {
-    return []
-  }
-  const out = []
-  for (const f of files) {
-    try {
-      const p = JSON.parse(await fs.readFile(path.join(PROFILES, f), 'utf8'))
-      out.push({
-        uid: f.replace(/\.json$/, ''),
-        name: p.name || '',
-        credits: p.credits || 0,
-        tokens: p.tokens || 0,
-        goldAmmo: p.goldAmmo || 0,
-        battles: (p.stats && p.stats.battles) || 0,
-        wins: (p.stats && p.stats.wins) || 0,
-        rating: (p.stats && p.stats.rating) || 0,
-        wn8: (p.stats && p.stats.wn8) || 0, // боевой рейтинг по эффективности
-        crewXp: (p.crew && p.crew.xp) || 0,
-        tanks: Array.isArray(p.owned) ? p.owned.length : 0,
-        premiumUntil: p.premiumUntil || 0, // для отметки ★ премиум в таблице лидеров
-        updatedAt: p._updatedAt || 0,
-        src: p.src || null, // метка источника трафика (атрибуция)
-        referredBy: p.referredBy || null, // кто привёл (tg_<id> реферера) — для воронки по реф-ссылке
-        reachedBattle: !!p.reachedBattle, // серверный факт входа в бой (надёжнее клиентского battles)
-        srvBattles: p.srvBattles | 0, // серверный счётчик входов в бой (надёжнее клиентского stats.battles)
-        pushBlocked: !!p.pushBlocked, // бот недоступен (заблок./не дал write-access) — для метрики «заблок. бота»
-        pushOff: !!p.pushOff, // сам отписался от пушей (/stop)
-        used3D: !!p.used3D, // включал 3D-режим хоть раз — для метрики эксперимента
-        firstSeen: p.firstSeen || p._updatedAt || 0,
-        lastSeen: p.lastSeen || p._updatedAt || 0,
-        lastBattleAt: p.lastBattleAt || 0, // время последнего входа в бой — для «сыграли бой сегодня»
-        firstBattleAt: p.firstBattleAt || 0, // время первого боя — ловит сегодняшних новичков задним числом
-      })
-    } catch {
-      /* битый файл — пропускаем */
-    }
-  }
-  return out.sort((a, b) => b.updatedAt - a.updatedAt)
 }

@@ -11,6 +11,8 @@ RestartSec=3
 Environment=NODE_ENV=production
 Environment=PORT=8080
 Environment=WEBAPP_URL=https://panzertg.online
+# DATABASE_URL и REDIS_URL приходят из .env (пишет deploy/db-setup.sh) — не хардкодим
+# секрет в unit. Хранилище — Postgres+Redis; без DATABASE_URL сервер не стартует.
 EnvironmentFile=/opt/panzers/server/.env
 
 [Install]
