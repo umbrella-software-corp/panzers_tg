@@ -40,7 +40,6 @@ BEGIN
   END IF;
 END
 \$\$;
-SELECT 'create db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')\gexec
 SQL
 # создаём БД отдельной командой (CREATE DATABASE нельзя в DO-блоке/транзакции)
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 \

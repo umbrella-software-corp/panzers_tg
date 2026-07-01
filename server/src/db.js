@@ -20,6 +20,18 @@ const RATING_MIN_BATTLES = 5
 // Раньше db.js делал top-level `await fs.mkdir(...)`; здесь аналогично гарантируем,
 // что таблицы есть. На проде это no-op (схему уже накатил db-setup.sh/backfill),
 // в деве — «просто работает» без отдельного шага миграции.
+// PG jsonb ОТВЕРГАЕТ непарные UTF-16 суррогаты (обрезанные эмодзи в именах игроков из
+// Telegram — файловый JSON их проглатывал, PG нет: «low surrogate must follow a high
+// surrogate»). Вырезаем перед вставкой — иначе saveProfile упадёт и игрок ПОТЕРЯЕТ прогресс.
+// ВАЖНО: JSON.stringify (well-formed, ES2019+) сам экранирует одиночный суррогат в текст
+// `\udXXX`, поэтому чистим ИМЕННО escape-последовательности в готовом JSON (валидные пары
+// эмодзи stringify выводит литералом и НЕ экранирует → их не трогаем). Второй replace —
+// защита на случай сырых код-юнитов. Отдаём JSON-строку под ::jsonb-каст.
+const toJsonb = (obj) =>
+  JSON.stringify(obj)
+    .replace(/\\ud[89a-f][0-9a-f]{2}/gi, '')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+
 const __dir = path.dirname(fileURLToPath(import.meta.url))
 async function ensureSchema() {
   const sql = await readFile(path.join(__dir, '..', 'migrations', '001_init.sql'), 'utf8')
@@ -41,9 +53,9 @@ export async function saveProfile(uid, profile) {
   const stamp = Date.now()
   const data = { ...profile, _updatedAt: stamp }
   await query(
-    `INSERT INTO profiles (uid, data, updated_at) VALUES ($1, $2, $3)
+    `INSERT INTO profiles (uid, data, updated_at) VALUES ($1, $2::jsonb, $3)
        ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-    [String(uid), data, stamp]
+    [String(uid), toJsonb(data), stamp]
   )
   return stamp
 }
@@ -352,9 +364,9 @@ export async function loadClan(id) {
 }
 export async function saveClan(id, clan) {
   await query(
-    `INSERT INTO clans (id, data, updated_at) VALUES ($1, $2, $3)
+    `INSERT INTO clans (id, data, updated_at) VALUES ($1, $2::jsonb, $3)
        ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-    [String(id), clan, Date.now()]
+    [String(id), toJsonb(clan), Date.now()]
   )
   await cacheDel(CLANS_LIST_KEY) // инвалидируем кэш списка
 }

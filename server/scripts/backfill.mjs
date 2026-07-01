@@ -22,6 +22,14 @@ if (!url) {
 }
 const pool = new pg.Pool({ connectionString: url })
 
+// PG jsonb отвергает непарные UTF-16 суррогаты (обрезанные эмодзи из Telegram — файловый
+// JSON их глотал). JSON.stringify экранирует одиночный суррогат в текст `\udXXX` → чистим
+// escape-последовательности (валидные пары эмодзи выводятся литералом). Зеркало db.js.
+const toJsonb = (obj) =>
+  JSON.stringify(obj)
+    .replace(/\\ud[89a-f][0-9a-f]{2}/gi, '')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '')
+
 async function readJSON(file, fallback) {
   try {
     return JSON.parse(await readFile(file, 'utf8'))
@@ -53,9 +61,9 @@ async function main() {
     if (!data) { console.warn('  ! битый профиль, пропуск:', f); continue }
     const updatedAt = data._updatedAt || Date.now()
     await pool.query(
-      `INSERT INTO profiles (uid, data, updated_at) VALUES ($1, $2, $3)
+      `INSERT INTO profiles (uid, data, updated_at) VALUES ($1, $2::jsonb, $3)
          ON CONFLICT (uid) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-      [uid, data, updatedAt]
+      [uid, toJsonb(data), updatedAt]
     )
     profOk++
   }
@@ -68,9 +76,9 @@ async function main() {
     const data = await readJSON(path.join(DATA, 'clans', f), null)
     if (!data) { console.warn('  ! битый клан, пропуск:', f); continue }
     await pool.query(
-      `INSERT INTO clans (id, data, updated_at) VALUES ($1, $2, $3)
+      `INSERT INTO clans (id, data, updated_at) VALUES ($1, $2::jsonb, $3)
          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-      [id, data, data.createdAt || Date.now()]
+      [id, toJsonb(data), data.createdAt || Date.now()]
     )
     clanOk++
   }
@@ -89,7 +97,7 @@ async function main() {
            ts = EXCLUDED.ts, refunded = EXCLUDED.refunded, refunded_at = EXCLUDED.refunded_at,
            info = EXCLUDED.info`,
       [rec.charge, rec.uid ?? null, rec.productId ?? null, rec.stars ?? null,
-       rec.ts ?? null, !!rec.refunded, rec.refundedAt ?? null, rec]
+       rec.ts ?? null, !!rec.refunded, rec.refundedAt ?? null, toJsonb(rec)]
     )
     payOk++
   }
@@ -100,7 +108,7 @@ async function main() {
   for (const [k, v] of Object.entries(settings || {})) {
     await pool.query(
       `INSERT INTO kv (k, v) VALUES ($1, $2) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v`,
-      ['setting:' + k, JSON.stringify(v)]
+      ['setting:' + k, toJsonb(v)]
     )
     setOk++
   }
@@ -110,7 +118,7 @@ async function main() {
   if (tourn && typeof tourn === 'object') {
     await pool.query(
       `INSERT INTO kv (k, v) VALUES ('tournRegs', $1) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v`,
-      [JSON.stringify(tourn)]
+      [toJsonb(tourn)]
     )
   }
 
