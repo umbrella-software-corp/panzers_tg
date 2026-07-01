@@ -29,19 +29,29 @@ services:
       SUPPORT_CHAT_ID: ${SUPPORT_CHAT_ID:-}
       CHANNEL_ID: ${CHANNEL_ID:-}
       CHANNEL_URL: ${CHANNEL_URL:-}
+      # Хранилище (миграция на PG): Postgres — источник истины, DATABASE_URL ОБЯЗАТЕЛЕН
+      # (pg.js падает без него). Схему сервер накатывает сам на старте (ensureSchema →
+      # 001_init.sql, идемпотентно). Redis — кэш + распр-лок, graceful degrade (без него
+      # сервер работает, in-process лок).
+      DATABASE_URL: postgres://panzers:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/panzers
+      REDIS_URL: redis://redis:6379
       # Force IPv4 for outbound — some VPS hosts have broken outbound IPv6, which
       # traps Telegram API calls (getUpdates/sendMessage) in timeouts. Harmless
       # where IPv6 works.
       NODE_OPTIONS: --dns-result-order=ipv4first
     volumes:
-      # File-based store (profiles/clans/payments/tournaments) — MUST persist
-      # across redeploys, else every deploy wipes player data. db.js writes to
-      # /app/server/data.
+      # Остаточные файлы сервера (напр. support.json /here-группа, eventlog) — игровые
+      # данные теперь в Postgres. Держим volume, чтобы не терять эти файлы на редеплое.
       - server_data:/app/server/data
     expose:
       - "8080"
     networks:
       - internal
+    depends_on:
+      postgres:
+        condition: service_healthy   # ensureSchema на старте требует живой PG
+      redis:
+        condition: service_started   # redis необязателен (graceful), просто ждём старта
 
   web:
     image: ${IMAGE_PREFIX}-web:${IMAGE_TAG}
@@ -75,6 +85,35 @@ services:
       - internal
       - edge
 
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: panzers
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: panzers
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    # Без порт-маппинга — доступен только внутри docker-сети. Дамп: docker exec … pg_dump.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U panzers -d panzers"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 networks:
   internal:
   edge:
@@ -84,3 +123,4 @@ volumes:
   server_data:
   caddy_data:
   caddy_config:
+  pg_data:

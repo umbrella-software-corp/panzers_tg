@@ -2,9 +2,8 @@
 // Это те самые «зашёл-и-исчез (<1мин)» из воронки админки — боты/фейк-клики, что раздувают
 // тоталы и «привёл». У такого профиля НОЛЬ прогресса (дефолт 500 кр), поэтому удаление
 // безопасно: даже если это был живой человек, на следующем заходе он получит чистый старт
-// (идентично тому, что было). Рестарт сервера НЕ нужен — сервер не кэширует профили
-// (loadProfile читает файл каждый раз), а критерий «firstSeen старше N часов» исключает
-// тех, кто открыл прямо сейчас и ещё в сессии.
+// (идентично тому, что было). Критерий «firstSeen старше N часов» исключает тех, кто открыл
+// прямо сейчас и ещё в сессии.
 //
 // DRY-RUN ПО УМОЛЧАНИЮ (только отчёт, НИЧЕГО не удаляет). Запуск НА ПРОДЕ из /opt/panzers:
 //   node deploy/purge-ghosts.mjs                      # отчёт: сколько ghosts всего
@@ -15,10 +14,10 @@
 //
 // Критерий «ghost» (ВСЕ условия): 0 боёв (reachedBattle=false и stats.battles=0) +
 // dwell (lastSeen-firstSeen) < dwell-s + firstSeen старше min-age-h + НЕ премиум +
-// нет невыданных pendingGrants. Платежи (payments.json) не трогаем.
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+// нет невыданных pendingGrants. Платежи не трогаем.
+//
+// Хранилище — Postgres (DATABASE_URL берём из server/.env автоматически).
+import { loadEnv, importServer } from './_env.mjs'
 
 const args = process.argv.slice(2)
 const has = (f) => args.includes(f)
@@ -28,26 +27,19 @@ const REF = String(val('--ref', '')).replace(/[^0-9]/g, '')
 const MIN_AGE_MS = Math.max(0, +val('--min-age-h', '24')) * 3600e3
 const DWELL_MS = Math.max(0, +val('--dwell-s', '60')) * 1000
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'data')
-const PROFILES = path.join(ROOT, 'profiles')
+await loadEnv()
+const { query } = await importServer('src/pg.js')
+const { deleteProfile } = await importServer('src/db.js')
+
 const now = Date.now()
 const refDigits = (v) => String(v || '').replace(/[^0-9]/g, '')
 
-let files = []
-try {
-  files = (await fs.readdir(PROFILES)).filter((f) => f.endsWith('.json'))
-} catch (e) {
-  console.error('Не нашёл папку профилей:', PROFILES, '—', e.message)
-  process.exit(1)
-}
+const { rows } = await query('SELECT uid, data FROM profiles')
 
 const dead = []
 let scanned = 0, battled = 0, lingered = 0, fresh = 0, premium = 0, grants = 0, otherRef = 0
-for (const f of files) {
-  let p
-  try { p = JSON.parse(await fs.readFile(path.join(PROFILES, f), 'utf8')) } catch { continue }
+for (const { uid, data: p } of rows) {
   scanned++
-  const uid = f.replace(/\.json$/, '')
   if (!!p.reachedBattle || (p.stats && p.stats.battles > 0)) { battled++; continue } // играл — не трогаем
   const dwell = (p.lastSeen || 0) - (p.firstSeen || 0)
   if (dwell >= DWELL_MS) { lingered++; continue }                  // полазил ≥ порога — «завис-без-боя», не ghost
@@ -77,6 +69,7 @@ if (!APPLY) {
 
 let del = 0
 for (const uid of dead) {
-  try { await fs.unlink(path.join(PROFILES, uid + '.json')); del++ } catch { /* уже нет — ок */ }
+  try { if (await deleteProfile(uid)) del++ } catch { /* гонка — ок */ }
 }
 console.log(`\n✅ УДАЛЕНО: ${del} из ${dead.length}`)
+process.exit(0)

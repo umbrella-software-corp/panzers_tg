@@ -147,6 +147,8 @@ jobs:
 
           CHANNEL_ID=${{ vars.CHANNEL_ID }}
           CHANNEL_URL=${{ vars.CHANNEL_URL }}
+
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           EOF
           scp .env.deploy target:/opt/panzers/.env
           rm -f .env.deploy
